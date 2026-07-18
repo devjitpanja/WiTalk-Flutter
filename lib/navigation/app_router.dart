@@ -47,6 +47,8 @@ import '../screens/connect/nearby_people_screen.dart';
 import '../screens/connect/city_screen.dart';
 import '../screens/connect/explore_communities_screen.dart';
 import '../screens/connect/for_you_screen.dart';
+import '../screens/connect/for_you_tab.dart';
+import '../screens/connect/activities_screen.dart';
 import '../screens/connect/community_info_screen.dart';
 import '../screens/calls/video_call_screen.dart';
 import '../screens/calls/voice_call_screen.dart';
