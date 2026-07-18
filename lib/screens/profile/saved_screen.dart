@@ -4,15 +4,19 @@ import 'package:go_router/go_router.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/post_card.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../providers/auth_provider.dart';
 
 class SavedScreen extends ConsumerWidget {
   const SavedScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(FutureProvider.autoDispose((ref) async {
-      final prefs = await SharedPreferences.getInstance(); final uid = prefs.getString('uid');
-      final res = await dioClient.get('/v1/user/\$uid/saved'); return res.data['data'] ?? [];
+      final uid = ref.watch(authProvider).uid ?? '';
+      final res = await dioClient.get('/v1/post-saves/$uid', queryParameters: {'page': 1, 'limit': 20});
+      final data = res.data['data'];
+      if (data is List) return data;
+      if (data is Map) return (data['posts'] as List?) ?? [];
+      return [];
     }));
     return Scaffold(
       backgroundColor: AppColors.background,

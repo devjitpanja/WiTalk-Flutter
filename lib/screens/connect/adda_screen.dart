@@ -8,7 +8,10 @@ import '../../api/dio_client.dart';
 
 final _roomsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   final res = await dioClient.get('/v1/audio-rooms');
-  return res.data['data'] ?? [];
+  final data = res.data['data'];
+  if (data is List) return data;
+  if (data is Map) return (data['rooms'] as List?) ?? [];
+  return [];
 });
 
 class AddaScreen extends ConsumerWidget {

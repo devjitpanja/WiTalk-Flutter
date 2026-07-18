@@ -4,10 +4,15 @@ import 'package:go_router/go_router.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/post_card.dart';
+import '../../providers/auth_provider.dart';
 
 final _forYouProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
-  final res = await dioClient.get('/v1/discover/for-you');
-  return res.data['data'] ?? [];
+  final uid = ref.watch(authProvider).uid ?? '';
+  final res = await dioClient.get('/v2/posts/recommended/$uid', queryParameters: {'page': 1, 'limit': 20});
+  final data = res.data['data'];
+  if (data is List) return data;
+  if (data is Map) return (data['posts'] as List?) ?? [];
+  return [];
 });
 
 class ForYouScreen extends ConsumerWidget {

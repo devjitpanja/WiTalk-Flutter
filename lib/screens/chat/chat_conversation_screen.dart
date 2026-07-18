@@ -61,7 +61,7 @@ class _ChatConversationScreenState extends ConsumerState<ChatConversationScreen>
     try {
       final res = await dioClient.get('/v1/chat/${widget.chatId}/messages');
       final msgs = List<Map<String, dynamic>>.from(res.data['data'] ?? []);
-      final partnerRes = await dioClient.get('/v1/chat/${widget.chatId}/info');
+      final partnerRes = await dioClient.get('/v1/chat/conversations/${widget.chatId}');
       setState(() {
         _messages.addAll(msgs.reversed);
         _chatPartner = partnerRes.data['data'];
@@ -74,8 +74,8 @@ class _ChatConversationScreenState extends ConsumerState<ChatConversationScreen>
   }
 
   void _connectSocket() async {
-    final storage = const FlutterSecureStorage();
-    final token = await storage.read(key: 'access_token');
+    final storage = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+    final token = await storage.read(key: 'accessToken');
     _socket = io.io(AppConfig.apiBaseUrl, io.OptionBuilder()
         .setTransports(['websocket'])
         .setAuth({'token': token})

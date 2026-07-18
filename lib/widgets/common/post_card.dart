@@ -187,7 +187,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   Future<void> _trackView() async {
     try {
-      await dioClient.post('/v1/posts/$_postId/view');
+      await dioClient.post('/v1/engagement/track-view', data: {'postId': _postId});
     } catch (_) {}
   }
 
@@ -220,7 +220,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     if (widget.currentUserId == null || widget.currentUserId == _userId) return;
     setState(() => _isFollowing = !_isFollowing);
     try {
-      await dioClient.post('/v1/follow/toggle', data: {'targetUserId': _userId});
+      await dioClient.post('/v1/followers/toggle', data: {'followingId': _userId});
     } catch (_) {
       if (mounted) setState(() => _isFollowing = !_isFollowing);
     }

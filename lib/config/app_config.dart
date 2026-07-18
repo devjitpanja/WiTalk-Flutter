@@ -1,6 +1,7 @@
 class AppConfig {
   // API
   static const String apiBaseUrl = 'https://api.witalk.in';
+  static const String filesApiBaseUrl = 'https://files.witalk.in';
   static const String filesApiUrl = 'https://files.witalk.in/api/v1/upload/single';
   static const String filesDeleteUrl = 'https://files.witalk.in/api/v1/upload/delete';
 

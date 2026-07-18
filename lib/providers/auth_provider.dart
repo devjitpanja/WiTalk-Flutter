@@ -27,7 +27,9 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  final _storage = const FlutterSecureStorage();
+  final _storage = const FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   AuthNotifier() : super(const AuthState()) {
     _checkExistingAuth();
@@ -36,7 +38,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> _checkExistingAuth() async {
     final prefs = await SharedPreferences.getInstance();
     final uid = prefs.getString('uid');
-    final token = await _storage.read(key: 'access_token');
+    final token = await _storage.read(key: 'accessToken');
     if (uid != null && token != null) {
       state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
     } else {

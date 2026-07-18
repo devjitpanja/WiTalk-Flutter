@@ -5,10 +5,15 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../providers/auth_provider.dart';
 
 final _groupsListProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
-  final res = await dioClient.get('/v1/chat/groups');
-  return res.data['data'] ?? [];
+  final uid = ref.watch(authProvider).uid ?? '';
+  final res = await dioClient.get('/v1/groups/user/$uid');
+  final data = res.data['data'];
+  if (data is List) return data;
+  if (data is Map) return (data['groups'] as List?) ?? [];
+  return [];
 });
 
 class GroupListScreen extends ConsumerWidget {

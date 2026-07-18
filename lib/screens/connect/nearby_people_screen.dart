@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../providers/auth_provider.dart';
 
 class NearbyPeopleScreen extends ConsumerStatefulWidget {
   const NearbyPeopleScreen({super.key});
@@ -30,7 +31,8 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
         setState(() => _loading = false); return;
       }
       final pos = await Geolocator.getCurrentPosition();
-      final res = await dioClient.get('/v1/nearby?lat=${pos.latitude}&lng=${pos.longitude}&radius=10');
+      final uid = ref.read(authProvider).uid ?? '';
+      final res = await dioClient.get('/v1/location/nearby', queryParameters: {'uid': uid, 'latitude': pos.latitude, 'longitude': pos.longitude, 'radius': 500});
       setState(() { _position = pos; _users = res.data['data'] ?? []; _loading = false; });
     } catch (_) { setState(() => _loading = false); }
   }

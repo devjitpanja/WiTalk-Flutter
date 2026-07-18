@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../providers/auth_provider.dart';
 
 class CommunityInfoScreen extends ConsumerStatefulWidget {
   final String communityId;
@@ -22,20 +23,22 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   void initState() { super.initState(); _load(); }
 
   Future<void> _load() async {
+    final uid = ref.read(authProvider).uid ?? '';
     try {
-      final res = await dioClient.get('/v1/communities/${widget.communityId}');
+      final res = await dioClient.get('/v1/groups/${widget.communityId}', queryParameters: {'userId': uid});
       setState(() { _community = res.data['data']; _isMember = res.data['data']?['is_member'] == true; _loading = false; });
     } catch (_) { setState(() => _loading = false); }
   }
 
   Future<void> _toggleMember() async {
     if (_toggling) return;
+    final uid = ref.read(authProvider).uid ?? '';
     setState(() => _toggling = true);
     try {
       if (_isMember) {
-        await dioClient.post('/v1/communities/${widget.communityId}/leave');
+        await dioClient.post('/v1/groups/${widget.communityId}/leave', data: {'user_id': uid});
       } else {
-        await dioClient.post('/v1/communities/${widget.communityId}/join');
+        await dioClient.post('/v1/groups/join', data: {'invite_code': widget.communityId, 'user_id': uid});
       }
       setState(() => _isMember = !_isMember);
     } catch (_) {} finally { if (mounted) setState(() => _toggling = false); }

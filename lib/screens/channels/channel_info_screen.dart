@@ -30,7 +30,11 @@ class _ChannelInfoScreenState extends ConsumerState<ChannelInfoScreen> {
     if (_toggling) return;
     setState(() => _toggling = true);
     try {
-      await dioClient.post('/v1/channels/${widget.channelId}/${_subscribed ? 'unsubscribe' : 'subscribe'}');
+      if (_subscribed) {
+        await dioClient.delete('/v1/channels/${widget.channelId}/subscribe');
+      } else {
+        await dioClient.post('/v1/channels/${widget.channelId}/subscribe');
+      }
       setState(() => _subscribed = !_subscribed);
     } catch (_) {} finally { if (mounted) setState(() => _toggling = false); }
   }

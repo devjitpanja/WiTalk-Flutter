@@ -72,8 +72,14 @@ class AuthService {
         );
         final tokens = tokenRes.data['data'];
         if (tokens != null) {
-          await _storage.write(key: 'access_token', value: tokens['accessToken'] as String);
-          await _storage.write(key: 'refresh_token', value: tokens['refreshToken'] as String);
+          await _storage.write(key: 'accessToken', value: tokens['accessToken'] as String);
+          await _storage.write(key: 'refreshToken', value: tokens['refreshToken'] as String);
+          if (tokens['expiresIn'] != null) {
+            final expiry = DateTime.now().millisecondsSinceEpoch + (tokens['expiresIn'] as int) * 1000;
+            await _storage.write(key: 'tokenExpiry', value: expiry.toString());
+          }
+          // Store uid in secure storage so DioClient can use it for token regeneration
+          await _storage.write(key: 'uid', value: user.uid);
         }
 
         // Check onboarding state

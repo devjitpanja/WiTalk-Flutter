@@ -1,6 +1,5 @@
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_config.dart';
 
 typedef MessageCallback = void Function(Map<String, dynamic> data);
@@ -12,7 +11,7 @@ class SocketService {
   SocketService._internal();
 
   io.Socket? _socket;
-  final _storage = const FlutterSecureStorage();
+  final _storage = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
   bool _isConnected = false;
 
   final Map<String, List<MessageCallback>> _messageListeners = {};
@@ -24,9 +23,8 @@ class SocketService {
   Future<void> connect() async {
     if (_isConnected) return;
 
-    final token = await _storage.read(key: 'access_token');
-    final prefs = await SharedPreferences.getInstance();
-    final uid = prefs.getString('uid');
+    final token = await _storage.read(key: 'accessToken');
+    final uid = await _storage.read(key: 'uid');
 
     _socket = io.io(
       AppConfig.apiBaseUrl,

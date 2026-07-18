@@ -5,7 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../../providers/auth_provider.dart';
 
 class IdVerificationScreen extends ConsumerStatefulWidget {
   const IdVerificationScreen({super.key});
@@ -21,8 +21,10 @@ class _IdVerificationScreenState extends ConsumerState<IdVerificationScreen> {
   void initState() { super.initState(); _loadStatus(); }
 
   Future<void> _loadStatus() async {
-    final prefs = await SharedPreferences.getInstance(); final uid = prefs.getString('uid');
-    try { final res = await dioClient.get('/v1/user/\$uid/verification-status'); if (mounted) setState(() => _status = res.data['data']?['status']); } catch (_) {}
+    try {
+      final res = await dioClient.get('/v1/verification/status');
+      if (mounted) setState(() => _status = res.data['data']?['status'] as String?);
+    } catch (_) {}
   }
 
   Future<void> _pick(bool isId) async {
@@ -34,7 +36,7 @@ class _IdVerificationScreenState extends ConsumerState<IdVerificationScreen> {
     if (_idPhoto == null || _selfiePhoto == null || _submitting) return;
     setState(() => _submitting = true);
     try {
-      await dioClient.post('/v1/user/verify-id', data: {'id_photo': _idPhoto!.path, 'selfie': _selfiePhoto!.path});
+      await dioClient.post('/v1/verification/submit', data: {'id_photo': _idPhoto!.path, 'selfie': _selfiePhoto!.path});
       if (mounted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Verification submitted for review'))); setState(() => _status = 'pending'); }
     } catch (_) {} finally { if (mounted) setState(() => _submitting = false); }
   }

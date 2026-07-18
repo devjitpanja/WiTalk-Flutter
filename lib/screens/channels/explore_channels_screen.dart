@@ -6,8 +6,11 @@ import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
 
 final _exploreChannelsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
-  final res = await dioClient.get('/v1/channels/explore');
-  return res.data['data'] ?? [];
+  final res = await dioClient.get('/v1/channels/public');
+  final data = res.data['data'];
+  if (data is List) return data;
+  if (data is Map) return (data['channels'] as List?) ?? [];
+  return [];
 });
 
 class ExploreChannelsScreen extends ConsumerWidget {
@@ -52,7 +55,11 @@ class _ChannelTileState extends State<_ChannelTile> {
     setState(() => _loading = true);
     try {
       final id = widget.channel['id'] as String? ?? '';
-      await dioClient.post('/v1/channels/$id/${_subscribed ? 'unsubscribe' : 'subscribe'}');
+      if (_subscribed) {
+        await dioClient.delete('/v1/channels/$id/subscribe');
+      } else {
+        await dioClient.post('/v1/channels/$id/subscribe');
+      }
       setState(() => _subscribed = !_subscribed);
     } catch (_) {} finally { if (mounted) setState(() => _loading = false); }
   }

@@ -24,9 +24,15 @@ class _FollowersScreenState extends ConsumerState<FollowersScreen> with SingleTi
 
   Future<void> _load() async {
     try {
-      final f1 = await dioClient.get('/v1/user/${widget.userId}/followers');
-      final f2 = await dioClient.get('/v1/user/${widget.userId}/following');
-      if (mounted) setState(() { _followers = f1.data['data'] ?? []; _following = f2.data['data'] ?? []; _loading = false; });
+      final f1 = await dioClient.get('/v1/followers/${widget.userId}/followers');
+      final f2 = await dioClient.get('/v1/followers/${widget.userId}/following');
+      final followers = f1.data['data'];
+      final following = f2.data['data'];
+      if (mounted) setState(() {
+        _followers = followers is List ? followers : (followers is Map ? (followers['followers'] as List? ?? []) : []);
+        _following = following is List ? following : (following is Map ? (following['following'] as List? ?? []) : []);
+        _loading = false;
+      });
     } catch (_) { if (mounted) setState(() => _loading = false); }
   }
 

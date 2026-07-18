@@ -3,19 +3,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../providers/auth_provider.dart';
 
 class VisitorsScreen extends ConsumerWidget {
   const VisitorsScreen({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(FutureProvider.autoDispose((ref) async {
-      final prefs = await SharedPreferences.getInstance();
-      final uid = prefs.getString('uid');
-      final res = await dioClient.get('/v1/user/$uid/visitors');
-      return res.data['data'] ?? [];
+      final uid = ref.watch(authProvider).uid ?? '';
+      final res = await dioClient.get('/v1/profile-visits/$uid', queryParameters: {'page': 1, 'limit': 30});
+      final data = res.data['data'];
+      if (data is List) return data;
+      if (data is Map) return (data['visits'] as List?) ?? [];
+      return [];
     }));
     return Scaffold(
       backgroundColor: AppColors.background,

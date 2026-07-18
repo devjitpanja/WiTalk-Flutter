@@ -24,7 +24,7 @@ class _CreateAudioRoomScreenState extends State<CreateAudioRoomScreen> {
     setState(() => _creating = true);
     try {
       final tags = _tagsCtrl.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList();
-      final res = await dioClient.post('/v1/audio-rooms/create', data: {
+      final res = await dioClient.post('/v1/audio-rooms', data: {
         'title': _titleCtrl.text.trim(),
         'description': _descCtrl.text.trim(),
         'tags': tags,

@@ -43,7 +43,7 @@ class _ContentPreferencesScreenState extends ConsumerState<ContentPreferencesScr
     try {
       final prefs = await SharedPreferences.getInstance();
       final uid = prefs.getString('uid');
-      final res = await dioClient.get('/v1/excluded-users/$uid');
+      final res = await dioClient.get('/v2/excluded-users/$uid');
       if (mounted && res.data['success'] == true) {
         setState(() => _excluded = List<Map<String, dynamic>>.from((res.data['data'] as List).map((e) => Map<String, dynamic>.from(e as Map))));
       }
@@ -69,7 +69,7 @@ class _ContentPreferencesScreenState extends ConsumerState<ContentPreferencesScr
     try {
       final prefs = await SharedPreferences.getInstance();
       final uid = prefs.getString('uid');
-      final res = await dioClient.delete('/v1/excluded-users/$uid/$excludedId');
+      final res = await dioClient.post('/v2/excluded-users/remove', data: {'user_id': uid, 'excluded_user_id': excludedId});
       if (res.data['success'] == true && mounted) {
         setState(() => _excluded.removeWhere((u) => u['excluded_user_id'].toString() == excludedId));
         final name = user['name']?.toString() ?? user['username']?.toString() ?? 'User';

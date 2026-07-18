@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class ReferralScreen extends ConsumerStatefulWidget {
   const ReferralScreen({super.key});
@@ -17,9 +16,15 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
   @override
   void initState() { super.initState(); _load(); }
   Future<void> _load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final uid = prefs.getString('uid');
-    try { final res = await dioClient.get('/v1/referral/$uid'); if (mounted) setState(() => _data = res.data['data']); } catch (_) {}
+    try {
+      final codeRes = await dioClient.get('/v1/referral/my-code');
+      final statsRes = await dioClient.get('/v1/referral/stats');
+      if (mounted) setState(() => _data = {
+        'code': codeRes.data['data']?['code'] ?? codeRes.data['data']?['referralCode'] ?? '',
+        'referral_count': statsRes.data['data']?['total_referrals'] ?? statsRes.data['data']?['referral_count'] ?? 0,
+        'coins_earned': statsRes.data['data']?['coins_earned'] ?? 0,
+      });
+    } catch (_) {}
     if (mounted) setState(() => _loading = false);
   }
   @override

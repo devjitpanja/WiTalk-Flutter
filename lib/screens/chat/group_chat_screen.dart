@@ -46,7 +46,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
   }
 
   void _connectSocket() async {
-    final token = await const FlutterSecureStorage().read(key: 'access_token');
+    final token = await const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true)).read(key: 'accessToken');
     _socket = io.io(AppConfig.apiBaseUrl, io.OptionBuilder().setTransports(['websocket']).setAuth({'token': token}).disableAutoConnect().build());
     _socket!.connect();
     _socket!.on('connect', (_) => _socket!.emit('join_group', {'groupId': widget.groupId, 'userId': _uid}));
