@@ -517,8 +517,8 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
 
   // ─── Profile card ──────────────────────────────────────────────────────────
   Widget _buildProfileCard(_T t, bool isDark) {
-    final name = (_userData?['name'] as String? ?? '').isNotEmpty ? _userData!['name'].toString() : (_userData?['username'] as String? ?? 'User');
-    final username = _userData?['username']?.toString() ?? 'user';
+    final username = (_userData?['username']?.toString() ?? '').isNotEmpty ? _userData!['username'].toString() : 'user';
+    final name = (_userData?['name'] as String? ?? '').isNotEmpty ? _userData!['name'].toString() : username;
     final pic = _userData?['profile_pic']?.toString();
     final level = (_userData?['level'] as num?)?.toInt() ?? 1;
     final levelTitle = _userData?['levelTitle']?.toString() ?? 'Newcomer';
@@ -544,7 +544,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
                     ClipOval(child: pic != null && pic.isNotEmpty
                         ? CachedNetworkImage(imageUrl: pic, width: 60, height: 60, fit: BoxFit.cover)
                         : Container(width: 60, height: 60, color: t.primary, alignment: Alignment.center,
-                            child: Text(username.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 22, color: Colors.white)))),
+                            child: Text(username.isNotEmpty ? username.substring(0, 1).toUpperCase() : 'U', style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 22, color: Colors.white)))),
                     Positioned(
                       bottom: 0, right: 0,
                       child: Container(
