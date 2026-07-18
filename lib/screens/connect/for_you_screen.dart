@@ -1,0 +1,34 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../../theme/app_colors.dart';
+import '../../api/dio_client.dart';
+import '../../widgets/common/post_card.dart';
+
+final _forYouProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
+  final res = await dioClient.get('/v1/discover/for-you');
+  return res.data['data'] ?? [];
+});
+
+class ForYouScreen extends ConsumerWidget {
+  const ForYouScreen({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(_forYouProvider);
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(backgroundColor: AppColors.background, title: const Text('For You', style: TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)), leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => context.pop())),
+      body: async.when(
+        loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primaryButton)),
+        error: (_, __) => const Center(child: Text('Failed to load', style: TextStyle(color: Colors.white70))),
+        data: (posts) => RefreshIndicator(
+          color: AppColors.primaryButton, backgroundColor: AppColors.surface,
+          onRefresh: () => ref.refresh(_forYouProvider.future),
+          child: posts.isEmpty
+              ? const Center(child: Text('Nothing here yet', style: TextStyle(color: AppColors.textTertiary, fontFamily: 'Outfit')))
+              : ListView.builder(itemCount: posts.length, itemBuilder: (_, i) => PostCard(post: posts[i] as Map<String, dynamic>)),
+        ),
+      ),
+    );
+  }
+}

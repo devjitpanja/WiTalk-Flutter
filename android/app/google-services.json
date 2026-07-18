@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "511059619083",
+    "project_id": "witalk-ee245",
+    "storage_bucket": "witalk-ee245.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:511059619083:android:37fa27a36a6c5532f4860e",
+        "android_client_info": {
+          "package_name": "com.witalk"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "511059619083-rrv80ao3ldm4pb766koe2afarsvejn7l.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUh9WhBENKS3Lp_vus4QnSoKYaFQMwfcA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "511059619083-rrv80ao3ldm4pb766koe2afarsvejn7l.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
