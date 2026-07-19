@@ -3,8 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
+import '../../widgets/common/witalk_header.dart';
 
 final _roomsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   final res = await dioClient.get('/v1/audio-rooms');
@@ -14,32 +15,135 @@ final _roomsProvider = FutureProvider.autoDispose<List<dynamic>>((ref) async {
   return [];
 });
 
-class AddaScreen extends ConsumerWidget {
+class AddaScreen extends ConsumerStatefulWidget {
   const AddaScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AddaScreen> createState() => _AddaScreenState();
+}
+
+class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStateMixin {
+  late final AnimationController _ring1Ctrl;
+  late final AnimationController _ring2Ctrl;
+  late final Animation<double> _ring1Scale;
+  late final Animation<double> _ring1Opacity;
+  late final Animation<double> _ring2Scale;
+  late final Animation<double> _ring2Opacity;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _ring1Ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat();
+    _ring1Scale = Tween<double>(begin: 1.0, end: 2.2).animate(
+      CurvedAnimation(parent: _ring1Ctrl, curve: Curves.easeOut),
+    );
+    _ring1Opacity = Tween<double>(begin: 0.5, end: 0.0).animate(
+      CurvedAnimation(parent: _ring1Ctrl, curve: Curves.easeOut),
+    );
+
+    _ring2Ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500))
+      ..repeat();
+    _ring2Scale = Tween<double>(begin: 1.0, end: 2.2).animate(
+      CurvedAnimation(parent: _ring2Ctrl, curve: Curves.easeOut),
+    );
+    _ring2Opacity = Tween<double>(begin: 0.5, end: 0.0).animate(
+      CurvedAnimation(parent: _ring2Ctrl, curve: Curves.easeOut),
+    );
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) _ring2Ctrl.repeat();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ring1Ctrl.dispose();
+    _ring2Ctrl.dispose();
+    super.dispose();
+  }
+
+  Widget _buildMicButton() {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: () => context.push('/create-audio-room'),
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: _ring1Ctrl,
+              builder: (context, child) => Opacity(
+                opacity: _ring1Opacity.value,
+                child: Transform.scale(
+                  scale: _ring1Scale.value,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: c.text, width: 1.5),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            AnimatedBuilder(
+              animation: _ring2Ctrl,
+              builder: (context, child) => Opacity(
+                opacity: _ring2Opacity.value,
+                child: Transform.scale(
+                  scale: _ring2Scale.value,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: c.text, width: 1.5),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Image.asset(
+              'assets/icons/mic.png',
+              width: 24,
+              height: 24,
+              color: c.text,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
     final roomsAsync = ref.watch(_roomsProvider);
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       body: SafeArea(child: Column(children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 8), child: Row(children: [
-          const Expanded(child: Text('Adda', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white, fontFamily: 'Outfit'))),
-          ElevatedButton.icon(
-            onPressed: () => context.push('/create-audio-room'),
-            icon: const Icon(Icons.add, size: 18),
-            label: const Text('Start', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryButton, minimumSize: const Size(0, 36), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
+        WiTalkHeader(
+          title: 'WiTalk',
+          showBorder: false,
+          showNotifications: true,
+          leadingAction: Padding(
+            padding: const EdgeInsets.all(8),
+            child: _buildMicButton(),
           ),
-        ])),
+        ),
         Expanded(child: roomsAsync.when(
-          loading: () => _skeleton(),
-          error: (_, __) => const Center(child: Text('Failed to load', style: TextStyle(color: Colors.white70))),
+          loading: () => _skeleton(c),
+          error: (err, stack) => Center(child: Text('Failed to load', style: TextStyle(color: c.textTertiary))),
           data: (rooms) => RefreshIndicator(
-            color: AppColors.primaryButton,
-            backgroundColor: AppColors.surface,
+            color: c.primaryButton,
+            backgroundColor: c.surface,
             onRefresh: () => ref.refresh(_roomsProvider.future),
-            child: rooms.isEmpty ? _empty() : ListView.builder(
+            child: rooms.isEmpty ? _empty(c) : ListView.builder(
               padding: const EdgeInsets.all(12),
               itemCount: rooms.length,
               itemBuilder: (_, i) => _RoomCard(room: rooms[i] as Map<String, dynamic>),
@@ -50,21 +154,21 @@ class AddaScreen extends ConsumerWidget {
     );
   }
 
-  Widget _skeleton() => ListView.builder(
+  Widget _skeleton(ThemeColors c) => ListView.builder(
     itemCount: 4,
-    itemBuilder: (_, __) => Shimmer.fromColors(
-      baseColor: AppColors.surface,
-      highlightColor: AppColors.border,
-      child: Container(margin: const EdgeInsets.fromLTRB(12, 6, 12, 6), height: 100, decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16))),
+    itemBuilder: (ctx, idx) => Shimmer.fromColors(
+      baseColor: c.surface,
+      highlightColor: c.border,
+      child: Container(margin: const EdgeInsets.fromLTRB(12, 6, 12, 6), height: 100, decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16))),
     ),
   );
 
-  Widget _empty() => const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-    Text('🎙️', style: TextStyle(fontSize: 56)),
-    SizedBox(height: 12),
-    Text('No live rooms right now', style: TextStyle(color: Colors.white, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-    SizedBox(height: 8),
-    Text('Start a room to begin talking', style: TextStyle(color: AppColors.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
+  Widget _empty(ThemeColors c) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    const Text('🎙️', style: TextStyle(fontSize: 56)),
+    const SizedBox(height: 12),
+    Text('No live rooms right now', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+    const SizedBox(height: 8),
+    Text('Start a room to begin talking', style: TextStyle(color: c.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
   ]));
 }
 
@@ -74,6 +178,7 @@ class _RoomCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final title = room['title']?.toString() ?? 'Live Room';
     final host = room['host'] as Map<String, dynamic>?;
     final hostName = host?['name']?.toString() ?? '';
@@ -87,7 +192,7 @@ class _RoomCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: AppColors.border)),
+        decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: c.border)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -99,26 +204,26 @@ class _RoomCard extends StatelessWidget {
             ]),
           ),
           const SizedBox(height: 10),
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Outfit')),
+          Text(title, style: TextStyle(color: c.text, fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Outfit')),
           const SizedBox(height: 8),
           Row(children: [
-            CircleAvatar(radius: 14, backgroundColor: AppColors.border,
+            CircleAvatar(radius: 14, backgroundColor: c.border,
               backgroundImage: hostPic != null ? CachedNetworkImageProvider(hostPic) : null,
-              child: hostPic == null ? Text(hostName.isNotEmpty ? hostName[0].toUpperCase() : '?', style: const TextStyle(color: Colors.white, fontSize: 10)) : null),
+              child: hostPic == null ? Text(hostName.isNotEmpty ? hostName[0].toUpperCase() : '?', style: TextStyle(color: c.text, fontSize: 10)) : null),
             const SizedBox(width: 8),
-            Text(hostName, style: const TextStyle(color: AppColors.textSecondary, fontSize: 13, fontFamily: 'Outfit')),
+            Text(hostName, style: TextStyle(color: c.textSecondary, fontSize: 13, fontFamily: 'Outfit')),
             const Spacer(),
-            const Icon(Icons.people_outline, color: AppColors.textTertiary, size: 16),
+            Icon(Icons.people_outline, color: c.textTertiary, size: 16),
             const SizedBox(width: 4),
-            Text('$participants', style: const TextStyle(color: AppColors.textTertiary, fontSize: 13, fontFamily: 'Outfit')),
+            Text('$participants', style: TextStyle(color: c.textTertiary, fontSize: 13, fontFamily: 'Outfit')),
           ]),
           if (tags.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Wrap(spacing: 6, children: tags.map((t) => Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(color: Color(0x265B51F4), borderRadius: BorderRadius.circular(12)),
-                child: Text('#$t', style: const TextStyle(color: AppColors.primaryButton, fontSize: 11, fontFamily: 'Outfit')),
+                decoration: BoxDecoration(color: c.primaryButton.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                child: Text('#$t', style: TextStyle(color: c.primaryButton, fontSize: 11, fontFamily: 'Outfit')),
               )).toList()),
             ),
         ]),

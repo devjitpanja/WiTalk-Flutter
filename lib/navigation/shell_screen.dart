@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../theme/app_colors.dart';
 
 class ShellScreen extends StatelessWidget {
   final Widget child;
@@ -29,46 +28,49 @@ class ShellScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final currentIndex = _locationToIndex(context);
+    final theme = Theme.of(context);
+    final navTheme = theme.bottomNavigationBarTheme;
+    final dividerColor = theme.dividerTheme.color ?? const Color(0xFF38383A);
     return Scaffold(
       body: child,
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: dividerColor, width: 0.5)),
         ),
         child: BottomNavigationBar(
           currentIndex: currentIndex,
           onTap: (i) => _onTap(context, i),
           type: BottomNavigationBarType.fixed,
-          backgroundColor: AppColors.tabBarBg,
-          selectedItemColor: AppColors.tabBarActive,
-          unselectedItemColor: AppColors.tabBarInactive,
+          backgroundColor: navTheme.backgroundColor,
+          selectedItemColor: navTheme.selectedItemColor,
+          unselectedItemColor: navTheme.unselectedItemColor,
           selectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
           unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
           elevation: 0,
           items: [
             BottomNavigationBarItem(
               icon: _TabIcon(asset: 'assets/icons/home_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/home.png', size: 24),
+              activeIcon: _TabIcon(asset: 'assets/icons/home.png', size: 24, active: true),
               label: 'Home',
             ),
             BottomNavigationBarItem(
               icon: _TabIcon(asset: 'assets/icons/explore_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/explore.png', size: 24),
+              activeIcon: _TabIcon(asset: 'assets/icons/explore.png', size: 24, active: true),
               label: 'Explore',
             ),
             BottomNavigationBarItem(
               icon: _TabIcon(asset: 'assets/icons/mic_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/mic.png', size: 24),
+              activeIcon: _TabIcon(asset: 'assets/icons/mic.png', size: 24, active: true),
               label: 'Adda',
             ),
             BottomNavigationBarItem(
               icon: _TabIcon(asset: 'assets/icons/chat_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/chat.png', size: 24),
+              activeIcon: _TabIcon(asset: 'assets/icons/chat.png', size: 24, active: true),
               label: 'Chat',
             ),
             const BottomNavigationBarItem(
-              icon: Icon(Icons.menu, size: 27, color: AppColors.tabBarInactive),
-              activeIcon: Icon(Icons.menu, size: 27, color: AppColors.tabBarActive),
+              icon: Icon(Icons.menu, size: 27),
+              activeIcon: Icon(Icons.menu, size: 27),
               label: 'Menu',
             ),
           ],
@@ -81,13 +83,15 @@ class ShellScreen extends StatelessWidget {
 class _TabIcon extends StatelessWidget {
   final String asset;
   final double size;
-  const _TabIcon({required this.asset, required this.size});
+  final bool active;
+  const _TabIcon({required this.asset, required this.size, this.active = false});
 
   @override
-  Widget build(BuildContext context) => Image.asset(
-    asset,
-    width: size,
-    height: size,
-    color: Colors.white,
-  );
+  Widget build(BuildContext context) {
+    final navTheme = Theme.of(context).bottomNavigationBarTheme;
+    final color = active
+        ? (navTheme.selectedItemColor ?? Colors.white)
+        : (navTheme.unselectedItemColor ?? const Color(0xFF8E8E93));
+    return Image.asset(asset, width: size, height: size, color: color);
+  }
 }

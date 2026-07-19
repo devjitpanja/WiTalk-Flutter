@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/post_card.dart';
+import '../../widgets/common/witalk_header.dart';
 
 const _homeFeedQuery = r'''
   query GetHomeFeed($userId: ID!, $page: Int!, $limit: Int!) {
@@ -73,7 +74,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _headerVisible = true;
   double _lastScrollY = 0;
 
-  // Local mutable copy of posts (so like/comment updates don't require a full refetch)
   List<Map<String, dynamic>>? _posts;
 
   @override
@@ -115,27 +115,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _onShowMoreMenu(String postId, String userId, Map<String, dynamic> extra) {
+    final c = context.colors;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
         const SizedBox(height: 8),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.border, borderRadius: BorderRadius.circular(2))),
+        Container(width: 40, height: 4, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 8),
         ListTile(
-          leading: const Icon(Icons.bookmark_border, color: Colors.white),
-          title: const Text('Save post', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+          leading: Icon(Icons.bookmark_border, color: c.text),
+          title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
           onTap: () { Navigator.pop(context); },
         ),
         ListTile(
-          leading: const Icon(Icons.flag_outlined, color: Colors.white),
-          title: const Text('Report', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+          leading: Icon(Icons.flag_outlined, color: c.text),
+          title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
           onTap: () { Navigator.pop(context); context.push('/report/post/$postId'); },
         ),
         ListTile(
-          leading: const Icon(Icons.block, color: Colors.white),
-          title: const Text('Block user', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+          leading: Icon(Icons.block, color: c.text),
+          title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
           onTap: () { Navigator.pop(context); },
         ),
         const SizedBox(height: 16),
@@ -145,10 +146,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final feedAsync = ref.watch(_feedProvider);
     final currentUserId = ref.watch(authProvider).uid;
 
-    // Seed local posts once when the provider loads
     feedAsync.whenData((posts) {
       if (_posts == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -158,7 +159,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       body: SafeArea(
         child: Column(children: [
           AnimatedSlide(
@@ -168,20 +169,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           Expanded(
             child: feedAsync.when(
-              loading: () => _buildSkeleton(),
-              error: (e, _) => _buildError(e),
+              loading: () => _buildSkeleton(c),
+              error: (e, _) => _buildError(e, c),
               data: (_) {
                 final posts = _posts;
-                if (posts == null) return _buildSkeleton();
+                if (posts == null) return _buildSkeleton(c);
                 return RefreshIndicator(
-                  color: AppColors.primaryButton,
-                  backgroundColor: AppColors.surface,
+                  color: c.primaryButton,
+                  backgroundColor: c.surface,
                   onRefresh: () async {
                     setState(() => _posts = null);
                     await ref.refresh(_feedProvider.future);  // ignore: unused_result
                   },
                   child: posts.isEmpty
-                      ? _buildEmpty()
+                      ? _buildEmpty(c)
                       : ListView.builder(
                           controller: _scrollCtrl,
                           itemCount: posts.length,
@@ -202,68 +203,53 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildHeader() => Container(
-    height: 56,
-    color: AppColors.background,
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: Row(children: [
-      const Text(
-        'WiTalk',
-        style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: Colors.white, fontFamily: 'Outfit', letterSpacing: 0.5),
-      ),
-      const Spacer(),
-      IconButton(
-        icon: const Icon(Icons.search, color: Colors.white),
-        onPressed: () => context.push('/search'),
-      ),
-      IconButton(
-        icon: const Icon(Icons.notifications_none, color: Colors.white),
-        onPressed: () => context.push('/notifications'),
-      ),
-    ]),
+  Widget _buildHeader() => const WiTalkHeader(
+    title: 'WiTalk',
+    showBorder: true,
+    showNotifications: true,
   );
 
-  Widget _buildSkeleton() => ListView.builder(
+  Widget _buildSkeleton(ThemeColors c) => ListView.builder(
     itemCount: 4,
     itemBuilder: (context2, idx) => Shimmer.fromColors(
-      baseColor: AppColors.surface,
-      highlightColor: AppColors.border,
+      baseColor: c.surface,
+      highlightColor: c.border,
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
         height: 300,
-        decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
       ),
     ),
   );
 
-  Widget _buildError(Object e) => Center(
+  Widget _buildError(Object e, ThemeColors c) => Center(
     child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Icon(Icons.wifi_off, color: AppColors.textTertiary, size: 48),
+      Icon(Icons.wifi_off, color: c.textTertiary, size: 48),
       const SizedBox(height: 12),
-      const Text('Could not load feed', style: TextStyle(color: Colors.white, fontSize: 18, fontFamily: 'Outfit')),
+      Text('Could not load feed', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit')),
       const SizedBox(height: 8),
       TextButton(
         onPressed: () {
           setState(() => _posts = null);
           ref.refresh(_feedProvider.future);  // ignore: unused_result
         },
-        child: const Text('Retry', style: TextStyle(color: AppColors.primaryButton, fontFamily: 'Outfit')),
+        child: Text('Retry', style: TextStyle(color: c.primaryButton, fontFamily: 'Outfit')),
       ),
     ]),
   );
 
-  Widget _buildEmpty() => Center(
+  Widget _buildEmpty(ThemeColors c) => Center(
     child: Column(mainAxisSize: MainAxisSize.min, children: [
       const Text('👋', style: TextStyle(fontSize: 56)),
       const SizedBox(height: 16),
-      const Text('Your feed is empty', style: TextStyle(color: Colors.white, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+      Text('Your feed is empty', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
       const SizedBox(height: 8),
-      const Text('Follow people to see their posts here', style: TextStyle(color: AppColors.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
+      Text('Follow people to see their posts here', style: TextStyle(color: c.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
       const SizedBox(height: 20),
       ElevatedButton(
         onPressed: () => context.push('/discover-people'),
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primaryButton,
+          backgroundColor: c.primaryButton,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
         child: const Text('Discover People', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),

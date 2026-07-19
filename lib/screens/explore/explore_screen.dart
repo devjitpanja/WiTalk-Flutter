@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../widgets/explore/explore_banner_carousel.dart';
+import '../../widgets/common/witalk_header.dart';
 import '../connect/for_you_tab.dart';
 import '../connect/activities_screen.dart';
 import '../connect/nearby_people_screen.dart';
@@ -45,47 +45,23 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       body: SafeArea(
         child: Column(
           children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 8, 4),
-              child: Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Explore',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.text,
-                        fontFamily: 'Outfit',
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.search, color: AppColors.text, size: 24),
-                    onPressed: () => context.push('/search'),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.notifications_outlined, color: AppColors.text, size: 24),
-                    onPressed: () => context.push('/notifications'),
-                  ),
-                ],
-              ),
+            const WiTalkHeader(
+              title: 'Explore',
+              showBorder: false,
+              showNotifications: true,
             ),
-            // Pill tab bar
             _PillTabBar(
               tabs: _tabs,
               activeIndex: _activeIndex,
               onTap: _switchTab,
             ),
-            // Banner carousel — only on For You tab
             if (_activeIndex == 0) const ExploreBannerCarousel(),
-            // Tab content
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -117,8 +93,9 @@ class _PillTabBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
-      color: AppColors.background,
+      color: c.background,
       padding: const EdgeInsets.symmetric(vertical: 7),
       alignment: Alignment.centerLeft,
       child: SingleChildScrollView(
@@ -137,11 +114,9 @@ class _PillTabBar extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                   decoration: BoxDecoration(
-                    color: isActive ? AppColors.text : AppColors.surface,
+                    color: isActive ? c.text : c.surface,
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isActive ? AppColors.text : AppColors.border,
-                    ),
+                    border: Border.all(color: isActive ? c.text : c.border),
                   ),
                   child: Text(
                     tabs[i],
@@ -149,7 +124,7 @@ class _PillTabBar extends StatelessWidget {
                       fontSize: 12,
                       fontFamily: 'Outfit',
                       fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                      color: isActive ? AppColors.background : AppColors.textTertiary,
+                      color: isActive ? c.background : c.textTertiary,
                     ),
                   ),
                 ),

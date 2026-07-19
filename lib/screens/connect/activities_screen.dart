@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/verification_badge.dart';
-
-// ─── Provider ────────────────────────────────────────────────────────────────
 
 final _activitiesProvider =
     FutureProvider.family.autoDispose<List<dynamic>, String>((ref, cityFilter) async {
@@ -26,8 +24,6 @@ final _activitiesProvider =
   }
   return [];
 });
-
-// ─── Screen ───────────────────────────────────────────────────────────────────
 
 class ActivitiesScreen extends ConsumerStatefulWidget {
   const ActivitiesScreen({super.key});
@@ -62,17 +58,18 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final async = ref.watch(_activitiesProvider(_cityFilter));
 
     return async.when(
-      loading: () => _buildSkeleton(),
-      error: (_, __) => const Center(
+      loading: () => _buildSkeleton(c),
+      error: (_, __) => Center(
         child: Text('Failed to load communities',
-            style: TextStyle(color: AppColors.textTertiary, fontFamily: 'Outfit')),
+            style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit')),
       ),
       data: (groups) => RefreshIndicator(
-        color: AppColors.primary,
-        backgroundColor: AppColors.surface,
+        color: c.primary,
+        backgroundColor: c.surface,
         onRefresh: () => ref.refresh(_activitiesProvider(_cityFilter).future),
         child: groups.isEmpty
             ? ListView(
@@ -80,17 +77,17 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
                 children: [
                   SizedBox(height: MediaQuery.of(context).size.height * 0.25),
                   Column(children: [
-                    const Icon(Icons.explore, size: 64, color: AppColors.textTertiary),
+                    Icon(Icons.explore, size: 64, color: c.textTertiary),
                     const SizedBox(height: 16),
-                    const Text('No Public Community Yet',
-                        style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text)),
+                    Text('No Public Community Yet',
+                        style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
                     const SizedBox(height: 8),
                     Text(
                       _cityFilter.isNotEmpty
                           ? 'No public community found in $_cityFilter.'
                           : 'Be the first to create a Community!',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 14, fontFamily: 'Outfit', color: AppColors.textTertiary),
+                      style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary),
                     ),
                   ]),
                 ],
@@ -115,18 +112,18 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
     );
   }
 
-  Widget _buildSkeleton() {
+  Widget _buildSkeleton(ThemeColors c) {
     return ListView.builder(
       physics: const NeverScrollableScrollPhysics(),
       itemCount: 5,
       itemBuilder: (_, __) => Shimmer.fromColors(
-        baseColor: AppColors.surface,
-        highlightColor: AppColors.border,
+        baseColor: c.cardBackground,
+        highlightColor: c.border,
         child: Container(
           margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           height: 120,
           decoration: BoxDecoration(
-            color: AppColors.surface,
+            color: c.cardBackground,
             borderRadius: BorderRadius.circular(16),
           ),
         ),
@@ -134,8 +131,6 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
     );
   }
 }
-
-// ─── Community card ───────────────────────────────────────────────────────────
 
 class _CommunityCard extends StatelessWidget {
   final Map<String, dynamic> group;
@@ -154,6 +149,7 @@ class _CommunityCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final pic = group['picture'] as String?;
     final name = (group['name'] ?? '') as String;
     final desc = group['description'] as String?;
@@ -176,21 +172,20 @@ class _CommunityCard extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: c.cardBackground,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.withOpacity(0.15)),
+          border: Border.all(color: c.border.withOpacity(0.5)),
         ),
         child: Stack(
           children: [
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Header
                 Row(
                   children: [
                     CircleAvatar(
                       radius: 26,
-                      backgroundColor: AppColors.primary,
+                      backgroundColor: c.primary,
                       backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
                       child: pic == null
                           ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
@@ -206,7 +201,7 @@ class _CommunityCard extends StatelessWidget {
                             children: [
                               Flexible(
                                 child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text)),
+                                    style: TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
                               ),
                               if (isVerified) ...[
                                 const SizedBox(width: 4),
@@ -217,15 +212,15 @@ class _CommunityCard extends StatelessWidget {
                           const SizedBox(height: 4),
                           Row(
                             children: [
-                              const Icon(Icons.people, size: 14, color: AppColors.textTertiary),
+                              Icon(Icons.people, size: 14, color: c.textTertiary),
                               const SizedBox(width: 4),
                               Text('${fmtCount(memberCount)} members',
-                                  style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                                  style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary)),
                               if (city != null) ...[
                                 const SizedBox(width: 10),
-                                const Icon(Icons.location_on, size: 14, color: AppColors.textTertiary),
+                                Icon(Icons.location_on, size: 14, color: c.textTertiary),
                                 const SizedBox(width: 2),
-                                Text(city, style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                                Text(city, style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary)),
                               ],
                             ],
                           ),
@@ -235,14 +230,12 @@ class _CommunityCard extends StatelessWidget {
                   ],
                 ),
 
-                // Description
                 if (desc != null && desc.isNotEmpty) ...[
                   const SizedBox(height: 10),
                   Text(desc,
-                      style: const TextStyle(fontSize: 13, fontFamily: 'Outfit', color: AppColors.textSecondary, height: 1.4)),
+                      style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: c.textSecondary, height: 1.4)),
                 ],
 
-                // Restriction badges
                 if ((genderAllowed != null && genderAllowed != 'all') || minAge != null || maxAge != null) ...[
                   const SizedBox(height: 10),
                   Wrap(
@@ -250,26 +243,21 @@ class _CommunityCard extends StatelessWidget {
                     runSpacing: 4,
                     children: [
                       if (genderAllowed != null && genderAllowed != 'all')
-                        _Badge(
-                          icon: genderAllowed == 'male' ? Icons.male : Icons.female,
-                          label: genderAllowed == 'male' ? 'Male only' : 'Female only',
-                        ),
+                        _Badge(icon: genderAllowed == 'male' ? Icons.male : Icons.female,
+                            label: genderAllowed == 'male' ? 'Male only' : 'Female only'),
                       if (minAge != null || maxAge != null)
-                        _Badge(
-                          icon: Icons.cake,
-                          label: minAge != null && maxAge != null
-                              ? '$minAge-$maxAge yrs'
-                              : minAge != null ? '$minAge+ yrs' : 'Up to $maxAge yrs',
-                        ),
+                        _Badge(icon: Icons.cake,
+                            label: minAge != null && maxAge != null
+                                ? '$minAge-$maxAge yrs'
+                                : minAge != null ? '$minAge+ yrs' : 'Up to $maxAge yrs'),
                     ],
                   ),
                 ],
 
-                // Footer
                 const SizedBox(height: 14),
                 Container(
-                  decoration: const BoxDecoration(
-                    border: Border(top: BorderSide(color: Color(0x1A808080))),
+                  decoration: BoxDecoration(
+                    border: Border(top: BorderSide(color: c.border.withOpacity(0.4))),
                   ),
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(
@@ -282,19 +270,19 @@ class _CommunityCard extends StatelessWidget {
                                 children: tags.take(3).map((tag) => Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.082),
+                                    color: c.primary.withOpacity(0.082),
                                     borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: AppColors.primary.withOpacity(0.188)),
+                                    border: Border.all(color: c.primary.withOpacity(0.188)),
                                   ),
                                   child: Text('$tag',
-                                      style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.primary)),
+                                      style: TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.primary)),
                                 )).toList(),
                               )
                             : Row(
                                 children: [
                                   CircleAvatar(
                                     radius: 11,
-                                    backgroundColor: AppColors.textTertiary,
+                                    backgroundColor: c.textTertiary,
                                     backgroundImage: creatorPic != null ? CachedNetworkImageProvider(creatorPic) : null,
                                     child: creatorPic == null
                                         ? const Icon(Icons.person, size: 12, color: Colors.white)
@@ -303,7 +291,7 @@ class _CommunityCard extends StatelessWidget {
                                   const SizedBox(width: 6),
                                   Flexible(
                                     child: Text(creatorName, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                                        style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary)),
                                   ),
                                 ],
                               ),
@@ -314,7 +302,7 @@ class _CommunityCard extends StatelessWidget {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
                           decoration: BoxDecoration(
-                            color: isMember ? AppColors.primary.withOpacity(0.125) : AppColors.primary,
+                            color: isMember ? c.primary.withOpacity(0.125) : c.primary,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
@@ -323,7 +311,7 @@ class _CommunityCard extends StatelessWidget {
                               fontSize: 13,
                               fontFamily: 'Outfit',
                               fontWeight: FontWeight.w600,
-                              color: isMember ? AppColors.primary : Colors.white,
+                              color: isMember ? c.primary : Colors.white,
                             ),
                           ),
                         ),
@@ -334,22 +322,21 @@ class _CommunityCard extends StatelessWidget {
               ],
             ),
 
-            // Paid / Pass badge
             if (isMonetized || passRequired)
               Positioned(
                 top: 0, right: 0,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: const Color(0x1A007AFF),
+                    color: c.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0x40007AFF)),
+                    border: Border.all(color: c.primary.withOpacity(0.25)),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(isMonetized ? Icons.workspace_premium : Icons.lock, size: 11, color: AppColors.primary),
+                    Icon(isMonetized ? Icons.workspace_premium : Icons.lock, size: 11, color: c.primary),
                     const SizedBox(width: 4),
                     Text(isMonetized ? 'Paid' : 'Pass Required',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.primary)),
+                        style: TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.primary)),
                   ]),
                 ),
               ),
@@ -366,18 +353,21 @@ class _Badge extends StatelessWidget {
   const _Badge({required this.icon, required this.label});
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 13, color: AppColors.primary),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.primary)),
-        ]),
-      );
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: c.primary.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 13, color: c.primary),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.primary)),
+      ]),
+    );
+  }
 }
 
 class _ExploreBanner extends StatelessWidget {
@@ -385,25 +375,28 @@ class _ExploreBanner extends StatelessWidget {
   const _ExploreBanner({required this.onTap});
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 20),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.07),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: AppColors.primary.withOpacity(0.188)),
-          ),
-          child: Row(children: [
-            const Icon(Icons.explore, size: 18, color: AppColors.primary),
-            const SizedBox(width: 8),
-            const Expanded(
-              child: Text('Explore more communities',
-                  style: TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.primary)),
-            ),
-            const Icon(Icons.chevron_right, size: 20, color: AppColors.primary),
-          ]),
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 16, 16, 20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: c.primary.withOpacity(0.07),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: c.primary.withOpacity(0.188)),
         ),
-      );
+        child: Row(children: [
+          Icon(Icons.explore, size: 18, color: c.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text('Explore more communities',
+                style: TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.primary)),
+          ),
+          Icon(Icons.chevron_right, size: 20, color: c.primary),
+        ]),
+      ),
+    );
+  }
 }

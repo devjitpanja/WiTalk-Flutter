@@ -6,7 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
 import '../../providers/auth_provider.dart';
@@ -441,7 +441,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
   void _showProfilePreview(BuildContext context, Map<String, dynamic> user) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.bottomSheetBg,
+      backgroundColor: context.colors.bottomSheetBg,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       isScrollControlled: true,
@@ -489,7 +489,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
     final filter = ref.read(nearbyFilterProvider);
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.bottomSheetBg,
+      backgroundColor: context.colors.bottomSheetBg,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       isScrollControlled: true,
@@ -509,18 +509,19 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     if (_loading) {
       return ListView.builder(
         physics: const NeverScrollableScrollPhysics(),
         itemCount: 3,
         itemBuilder: (_, i) => Shimmer.fromColors(
-          baseColor: AppColors.surface,
-          highlightColor: AppColors.border,
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
           child: Container(
               margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               height: 160,
               decoration: BoxDecoration(
-                  color: AppColors.surface,
+                  color: c.cardBackground,
                   borderRadius: BorderRadius.circular(14))),
         ),
       );
@@ -531,22 +532,14 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.location_off,
-                size: 64, color: AppColors.textTertiary),
+            Icon(Icons.location_off, size: 64, color: c.textTertiary),
             const SizedBox(height: 16),
-            const Text('Location Permission Required',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.text),
+            Text('Location Permission Required',
+                style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text),
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            const Text('Enable location to discover people near you.',
-                style: TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Outfit',
-                    color: AppColors.textTertiary),
+            Text('Enable location to discover people near you.',
+                style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary),
                 textAlign: TextAlign.center),
             const SizedBox(height: 20),
             ElevatedButton(
@@ -556,14 +549,10 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
                 _fetchNearbyUsers();
               },
               style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12))),
-              child: const Text('Open Settings',
-                  style: TextStyle(
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white)),
+                  backgroundColor: c.primary,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+              child: Text('Open Settings',
+                  style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: Colors.white)),
             ),
           ]),
         ),
@@ -573,37 +562,29 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
     final grp = _groups;
     if (grp == null || grp.isEmpty) {
       return RefreshIndicator(
-        color: AppColors.primary,
-        backgroundColor: AppColors.surface,
+        color: c.primary,
+        backgroundColor: c.surface,
         onRefresh: _refresh,
         child: ListView(
             physics: const AlwaysScrollableScrollPhysics(),
             children: [
               SizedBox(height: MediaQuery.of(context).size.height * 0.3),
-              const Column(children: [
-                Icon(Icons.people_outline,
-                    size: 64, color: AppColors.textTertiary),
-                SizedBox(height: 16),
+              Column(children: [
+                Icon(Icons.people_outline, size: 64, color: c.textTertiary),
+                const SizedBox(height: 16),
                 Text('No one nearby right now',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.text)),
-                SizedBox(height: 8),
+                    style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
+                const SizedBox(height: 8),
                 Text('Try expanding your search radius',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontFamily: 'Outfit',
-                        color: AppColors.textTertiary)),
+                    style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary)),
               ]),
             ]),
       );
     }
 
     return RefreshIndicator(
-      color: AppColors.primary,
-      backgroundColor: AppColors.surface,
+      color: c.primary,
+      backgroundColor: c.surface,
       onRefresh: _refresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -611,28 +592,26 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
         children: [
               // Stale cache banner
               if (_isLocationCached && _cacheAgeMinutes >= 5)
-                Container(
-                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Row(children: [
-                    const Icon(Icons.access_time,
-                        size: 14, color: AppColors.textTertiary),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Showing results from $_cacheAgeMinutes min ago · Updating…',
-                      style: const TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'Outfit',
-                          color: AppColors.textTertiary),
+                Builder(builder: (ctx) {
+                  final c = ctx.colors;
+                  return Container(
+                    margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: c.cardBackground,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: c.border),
                     ),
-                  ]),
-                ),
+                    child: Row(children: [
+                      Icon(Icons.access_time, size: 14, color: c.textTertiary),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Showing results from $_cacheAgeMinutes min ago · Updating…',
+                        style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary),
+                      ),
+                    ]),
+                  );
+                }),
               ..._buildSection(context, grp.catchUp,     icon: Icons.cake,          color: const Color(0xFFF472B6), title: 'Birthdays Today',             isBirthday: true, liveDot: false),
               ..._buildSection(context, grp.onlineNearby, icon: Icons.wifi_tethering, color: const Color(0xFF22C55E), title: 'Online Nearby',               isBirthday: false, liveDot: true),
               ..._buildSection(context, grp.bestMatches,  icon: Icons.stars,          color: const Color(0xFFFF6B6B), title: 'Best Matches',                isBirthday: false, liveDot: false),
@@ -697,17 +676,19 @@ class _SectionBlock extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 16,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w700,
-                      color: AppColors.text)),
+                      color: context.colors.text)),
             ),
             if (liveDot) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                    color: const Color(0xFF052e16).withValues(alpha: 0.5),
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? const Color(0x80052E16)
+                        : const Color(0xFFDCFCE7),
                     borderRadius: BorderRadius.circular(8)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Container(
@@ -716,7 +697,7 @@ class _SectionBlock extends StatelessWidget {
                       decoration: const BoxDecoration(
                           color: Color(0xFF22C55E), shape: BoxShape.circle)),
                   const SizedBox(width: 4),
-                  const Text('LIVE',
+                  Text('LIVE',
                       style: TextStyle(
                           fontSize: 9,
                           fontFamily: 'Outfit',
@@ -733,18 +714,18 @@ class _SectionBlock extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: context.colors.primary.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Text('View All',
+                    Text('View All',
                         style: TextStyle(
                             fontSize: 12,
                             fontFamily: 'Outfit',
                             fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
+                            color: context.colors.primary)),
                     const SizedBox(width: 2),
-                    const Icon(Icons.chevron_right, size: 14, color: AppColors.primary),
+                    Icon(Icons.chevron_right, size: 14, color: context.colors.primary),
                   ]),
                 ),
               )
@@ -752,15 +733,17 @@ class _SectionBlock extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0x1A1C1C1E),
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? const Color(0xFF1A1F2E)
+                      : const Color(0xFFF0F0F0),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text('$count',
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12,
                         fontFamily: 'Outfit',
                         fontWeight: FontWeight.w600,
-                        color: AppColors.textTertiary)),
+                        color: context.colors.textTertiary)),
               ),
           ]),
         ),
@@ -830,14 +813,15 @@ class NearbyUserCard extends StatelessWidget {
         gender == 'male' ? const Color(0xFF3591F9) : const Color(0xFFF472B6);
     final isActiveToday = user['_isActiveToday'] == true;
 
+    final c = context.colors;
     return GestureDetector(
       onTap: () => onTap(user),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF111827),
+          color: c.cardBackground,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isBirthday ? bdColor : const Color(0xFF1F2937),
+            color: isBirthday ? bdColor : c.border,
             width: isBirthday ? 1.5 : 1,
           ),
         ),
@@ -872,7 +856,7 @@ class NearbyUserCard extends StatelessWidget {
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(vertical: 4),
                           alignment: Alignment.center,
-                          child: const Text('🎂 Birthday Today!',
+                          child: Text('🎂 Birthday Today!',
                               style: TextStyle(
                                   fontSize: 11,
                                   fontFamily: 'Outfit',
@@ -887,15 +871,15 @@ class NearbyUserCard extends StatelessWidget {
                           children: [
                             CircleAvatar(
                               radius: 36,
-                              backgroundColor: AppColors.border,
+                              backgroundColor: c.border,
                               backgroundImage: pic != null
                                   ? CachedNetworkImageProvider(pic)
                                   : null,
                               child: pic == null
                                   ? Text(
                                       name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                      style: const TextStyle(
-                                          color: AppColors.text,
+                                      style: TextStyle(
+                                          color: c.text,
                                           fontFamily: 'Outfit',
                                           fontWeight: FontWeight.w600))
                                   : null,
@@ -910,9 +894,7 @@ class NearbyUserCard extends StatelessWidget {
                                       decoration: BoxDecoration(
                                           color: const Color(0xFF22C55E),
                                           shape: BoxShape.circle,
-                                          border: Border.all(
-                                              color: const Color(0xFF111827),
-                                              width: 2))))
+                                          border: Border.all(color: c.cardBackground, width: 2))))
                             else if (isActiveToday)
                               Positioned(
                                   bottom: 2,
@@ -923,9 +905,7 @@ class NearbyUserCard extends StatelessWidget {
                                       decoration: BoxDecoration(
                                           color: const Color(0xFFF59E0B),
                                           shape: BoxShape.circle,
-                                          border: Border.all(
-                                              color: const Color(0xFF111827),
-                                              width: 2)))),
+                                          border: Border.all(color: c.cardBackground, width: 2)))),
                           ],
                         ),
                       ),
@@ -945,11 +925,11 @@ class NearbyUserCard extends StatelessWidget {
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             textAlign: TextAlign.center,
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                                 fontSize: 14,
                                                 fontFamily: 'Outfit',
                                                 fontWeight: FontWeight.w700,
-                                                color: AppColors.text))),
+                                                color: c.text))),
                                     if (age != null &&
                                         gender != null &&
                                         (gender == 'male' || gender == 'female')) ...[
@@ -965,10 +945,10 @@ class NearbyUserCard extends StatelessWidget {
                                       maxLines: 2,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                           fontSize: 12,
                                           fontFamily: 'Outfit',
-                                          color: AppColors.textTertiary,
+                                          color: c.textTertiary,
                                           height: 1.4)),
                                 ),
                               // Distance · city
@@ -983,10 +963,10 @@ class NearbyUserCard extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       textAlign: TextAlign.center,
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                           fontSize: 11,
                                           fontFamily: 'Outfit',
-                                          color: AppColors.textTertiary)),
+                                          color: c.textTertiary)),
                                 ),
                               // Interest tags + "+N"
                               if (!isBirthday && displayTags.isNotEmpty) ...[
@@ -1006,8 +986,8 @@ class NearbyUserCard extends StatelessWidget {
                                               horizontal: 7, vertical: 3),
                                           decoration: BoxDecoration(
                                             color: isShared
-                                                ? const Color(0xFF042F2E)
-                                                : const Color(0xFF1E293B),
+                                                ? (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF042F2E) : const Color(0xFFE0F2F1))
+                                                : (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF1E293B) : const Color(0xFFF3F4F6)),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Text(_shortenLabel(tag),
@@ -1018,18 +998,18 @@ class NearbyUserCard extends StatelessWidget {
                                                   fontFamily: 'Outfit',
                                                   fontWeight: FontWeight.w500,
                                                   color: isShared
-                                                      ? const Color(0xFF4ECDC4)
-                                                      : AppColors.textTertiary)),
+                                                      ? (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF4ECDC4) : const Color(0xFF00897B))
+                                                      : c.textTertiary)),
                                         ),
                                       );
                                     }),
                                     if (extraCount > 0)
                                       Text('+$extraCount',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontSize: 10,
                                               fontFamily: 'Outfit',
                                               fontWeight: FontWeight.w500,
-                                              color: AppColors.textTertiary)),
+                                              color: c.textTertiary)),
                                   ],
                                 ),
                               ],
@@ -1041,17 +1021,16 @@ class NearbyUserCard extends StatelessWidget {
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(vertical: 7),
                                   decoration: BoxDecoration(
-                                    border: Border.all(
-                                        color: AppColors.primary, width: 1.5),
+                                    border: Border.all(color: c.primary, width: 1.5),
                                     borderRadius: BorderRadius.circular(20),
                                   ),
-                                  child: const Text('Say Hi',
+                                  child: Text('Say Hi',
                                       textAlign: TextAlign.center,
                                       style: TextStyle(
                                           fontSize: 13,
                                           fontFamily: 'Outfit',
                                           fontWeight: FontWeight.w600,
-                                          color: AppColors.primary)),
+                                          color: c.primary)),
                                 ),
                               ),
                             ],
@@ -1069,9 +1048,9 @@ class NearbyUserCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: pct >= 70
-                              ? const Color(0x60065F46)
-                              : const Color(0x5092400E),
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? (pct >= 70 ? const Color(0x60065F46) : const Color(0x5092400E))
+                              : (pct >= 70 ? const Color(0xFFDCFCE7) : const Color(0xFFFEF9C3)),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text('${pct.round()}%',
@@ -1079,9 +1058,9 @@ class NearbyUserCard extends StatelessWidget {
                                 fontSize: 9,
                                 fontFamily: 'Outfit',
                                 fontWeight: FontWeight.w700,
-                                color: pct >= 70
-                                    ? const Color(0xFF4ADE80)
-                                    : const Color(0xFFFCD34D))),
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? (pct >= 70 ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D))
+                                    : (pct >= 70 ? const Color(0xFF16A34A) : const Color(0xFFD97706)))),
                       ),
                     ),
                 ],
@@ -1125,6 +1104,7 @@ class _WideCardBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Column(
       children: [
         if (isBirthday)
@@ -1132,7 +1112,7 @@ class _WideCardBody extends StatelessWidget {
             color: bdColor,
             padding: const EdgeInsets.symmetric(vertical: 5),
             alignment: Alignment.center,
-            child: const Text('🎂 Birthday Today!',
+            child: Text('🎂 Birthday Today!',
                 style: TextStyle(
                     fontSize: 11,
                     fontFamily: 'Outfit',
@@ -1146,14 +1126,13 @@ class _WideCardBody extends StatelessWidget {
               Stack(children: [
                 CircleAvatar(
                     radius: 29,
-                    backgroundColor: AppColors.border,
+                    backgroundColor: c.border,
                     backgroundImage: pic != null
                         ? CachedNetworkImageProvider(pic!)
                         : null,
                     child: pic == null
                         ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: const TextStyle(
-                                color: AppColors.text, fontFamily: 'Outfit'))
+                            style: TextStyle(color: c.text, fontFamily: 'Outfit'))
                         : null),
                 if (isOnline)
                   Positioned(
@@ -1165,25 +1144,23 @@ class _WideCardBody extends StatelessWidget {
                           decoration: BoxDecoration(
                               color: const Color(0xFF22C55E),
                               shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: const Color(0xFF111827), width: 2)))),
+                              border: Border.all(color: c.cardBackground, width: 2)))),
               ]),
               const SizedBox(width: 12),
               Expanded(
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                    // Name + gender badge + match % inline
                     Row(children: [
                       Flexible(
                           child: Text(name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 14,
                                   fontFamily: 'Outfit',
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.text))),
+                                  color: c.text))),
                       if (age != null &&
                           gender != null &&
                           (gender == 'male' || gender == 'female')) ...[
@@ -1212,7 +1189,6 @@ class _WideCardBody extends StatelessWidget {
                         ),
                       ],
                     ]),
-                    // Distance · city
                     Text(
                         [dist, city]
                             .where((e) => e != null && e!.isNotEmpty)
@@ -1220,32 +1196,22 @@ class _WideCardBody extends StatelessWidget {
                             .join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontSize: 11,
-                            fontFamily: 'Outfit',
-                            color: AppColors.textTertiary)),
-                    // Bio
+                        style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.textTertiary)),
                     if (bio != null && bio!.isNotEmpty)
                       Text(bio!,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              fontSize: 12,
-                              fontFamily: 'Outfit',
-                              color: AppColors.textTertiary)),
-                    // First tag + "+N" (like RN wide card)
+                          style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary)),
                     if (interests.isNotEmpty) ...[
                       const SizedBox(height: 5),
                       Row(children: [
                         Container(
                           constraints: const BoxConstraints(maxWidth: 120),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                           decoration: BoxDecoration(
-                            color: ci.any((c) => c.toLowerCase() ==
-                                    interests[0].toLowerCase())
-                                ? const Color(0xFF042F2E)
-                                : const Color(0xFF1E293B),
+                            color: ci.any((ci_) => ci_.toLowerCase() == interests[0].toLowerCase())
+                                ? const Color(0xFF4ECDC4).withOpacity(0.15)
+                                : c.border.withOpacity(0.4),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(_shortenLabel(interests[0]),
@@ -1255,20 +1221,14 @@ class _WideCardBody extends StatelessWidget {
                                   fontSize: 10,
                                   fontFamily: 'Outfit',
                                   fontWeight: FontWeight.w500,
-                                  color: ci.any((c) =>
-                                          c.toLowerCase() ==
-                                          interests[0].toLowerCase())
-                                      ? const Color(0xFF4ECDC4)
-                                      : AppColors.textTertiary)),
+                                  color: ci.any((ci_) => ci_.toLowerCase() == interests[0].toLowerCase())
+                                      ? (Theme.of(context).brightness == Brightness.dark ? const Color(0xFF4ECDC4) : const Color(0xFF00897B))
+                                      : c.textTertiary)),
                         ),
                         if (ci.length > 1) ...[
                           const SizedBox(width: 4),
                           Text('+${ci.length - 1}',
-                              style: const TextStyle(
-                                  fontSize: 10,
-                                  fontFamily: 'Outfit',
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textTertiary)),
+                              style: TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.textTertiary)),
                         ],
                       ]),
                     ],
@@ -1280,9 +1240,7 @@ class _WideCardBody extends StatelessWidget {
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
-                    border: Border.all(
-                        color: isBirthday ? bdColor : AppColors.primary,
-                        width: 1.5),
+                    border: Border.all(color: isBirthday ? bdColor : c.primary, width: 1.5),
                     borderRadius: BorderRadius.circular(22),
                     color: isBirthday ? bdColor : Colors.transparent,
                   ),
@@ -1291,8 +1249,7 @@ class _WideCardBody extends StatelessWidget {
                           fontSize: 13,
                           fontFamily: 'Outfit',
                           fontWeight: FontWeight.w600,
-                          color:
-                              isBirthday ? Colors.white : AppColors.primary)),
+                          color: isBirthday ? Colors.white : c.primary)),
                 ),
               ),
             ],
@@ -1310,23 +1267,19 @@ class _GenderBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMale = gender == 'male';
-    final color =
-        isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
-    final bgColor =
-        isMale ? const Color(0xFF023781) : const Color(0xFF590244);
+    final color = isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
+    final bg = isMale
+        ? (isDark ? const Color(0xFF023781) : const Color(0xFFD6EBFF))
+        : (isDark ? const Color(0xFF590244) : const Color(0xFFFFE5F7));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-      decoration:
-          BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(4)),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(isMale ? Icons.male : Icons.female, size: 10, color: color),
         Text('$age',
-            style: TextStyle(
-                fontSize: 9,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w600,
-                color: color)),
+            style: TextStyle(fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: color)),
       ]),
     );
   }
@@ -1382,9 +1335,12 @@ class _ProfilePreviewSheet extends StatelessWidget {
     final myPurpose = me != null
         ? _parseArr(me!['purpose']).map((e) => e.toString().toLowerCase()).toSet()
         : <String>{};
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isMale = gender == 'male';
     final genderColor = isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
-    final genderBg = isMale ? const Color(0xFF023781) : const Color(0xFF590244);
+    final genderBg = isMale
+        ? (isDark ? const Color(0xFF023781) : const Color(0xFFD6EBFF))
+        : (isDark ? const Color(0xFF590244) : const Color(0xFFFFE5F7));
 
     final locationParts = [
       if (dist.isNotEmpty) dist,
@@ -1392,6 +1348,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
       if (country != null && country.isNotEmpty) country,
     ];
 
+    final c = context.colors;
     final maxHeight = MediaQuery.of(context).size.height * 0.85;
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
@@ -1413,7 +1370,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 20),
                 decoration: BoxDecoration(
-                  color: AppColors.border,
+                  color: c.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -1427,16 +1384,16 @@ class _ProfilePreviewSheet extends StatelessWidget {
                   children: [
                     CircleAvatar(
                       radius: 46,
-                      backgroundColor: AppColors.border,
+                      backgroundColor: c.border,
                       backgroundImage: pic != null
                           ? CachedNetworkImageProvider(pic)
                           : null,
                       child: pic == null
                           ? Text(
                               name.isNotEmpty ? name[0].toUpperCase() : '?',
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 28,
-                                  color: AppColors.text,
+                                  color: c.text,
                                   fontFamily: 'Outfit',
                                   fontWeight: FontWeight.w600))
                           : null,
@@ -1451,9 +1408,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                               decoration: BoxDecoration(
                                   color: const Color(0xFF22C55E),
                                   shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: AppColors.bottomSheetBg,
-                                      width: 2)))),
+                                  border: Border.all(color: c.bottomSheetBg, width: 2)))),
                   ],
                 ),
                 const SizedBox(width: 16),
@@ -1467,11 +1422,11 @@ class _ProfilePreviewSheet extends StatelessWidget {
                           child: Text(name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
+                              style: TextStyle(
                                   fontSize: 20,
                                   fontFamily: 'Outfit',
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.text)),
+                                  color: c.text)),
                         ),
                         if (age != null && gender != null && (gender == 'male' || gender == 'female')) ...[
                           const SizedBox(width: 6),
@@ -1491,10 +1446,10 @@ class _ProfilePreviewSheet extends StatelessWidget {
                         Text(bio,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 13,
                                 fontFamily: 'Outfit',
-                                color: AppColors.textTertiary,
+                                color: c.textTertiary,
                                 height: 1.4)),
                       ],
                       if (locationParts.isNotEmpty) ...[
@@ -1502,10 +1457,10 @@ class _ProfilePreviewSheet extends StatelessWidget {
                         Text(locationParts.join(' · '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
+                            style: TextStyle(
                                 fontSize: 12,
                                 fontFamily: 'Outfit',
-                                color: AppColors.textTertiary)),
+                                color: c.textTertiary)),
                       ],
                     ],
                   ),
@@ -1516,12 +1471,12 @@ class _ProfilePreviewSheet extends StatelessWidget {
             // Purpose section
             if (purpose.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text('Purpose',
+              Text('Purpose',
                   style: TextStyle(
                       fontSize: 15,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w600,
-                      color: AppColors.text)),
+                      color: c.text)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -1532,16 +1487,16 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: isMatch
-                          ? AppColors.primary.withValues(alpha: 0.12)
-                          : AppColors.surface,
+                          ? c.primary.withValues(alpha: 0.12)
+                          : c.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                          color: isMatch ? AppColors.primary : AppColors.border,
+                          color: isMatch ? c.primary : c.border,
                           width: 1.5),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (isMatch) ...[
-                        const Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                        Icon(Icons.favorite, size: 12, color: c.primary),
                         const SizedBox(width: 4),
                       ],
                       Text(p,
@@ -1549,7 +1504,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                               fontSize: 13,
                               fontFamily: 'Outfit',
                               fontWeight: FontWeight.w500,
-                              color: isMatch ? AppColors.primary : AppColors.textTertiary)),
+                              color: isMatch ? c.primary : c.textTertiary)),
                     ]),
                   );
                 }).toList(),
@@ -1558,8 +1513,8 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${purpose.where((p) => myPurpose.contains(p.toLowerCase())).length} matching purpose',
-                  style: const TextStyle(
-                      fontSize: 12, fontFamily: 'Outfit', color: AppColors.primary),
+                  style: TextStyle(
+                      fontSize: 12, fontFamily: 'Outfit', color: c.primary),
                 ),
               ],
             ],
@@ -1567,12 +1522,12 @@ class _ProfilePreviewSheet extends StatelessWidget {
             // Interests section
             if (interests.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text('Interests',
+              Text('Interests',
                   style: TextStyle(
                       fontSize: 15,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w600,
-                      color: AppColors.text)),
+                      color: c.text)),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
@@ -1583,16 +1538,16 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
                       color: isMatch
-                          ? AppColors.primary.withValues(alpha: 0.12)
-                          : AppColors.surface,
+                          ? c.primary.withValues(alpha: 0.12)
+                          : c.surface,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                          color: isMatch ? AppColors.primary : AppColors.border,
+                          color: isMatch ? c.primary : c.border,
                           width: 1.5),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       if (isMatch) ...[
-                        const Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                        Icon(Icons.favorite, size: 12, color: c.primary),
                         const SizedBox(width: 4),
                       ],
                       Text(tag,
@@ -1600,7 +1555,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                               fontSize: 13,
                               fontFamily: 'Outfit',
                               fontWeight: FontWeight.w500,
-                              color: isMatch ? AppColors.primary : AppColors.textTertiary)),
+                              color: isMatch ? c.primary : c.textTertiary)),
                     ]),
                   );
                 }).toList(),
@@ -1609,8 +1564,8 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${interests.where((t) => myInterests.contains(t.toLowerCase())).length} matching interest${interests.where((t) => myInterests.contains(t.toLowerCase())).length > 1 ? 's' : ''}',
-                  style: const TextStyle(
-                      fontSize: 12, fontFamily: 'Outfit', color: AppColors.primary),
+                  style: TextStyle(
+                      fontSize: 12, fontFamily: 'Outfit', color: c.primary),
                 ),
               ],
             ],
@@ -1622,14 +1577,14 @@ class _ProfilePreviewSheet extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onOpenProfile,
                 icon: const Icon(Icons.person, color: Colors.white, size: 20),
-                label: const Text('Open Full Profile',
+                label: Text('Open Full Profile',
                     style: TextStyle(
                         fontSize: 15,
                         fontFamily: 'Outfit',
                         fontWeight: FontWeight.w600,
                         color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: c.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -1659,6 +1614,7 @@ class _FilterSheetState extends State<_FilterSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Padding(
       padding: EdgeInsets.only(
         left: 16,
@@ -1670,21 +1626,21 @@ class _FilterSheetState extends State<_FilterSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Center(
+            Center(
               child: Text('Filter People',
                   style: TextStyle(
                       fontSize: 18,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w700,
-                      color: AppColors.text)),
+                      color: c.text)),
             ),
             const SizedBox(height: 24),
-            const Text('Gender',
+            Text('Gender',
                 style: TextStyle(
                     fontSize: 14,
                     fontFamily: 'Outfit',
                     fontWeight: FontWeight.w500,
-                    color: AppColors.text)),
+                    color: c.text)),
             const SizedBox(height: 12),
             Row(
                 children: ['all', 'male', 'female'].map((g) {
@@ -1698,12 +1654,10 @@ class _FilterSheetState extends State<_FilterSheet> {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       decoration: BoxDecoration(
                         color:
-                            isActive ? AppColors.primary : AppColors.surface,
+                            isActive ? c.primary : c.surface,
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                            color: isActive
-                                ? AppColors.primary
-                                : AppColors.border,
+                            color: isActive ? c.primary : c.border,
                             width: 1.5),
                       ),
                       child: Text(
@@ -1717,9 +1671,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                               fontSize: 14,
                               fontFamily: 'Outfit',
                               fontWeight: FontWeight.w500,
-                              color: isActive
-                                  ? Colors.white
-                                  : AppColors.text)),
+                              color: isActive ? Colors.white : c.text)),
                     ),
                   ),
                 ),
@@ -1727,42 +1679,42 @@ class _FilterSheetState extends State<_FilterSheet> {
             }).toList()),
             const SizedBox(height: 24),
             Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              const Text('Age Range',
+              Text('Age Range',
                   style: TextStyle(
                       fontSize: 14,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w500,
-                      color: AppColors.text)),
+                      color: c.text)),
               Text(
                   '${_ageRange.start.round()} – ${_ageRange.end.round()}',
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontSize: 16,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary)),
+                      color: c.primary)),
             ]),
             RangeSlider(
               values: _ageRange,
               min: 18,
               max: 60,
               divisions: 42,
-              activeColor: AppColors.primary,
-              inactiveColor: AppColors.border,
+              activeColor: c.primary,
+              inactiveColor: c.border,
               onChanged: (v) => setState(() => _ageRange = v),
             ),
             Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
+                children: [
                   Text('18',
                       style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'Outfit',
-                          color: AppColors.textTertiary)),
+                          color: c.textTertiary)),
                   Text('60',
                       style: TextStyle(
                           fontSize: 11,
                           fontFamily: 'Outfit',
-                          color: AppColors.textTertiary)),
+                          color: c.textTertiary)),
                 ]),
             const SizedBox(height: 16),
             SizedBox(
@@ -1773,12 +1725,12 @@ class _FilterSheetState extends State<_FilterSheet> {
                     _ageRange.start.round(),
                     _ageRange.end.round()),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: c.primary,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                 ),
-                child: const Text('Apply',
+                child: Text('Apply',
                     style: TextStyle(
                         fontSize: 15,
                         fontFamily: 'Outfit',

@@ -3,6 +3,17 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Prevent legacy plugins from introducing a second KGP version.
+    // share_plus and similar plugins still declare KGP in their buildscript;
+    // forcing a single version here avoids the multi-KGP compile error on AGP 9.
+    configurations.all {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin") {
+                useVersion("2.3.20")
+            }
+        }
+    }
 }
 
 val newBuildDir: Directory =

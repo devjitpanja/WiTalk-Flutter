@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/location_service.dart';
@@ -73,7 +73,6 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
         setState(() { _peopleLoading = false; _nearbyCommLoading = false; });
         return;
       }
-      // Cache-first: serve immediately, background refresh handled inside getLocation
       final loc = await locationService.getLocation(forceRefresh: force);
       if (!mounted) return;
       await Future.wait([_fetchNearbyPeople(loc), _fetchNearbyCommunities(loc)]);
@@ -144,12 +143,13 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final topAsync = ref.watch(_topCommunitiesProvider);
     final recAsync = ref.watch(_recommendedCommunitiesProvider);
 
     return RefreshIndicator(
-      color: AppColors.primary,
-      backgroundColor: AppColors.surface,
+      color: c.primary,
+      backgroundColor: c.surface,
       onRefresh: _onRefresh,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -264,7 +264,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                 margin: const EdgeInsets.fromLTRB(16, 24, 16, 0),
                 padding: const EdgeInsets.fromLTRB(0, 16, 0, 16),
                 decoration: BoxDecoration(
-                  color: const Color(0x0A0751DF),
+                  color: c.accent.withOpacity(0.04),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Column(
@@ -275,24 +275,24 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.person_pin, color: Color(0xFF0751DF), size: 20),
+                          Icon(Icons.person_pin, color: c.accent, size: 20),
                           const SizedBox(width: 8),
-                          const Expanded(
+                          Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text('People near you',
-                                    style: TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text)),
-                                SizedBox(height: 2),
+                                    style: TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
+                                const SizedBox(height: 2),
                                 Text('Connect with like-minded people around you',
-                                    style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                                    style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary)),
                               ],
                             ),
                           ),
                           GestureDetector(
                             onTap: () => widget.onSwitchTab(2),
-                            child: const Text('See all',
-                                style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.primary)),
+                            child: Text('See all',
+                                style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.primary)),
                           ),
                         ],
                       ),
@@ -300,10 +300,10 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                     if (_peopleLoading)
                       _HorizSkeleton(count: 5, itemWidth: 72, itemHeight: 96, paddingH: 12)
                     else if (_nearbyPeople.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                         child: Text('No nearby people found',
-                            style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                            style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: c.textTertiary)),
                       )
                     else
                       SizedBox(
@@ -329,11 +329,11 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                                       children: [
                                         CircleAvatar(
                                           radius: 32,
-                                          backgroundColor: AppColors.border,
+                                          backgroundColor: c.border,
                                           backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
                                           child: pic == null
                                               ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                                                  style: const TextStyle(color: AppColors.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600))
+                                                  style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600))
                                               : null,
                                         ),
                                         if (isOnline)
@@ -344,7 +344,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFF34C759),
                                                 shape: BoxShape.circle,
-                                                border: Border.all(color: AppColors.background, width: 2),
+                                                border: Border.all(color: c.background, width: 2),
                                               ),
                                             ),
                                           ),
@@ -352,15 +352,15 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.text)),
+                                        style: TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.text)),
                                     if (dist != null)
                                       Row(
                                         mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
-                                          const Icon(Icons.location_on, size: 11, color: AppColors.textTertiary),
+                                          Icon(Icons.location_on, size: 11, color: c.textTertiary),
                                           const SizedBox(width: 2),
                                           Text(_formatDist(dist),
-                                              style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                                              style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.textTertiary)),
                                         ],
                                       ),
                                   ],
@@ -408,6 +408,7 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(top: 24),
       child: Column(
@@ -425,17 +426,17 @@ class _Section extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title,
-                          style: const TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text)),
+                          style: TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
                       const SizedBox(height: 2),
                       Text(subtitle,
-                          style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                          style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textTertiary)),
                     ],
                   ),
                 ),
                 GestureDetector(
                   onTap: onSeeAll,
-                  child: const Text('See all',
-                      style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.primary)),
+                  child: Text('See all',
+                      style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.primary)),
                 ),
               ],
             ),
@@ -453,7 +454,7 @@ class _EmptyText extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-        child: Text(text, style: const TextStyle(fontSize: 13, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+        child: Text(text, style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: context.colors.textTertiary)),
       );
 }
 
@@ -468,6 +469,7 @@ class _CommunityIconCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final pic = group['picture'] as String?;
     final name = (group['name'] ?? '') as String;
     final count = group['member_count'];
@@ -482,20 +484,20 @@ class _CommunityIconCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(14),
               child: pic != null
                   ? CachedNetworkImage(imageUrl: pic, width: 70, height: 70, fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(width: 70, height: 70, color: AppColors.surface),
+                      placeholder: (_, __) => Container(width: 70, height: 70, color: c.cardBackground),
                       errorWidget: (_, __, ___) => _FallbackGroupIcon(size: 70))
                   : _FallbackGroupIcon(size: 70),
             ),
             const SizedBox(height: 6),
             Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.text)),
+                style: TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.text)),
             if (count != null)
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.group, size: 11, color: AppColors.textTertiary),
+                  Icon(Icons.group, size: 11, color: c.textTertiary),
                   const SizedBox(width: 3),
-                  Text(formatCount(count), style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                  Text(formatCount(count), style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.textTertiary)),
                 ],
               ),
           ],
@@ -526,6 +528,7 @@ class _CommunityWideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final pic = group['picture'] as String?;
     final name = (group['name'] ?? '') as String;
     final desc = group['description'] as String?;
@@ -539,9 +542,9 @@ class _CommunityWideCard extends StatelessWidget {
         width: width,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: c.cardBackground,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isNearby ? const Color(0x300751DF) : AppColors.border),
+          border: Border.all(color: isNearby ? c.accent.withOpacity(0.18) : c.border),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -550,7 +553,7 @@ class _CommunityWideCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               child: pic != null
                   ? CachedNetworkImage(imageUrl: pic, width: 64, height: 64, fit: BoxFit.cover,
-                      placeholder: (_, __) => Container(width: 64, height: 64, color: AppColors.card),
+                      placeholder: (_, __) => Container(width: 64, height: 64, color: c.border),
                       errorWidget: (_, __, ___) => _FallbackGroupIcon(size: 64))
                   : _FallbackGroupIcon(size: 64),
             ),
@@ -560,30 +563,30 @@ class _CommunityWideCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text)),
+                      style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
                   if (desc != null && desc.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary, height: 1.4)),
+                        style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.textTertiary, height: 1.4)),
                   ],
                   const SizedBox(height: 4),
                   Wrap(
                     spacing: 3,
                     runSpacing: 0,
                     children: [
-                      const Icon(Icons.group, size: 11, color: AppColors.textTertiary),
+                      Icon(Icons.group, size: 11, color: c.textTertiary),
                       Text('${formatCount(group['member_count'])} members',
-                          style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                          style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.textTertiary)),
                       if (city != null) ...[
-                        const Text('·', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
-                        Text(city, style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                        Text('·', style: TextStyle(fontSize: 11, color: c.textTertiary)),
+                        Text(city, style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.textTertiary)),
                       ],
                       if (distKm != null) ...[
-                        const Text('·', style: TextStyle(fontSize: 11, color: AppColors.textTertiary)),
-                        const Icon(Icons.location_on, size: 11, color: Color(0xFF0751DF)),
+                        Text('·', style: TextStyle(fontSize: 11, color: c.textTertiary)),
+                        Icon(Icons.location_on, size: 11, color: c.accent),
                         Text(
                           distKm! < 1 ? '${(distKm! * 1000).round()}m away' : '${distKm!.toStringAsFixed(1)} km away',
-                          style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: Color(0xFF0751DF)),
+                          style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: c.accent),
                         ),
                       ],
                     ],
@@ -595,11 +598,11 @@ class _CommunityWideCard extends StatelessWidget {
                         margin: const EdgeInsets.only(right: 4),
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.094),
+                          color: c.primary.withOpacity(0.094),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Text('$tag', maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.primary)),
+                            style: TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.primary)),
                       )).toList(),
                     ),
                   ],
@@ -608,14 +611,14 @@ class _CommunityWideCard extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: const Color(0x120751DF),
+                        color: c.accent.withOpacity(0.07),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.radar, size: 10, color: Color(0xFF0751DF)),
+                        Icon(Icons.radar, size: 10, color: c.accent),
                         const SizedBox(width: 3),
                         Text('Within ${group['location_radius_km']} km',
-                            style: const TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: Color(0xFF0751DF))),
+                            style: TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: c.accent)),
                       ]),
                     ),
                   ],
@@ -633,11 +636,14 @@ class _FallbackGroupIcon extends StatelessWidget {
   final double size;
   const _FallbackGroupIcon({required this.size});
   @override
-  Widget build(BuildContext context) => Container(
-        width: size, height: size,
-        color: AppColors.surface,
-        child: const Icon(Icons.group, color: AppColors.textTertiary),
-      );
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Container(
+      width: size, height: size,
+      color: c.cardBackground,
+      child: Icon(Icons.group, color: c.textTertiary),
+    );
+  }
 }
 
 // ─── Shimmer skeleton row ─────────────────────────────────────────────────────
@@ -657,6 +663,7 @@ class _HorizSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return SizedBox(
       height: itemHeight,
       child: ListView.separated(
@@ -666,13 +673,13 @@ class _HorizSkeleton extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemCount: count,
         itemBuilder: (_, __) => Shimmer.fromColors(
-          baseColor: AppColors.surface,
-          highlightColor: AppColors.border,
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
           child: Container(
             width: itemWidth,
             height: itemHeight,
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: c.cardBackground,
               borderRadius: BorderRadius.circular(14),
             ),
           ),
