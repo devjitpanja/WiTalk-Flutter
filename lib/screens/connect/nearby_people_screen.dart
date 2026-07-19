@@ -511,20 +511,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     if (_loading) {
-      return ListView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: 3,
-        itemBuilder: (_, i) => Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
-          child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              height: 160,
-              decoration: BoxDecoration(
-                  color: c.cardBackground,
-                  borderRadius: BorderRadius.circular(14))),
-        ),
-      );
+      return _NearbySkeletonList(c: c);
     }
 
     if (_permDenied) {
@@ -624,6 +611,134 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
                   )) : null),
         ],
       ),
+    );
+  }
+}
+
+// ─── Nearby skeleton ─────────────────────────────────────────────────────────
+
+class _NearbySkeletonList extends StatelessWidget {
+  final ThemeColors c;
+  const _NearbySkeletonList({required this.c});
+
+  Widget _skeletonSection(BuildContext context, int cardCount) {
+    final screenW = MediaQuery.of(context).size.width;
+    final cardWidth = (screenW - 36) / 2;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 16, 16, 10),
+          child: Row(children: [
+            Container(
+              width: 28, height: 28,
+              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(8)),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              width: 110, height: 16,
+              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6)),
+            ),
+          ]),
+        ),
+        // Cards row
+        SizedBox(
+          height: 260,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(left: 12, right: 16),
+            physics: const NeverScrollableScrollPhysics(),
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemCount: cardCount,
+            itemBuilder: (_, __) => SizedBox(
+              width: cardWidth,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: c.cardBackground,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: c.border),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 16),
+                    Container(width: 64, height: 64, decoration: BoxDecoration(color: c.border, shape: BoxShape.circle)),
+                    const SizedBox(height: 8),
+                    // Name
+                    FractionallySizedBox(
+                      widthFactor: 0.65,
+                      child: Container(height: 14, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                    ),
+                    const SizedBox(height: 7),
+                    // Bio line 1
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Container(height: 12, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                    ),
+                    const SizedBox(height: 3),
+                    // Bio line 2
+                    FractionallySizedBox(
+                      widthFactor: 0.7,
+                      child: Container(height: 12, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                    ),
+                    const SizedBox(height: 5),
+                    // Distance/meta
+                    FractionallySizedBox(
+                      widthFactor: 0.45,
+                      child: Container(height: 10, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                    ),
+                    const SizedBox(height: 8),
+                    // Two tag chips
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(width: 55, height: 22, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(8))),
+                        const SizedBox(width: 4),
+                        Container(width: 55, height: 22, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(8))),
+                      ],
+                    ),
+                    const Spacer(),
+                    // Say Hi button
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                      child: Container(
+                        height: 32, width: double.infinity,
+                        decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(20)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        Shimmer.fromColors(
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
+          child: _skeletonSection(context, 3),
+        ),
+        Shimmer.fromColors(
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
+          child: _skeletonSection(context, 3),
+        ),
+        Shimmer.fromColors(
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
+          child: _skeletonSection(context, 2),
+        ),
+      ],
     );
   }
 }

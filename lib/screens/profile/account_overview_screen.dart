@@ -791,6 +791,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
   Widget _buildListMenuItem(_MenuItem item, _T t) {
     final isSwitch = item.showSwitch;
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: isSwitch ? null : item.onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -822,7 +823,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
   // ─── Menu item builders ────────────────────────────────────────────────────
   List<_MenuItem> _accountMenuItems(_T t) => [
     _MenuItem(icon: Icons.manage_accounts, title: 'Account', description: 'Personal details, manage account', onTap: () => context.push('/account-settings')),
-    _MenuItem(icon: Icons.receipt_long, title: 'Purchases & Subscriptions', description: 'View your paid community purchases', onTap: () => context.push('/account-settings')),
+    _MenuItem(icon: Icons.receipt_long, title: 'Purchases & Subscriptions', description: 'View your paid community purchases', onTap: () => context.push('/purchases')),
   ];
 
   List<_MenuItem> _privacyMenuItems(_T t) => [

@@ -164,7 +164,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
               subtitle: 'Join what people love right now',
               onSeeAll: () => widget.onSwitchTab(1),
               child: topAsync.when(
-                loading: () => _HorizSkeleton(count: 5, itemWidth: 82, itemHeight: 128),
+                loading: () => const _TopCommunitiesSkeleton(),
                 error: (_, __) => const SizedBox.shrink(),
                 data: (list) => list.isEmpty
                     ? const _EmptyText('No communities found')
@@ -195,7 +195,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                 title: 'Matched for Your Interests',
                 subtitle: 'Communities picked just for you',
                 onSeeAll: () => widget.onSwitchTab(1),
-                child: _HorizSkeleton(count: 3, itemWidth: 240, itemHeight: 106),
+                child: const _WideCardSkeleton(count: 3, itemWidth: 240),
               ),
               error: (_, __) => const SizedBox.shrink(),
               data: (list) => list.isEmpty
@@ -235,7 +235,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                 subtitle: 'Communities you can join from your location',
                 onSeeAll: () {},
                 child: _nearbyCommLoading
-                    ? _HorizSkeleton(count: 3, itemWidth: 260, itemHeight: 130)
+                    ? const _WideCardSkeleton(count: 3, itemWidth: 260)
                     : SizedBox(
                         height: 130,
                         child: ListView.separated(
@@ -298,7 +298,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                       ),
                     ),
                     if (_peopleLoading)
-                      _HorizSkeleton(count: 5, itemWidth: 72, itemHeight: 96, paddingH: 12)
+                      const _PeopleSkeleton()
                     else if (_nearbyPeople.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -646,29 +646,68 @@ class _FallbackGroupIcon extends StatelessWidget {
   }
 }
 
-// ─── Shimmer skeleton row ─────────────────────────────────────────────────────
+// ─── Skeleton: Top Communities (icon cards 70×70 + text lines) ───────────────
 
-class _HorizSkeleton extends StatelessWidget {
-  final int count;
-  final double itemWidth;
-  final double itemHeight;
-  final double paddingH;
-
-  const _HorizSkeleton({
-    required this.count,
-    required this.itemWidth,
-    required this.itemHeight,
-    this.paddingH = 16,
-  });
+class _TopCommunitiesSkeleton extends StatelessWidget {
+  const _TopCommunitiesSkeleton();
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     return SizedBox(
-      height: itemHeight,
+      height: 128,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: paddingH),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        physics: const NeverScrollableScrollPhysics(),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemCount: 5,
+        itemBuilder: (_, __) => Shimmer.fromColors(
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
+          child: SizedBox(
+            width: 82,
+            child: Column(
+              children: [
+                Container(
+                  width: 70, height: 70,
+                  decoration: BoxDecoration(color: c.cardBackground, borderRadius: BorderRadius.circular(14)),
+                ),
+                const SizedBox(height: 6),
+                Container(
+                  width: 60, height: 11,
+                  decoration: BoxDecoration(color: c.cardBackground, borderRadius: BorderRadius.circular(4)),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: 40, height: 10,
+                  decoration: BoxDecoration(color: c.cardBackground, borderRadius: BorderRadius.circular(4)),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Skeleton: Wide community cards (recommended / city communities) ──────────
+
+class _WideCardSkeleton extends StatelessWidget {
+  final int count;
+  final double itemWidth;
+
+  const _WideCardSkeleton({required this.count, required this.itemWidth});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SizedBox(
+      height: 106,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         physics: const NeverScrollableScrollPhysics(),
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemCount: count,
@@ -677,10 +716,92 @@ class _HorizSkeleton extends StatelessWidget {
           highlightColor: c.border,
           child: Container(
             width: itemWidth,
-            height: itemHeight,
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: c.cardBackground,
               borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: c.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(12)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      FractionallySizedBox(
+                        widthFactor: 0.8,
+                        child: Container(height: 13, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(4))),
+                      ),
+                      const SizedBox(height: 6),
+                      Container(height: 11, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(4))),
+                      const SizedBox(height: 3),
+                      FractionallySizedBox(
+                        widthFactor: 0.7,
+                        child: Container(height: 11, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(4))),
+                      ),
+                      const SizedBox(height: 8),
+                      FractionallySizedBox(
+                        widthFactor: 0.6,
+                        child: Container(height: 10, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(4))),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Skeleton: People near you (circle avatar + name + distance) ──────────────
+
+class _PeopleSkeleton extends StatelessWidget {
+  const _PeopleSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return SizedBox(
+      height: 96,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        physics: const NeverScrollableScrollPhysics(),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        itemCount: 5,
+        itemBuilder: (_, __) => Shimmer.fromColors(
+          baseColor: c.cardBackground,
+          highlightColor: c.border,
+          child: SizedBox(
+            width: 72,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 64, height: 64,
+                  decoration: BoxDecoration(color: c.cardBackground, shape: BoxShape.circle),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 56, height: 12,
+                  decoration: BoxDecoration(color: c.cardBackground, borderRadius: BorderRadius.circular(4)),
+                ),
+                const SizedBox(height: 3),
+                Container(
+                  width: 40, height: 10,
+                  decoration: BoxDecoration(color: c.cardBackground, borderRadius: BorderRadius.circular(4)),
+                ),
+              ],
             ),
           ),
         ),

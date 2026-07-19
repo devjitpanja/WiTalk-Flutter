@@ -121,10 +121,66 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
         highlightColor: c.border,
         child: Container(
           margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          height: 120,
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             color: c.cardBackground,
             borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.withOpacity(0.15)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header: avatar + name/member count
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(color: c.border, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        FractionallySizedBox(
+                          widthFactor: 0.6,
+                          child: Container(height: 14, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                        ),
+                        const SizedBox(height: 8),
+                        FractionallySizedBox(
+                          widthFactor: 0.4,
+                          child: Container(height: 11, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              // Description lines
+              Container(height: 11, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+              const SizedBox(height: 6),
+              FractionallySizedBox(
+                widthFactor: 0.7,
+                child: Container(height: 11, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+              ),
+              const SizedBox(height: 14),
+              // Footer: creator avatar + name | join button
+              Container(
+                decoration: BoxDecoration(border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.1)))),
+                padding: const EdgeInsets.only(top: 12),
+                child: Row(
+                  children: [
+                    Container(width: 22, height: 22, decoration: BoxDecoration(color: c.border, shape: BoxShape.circle)),
+                    const SizedBox(width: 6),
+                    Container(width: 80, height: 11, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6))),
+                    const Spacer(),
+                    Container(width: 60, height: 32, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(20))),
+                  ],
+                ),
+              ),
+            ],
           ),
         ),
       ),

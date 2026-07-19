@@ -22,6 +22,7 @@ import '../screens/profile/followers_screen.dart';
 import '../screens/profile/account_screen.dart';
 import '../screens/profile/account_overview_screen.dart';
 import '../screens/profile/blocked_accounts_screen.dart';
+import '../screens/profile/my_purchases_screen.dart';
 import '../screens/profile/visitors_screen.dart';
 import '../screens/profile/likes_screen.dart';
 import '../screens/profile/merit_screen.dart';
@@ -146,6 +147,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/followers/:id', builder: (_, s) => FollowersScreen(userId: s.pathParameters['id']!)),
       GoRoute(path: '/account-overview', builder: (_, __) => const AccountOverviewScreen()),
       GoRoute(path: '/account-settings', builder: (_, __) => const AccountScreen()),
+      GoRoute(path: '/purchases', builder: (_, __) => const MyPurchasesScreen()),
       GoRoute(path: '/blocked-accounts', builder: (_, __) => const BlockedAccountsScreen()),
       GoRoute(path: '/visitors', builder: (_, __) => const VisitorsScreen()),
       GoRoute(path: '/likes', builder: (_, __) => const LikesScreen()),
