@@ -6,7 +6,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../api/app_endpoints.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/location_provider.dart';
+import '../../services/location_service.dart';
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 
@@ -22,7 +25,9 @@ int? _calcAge(dynamic birthday) {
     final bd = DateTime.parse(birthday.toString());
     final now = DateTime.now();
     int age = now.year - bd.year;
-    if (now.month < bd.month || (now.month == bd.month && now.day < bd.day)) age--;
+    if (now.month < bd.month || (now.month == bd.month && now.day < bd.day)) {
+      age--;
+    }
     return age;
   } catch (_) {
     return null;
@@ -42,15 +47,21 @@ bool _isBirthdayToday(dynamic birthday) {
 
 double _matchScore(Map<String, dynamic> user, Map<String, dynamic>? me) {
   if (me == null) return 0;
-  final myInterests = _parseArr(me['interests']).map((e) => e.toString().toLowerCase()).toSet();
-  final myPurpose = _parseArr(me['purpose']).map((e) => e.toString().toLowerCase()).toSet();
-  final uInterests = _parseArr(user['interests']).map((e) => e.toString().toLowerCase()).toSet();
-  final uPurpose = _parseArr(user['purpose']).map((e) => e.toString().toLowerCase()).toSet();
+  final myInterests =
+      _parseArr(me['interests']).map((e) => e.toString().toLowerCase()).toSet();
+  final myPurpose =
+      _parseArr(me['purpose']).map((e) => e.toString().toLowerCase()).toSet();
+  final uInterests =
+      _parseArr(user['interests']).map((e) => e.toString().toLowerCase()).toSet();
+  final uPurpose =
+      _parseArr(user['purpose']).map((e) => e.toString().toLowerCase()).toSet();
   final commonI = myInterests.intersection(uInterests).length;
   final commonP = myPurpose.intersection(uPurpose).length;
   int pct = 0;
   if (myInterests.isNotEmpty && myPurpose.isNotEmpty) {
-    pct = ((commonI / myInterests.length) * 60 + (commonP / myPurpose.length) * 40).round();
+    pct = ((commonI / myInterests.length) * 60 +
+            (commonP / myPurpose.length) * 40)
+        .round();
   } else if (myInterests.isNotEmpty) {
     pct = ((commonI / myInterests.length) * 100).round();
   } else if (myPurpose.isNotEmpty) {
@@ -59,9 +70,11 @@ double _matchScore(Map<String, dynamic> user, Map<String, dynamic>? me) {
   return pct.clamp(0, 99).toDouble();
 }
 
-List<String> _commonInterests(Map<String, dynamic> user, Map<String, dynamic>? me) {
+List<String> _commonInterests(
+    Map<String, dynamic> user, Map<String, dynamic>? me) {
   if (me == null) return [];
-  final myInterests = _parseArr(me['interests']).map((e) => e.toString().toLowerCase()).toSet();
+  final myInterests =
+      _parseArr(me['interests']).map((e) => e.toString().toLowerCase()).toSet();
   return _parseArr(user['interests'])
       .where((e) => myInterests.contains(e.toString().toLowerCase()))
       .map((e) => e.toString())
@@ -77,10 +90,14 @@ String _fmtDist(dynamic d) {
 
 String _shortenLabel(String label) {
   const map = {
-    'active chatting': 'Chatting', 'open to voice calls': 'Voice Calls',
-    'open to video calls': 'Video Calls', 'random chat conversations': 'Random Chat',
-    'making friends': 'Friends', 'looking for friends': 'Friends',
-    'study buddy': 'Study', 'language exchange': 'Language',
+    'active chatting': 'Chatting',
+    'open to voice calls': 'Voice Calls',
+    'open to video calls': 'Video Calls',
+    'random chat conversations': 'Random Chat',
+    'making friends': 'Friends',
+    'looking for friends': 'Friends',
+    'study buddy': 'Study',
+    'language exchange': 'Language',
   };
   return map[label.toLowerCase()] ?? label;
 }
@@ -97,15 +114,27 @@ class _UserGroups {
   final List<Map<String, dynamic>> others;
 
   const _UserGroups({
-    required this.catchUp, required this.onlineNearby, required this.bestMatches,
-    required this.sharedVibes, required this.sameAge, required this.nearby, required this.others,
+    required this.catchUp,
+    required this.onlineNearby,
+    required this.bestMatches,
+    required this.sharedVibes,
+    required this.sameAge,
+    required this.nearby,
+    required this.others,
   });
 
-  bool get isEmpty => catchUp.isEmpty && onlineNearby.isEmpty && bestMatches.isEmpty &&
-      sharedVibes.isEmpty && sameAge.isEmpty && nearby.isEmpty && others.isEmpty;
+  bool get isEmpty =>
+      catchUp.isEmpty &&
+      onlineNearby.isEmpty &&
+      bestMatches.isEmpty &&
+      sharedVibes.isEmpty &&
+      sameAge.isEmpty &&
+      nearby.isEmpty &&
+      others.isEmpty;
 }
 
-_UserGroups _groupUsers(List<dynamic> users, Map<String, dynamic>? me) {
+_UserGroups _groupUsers(
+    List<dynamic> users, List<dynamic> birthdays, Map<String, dynamic>? me) {
   final catchUp = <Map<String, dynamic>>[];
   final onlineNearby = <Map<String, dynamic>>[];
   final bestMatches = <Map<String, dynamic>>[];
@@ -115,20 +144,39 @@ _UserGroups _groupUsers(List<dynamic> users, Map<String, dynamic>? me) {
   final others = <Map<String, dynamic>>[];
 
   final meAge = me != null ? _calcAge(me['birthday']) : null;
-  final catchUpIds = <String>{};
 
+  // Birthday users (from dedicated endpoint or detected from nearby)
+  final catchUpIds = <String>{};
+  for (final raw in birthdays) {
+    final u = raw as Map<String, dynamic>;
+    final uid = (u['uid'] ?? u['id'] ?? '').toString();
+    if (uid.isNotEmpty && !catchUpIds.contains(uid)) {
+      catchUp.add(u);
+      catchUpIds.add(uid);
+    }
+  }
+  // Also check nearby list for birthday today
   for (final raw in users) {
     final u = raw as Map<String, dynamic>;
+    final uid = (u['uid'] ?? u['id'] ?? '').toString();
+    if (catchUpIds.contains(uid)) continue;
     if (_isBirthdayToday(u['birthday'])) {
       catchUp.add(u);
-      catchUpIds.add((u['uid'] ?? u['id'] ?? '').toString());
+      catchUpIds.add(uid);
     }
   }
 
   final diffMs = (u) {
     final ls = u['last_seen'];
     if (ls == null) return double.infinity;
-    try { return DateTime.now().difference(DateTime.parse(ls.toString())).inMilliseconds.toDouble(); } catch (_) { return double.infinity; }
+    try {
+      return DateTime.now()
+          .difference(DateTime.parse(ls.toString()))
+          .inMilliseconds
+          .toDouble();
+    } catch (_) {
+      return double.infinity;
+    }
   };
 
   for (final raw in users) {
@@ -140,10 +188,14 @@ _UserGroups _groupUsers(List<dynamic> users, Map<String, dynamic>? me) {
     final pct = _matchScore(u, me);
     final ci = _commonInterests(u, me);
     final cp = me != null
-        ? _parseArr(me['purpose']).where((p) => _parseArr(u['purpose']).any((up) => up.toString().toLowerCase() == p.toString().toLowerCase())).toList()
+        ? _parseArr(me['purpose'])
+            .where((p) => _parseArr(u['purpose']).any(
+                (up) => up.toString().toLowerCase() == p.toString().toLowerCase()))
+            .toList()
         : [];
     final uAge = _calcAge(u['birthday']);
-    final ageDiff = (meAge != null && uAge != null) ? (meAge - uAge).abs() : 999;
+    final ageDiff =
+        (meAge != null && uAge != null) ? (meAge - uAge).abs() : 999;
     final dist = (u['distance'] as num?)?.toDouble() ?? double.infinity;
 
     if (isActiveToday) {
@@ -165,13 +217,18 @@ _UserGroups _groupUsers(List<dynamic> users, Map<String, dynamic>? me) {
     final aOnline = a['is_online'] == true ? 0 : 1;
     final bOnline = b['is_online'] == true ? 0 : 1;
     if (aOnline != bOnline) return aOnline.compareTo(bOnline);
-    return ((a['distance'] as num?) ?? 999).compareTo((b['distance'] as num?) ?? 999);
+    return ((a['distance'] as num?) ?? 999)
+        .compareTo((b['distance'] as num?) ?? 999);
   });
 
   return _UserGroups(
-    catchUp: catchUp, onlineNearby: onlineNearby.take(20).toList(),
-    bestMatches: bestMatches, sharedVibes: sharedVibes, sameAge: sameAge,
-    nearby: nearby, others: others,
+    catchUp: catchUp,
+    onlineNearby: onlineNearby.take(20).toList(),
+    bestMatches: bestMatches,
+    sharedVibes: sharedVibes,
+    sameAge: sameAge,
+    nearby: nearby,
+    others: others,
   );
 }
 
@@ -187,104 +244,203 @@ class NearbyPeopleScreen extends ConsumerStatefulWidget {
 class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
   bool _loading = true;
   bool _permDenied = false;
+  bool _isLocationCached = false;
+  int _cacheAgeMinutes = 0;
   List<dynamic> _users = [];
+  List<dynamic> _birthdays = [];
   Map<String, dynamic>? _me;
   _UserGroups? _groups;
-
-  // Filter state
-  String _genderFilter = 'all';
-  int _minAge = 18;
-  int _maxAge = 60;
 
   @override
   void initState() {
     super.initState();
-    _init();
+    _loadFiltersAndFetch();
   }
 
-  Future<void> _init({bool force = false}) async {
+  Future<void> _loadFiltersAndFetch() async {
+    // Filters are loaded by the provider; fetch immediately
+    await _fetchNearbyUsers();
+  }
+
+  Future<void> _fetchNearbyUsers({bool quickMode = false}) async {
+    if (!mounted) return;
+    setState(() { _loading = true; _permDenied = false; });
+
     try {
+      // Check/request permission
       var perm = await Geolocator.checkPermission();
-      if (perm == LocationPermission.denied) perm = await Geolocator.requestPermission();
-      if (perm == LocationPermission.denied || perm == LocationPermission.deniedForever) {
+      if (perm == LocationPermission.denied) {
+        perm = await Geolocator.requestPermission();
+      }
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
         if (mounted) setState(() { _permDenied = true; _loading = false; });
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      ).timeout(const Duration(seconds: 12));
+
+      // Phase 1: serve from cache immediately
+      final loc = await locationService.getLocation(
+        forceRefresh: quickMode,
+        quickMode: quickMode,
+      );
+      final cacheAge = (DateTime.now().millisecondsSinceEpoch - loc.timestamp) ~/
+          60000;
+
       final uid = ref.read(authProvider).uid ?? '';
+      final filter = ref.read(nearbyFilterProvider);
+
       final results = await Future.wait([
-        dioClient.get('/v1/location/nearby', queryParameters: {
-          'uid': uid, 'latitude': pos.latitude, 'longitude': pos.longitude, 'radius': 500,
+        dioClient.get(AppEndpoints.nearbyPeople, queryParameters: {
+          'uid': uid,
+          'latitude': loc.latitude,
+          'longitude': loc.longitude,
+          'radius': filter.maxDistanceKm,
         }),
-        dioClient.get('/v1/user/$uid'),
+        dioClient.get(AppEndpoints.nearbyBirthdays, queryParameters: {
+          'uid': uid,
+          'latitude': loc.latitude,
+          'longitude': loc.longitude,
+          'state': loc.state ?? '',
+        }),
+        dioClient.get(AppEndpoints.userProfile(uid)),
       ]);
-      final usersRes = results[0].data;
-      final meRes = results[1].data;
-      List users = [];
-      if (usersRes is Map) {
-        final d = usersRes['data'];
-        if (d is List) {
-          users = d;
-        } else if (d is Map) {
-          users = (d['users'] as List?) ?? (d['data'] as List?) ?? [];
-        } else {
-          users = (usersRes['users'] as List?) ?? [];
-        }
-      }
+
+      List users = _extractUsers(results[0].data);
+      List birthdays = _extractUsers(results[1].data);
       Map<String, dynamic>? me;
+      final meRes = results[2].data;
       if (meRes is Map) {
         final u = meRes['user'] ?? meRes['data'];
         if (u is Map) me = Map<String, dynamic>.from(u);
       }
+
+      final filtered = _applyFilter(users, filter);
+
       if (mounted) {
         setState(() {
-          _users = users; _me = me;
-          _groups = _groupUsers(_applyFilter(users), me);
+          _users = users;
+          _birthdays = birthdays;
+          _me = me;
+          _groups = _groupUsers(filtered, birthdays, me);
+          _isLocationCached = loc.source != 'gps';
+          _cacheAgeMinutes = cacheAge;
           _loading = false;
         });
       }
-    } catch (e) {
-      if (mounted) setState(() { _loading = false; _groups = _UserGroups(catchUp: [], onlineNearby: [], bestMatches: [], sharedVibes: [], sameAge: [], nearby: [], others: []); });
+
+      // Phase 2 (background): if we served cached coords, silently refresh
+      if (loc.source != 'gps' && !quickMode) {
+        _silentRefresh(uid, loc.latitude, loc.longitude, filter);
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _groups = _UserGroups(
+              catchUp: [],
+              onlineNearby: [],
+              bestMatches: [],
+              sharedVibes: [],
+              sameAge: [],
+              nearby: [],
+              others: []);
+        });
+      }
     }
   }
 
-  List<dynamic> _applyFilter(List<dynamic> users) {
+  Future<void> _silentRefresh(
+      String uid, double oldLat, double oldLon, NearbyFilterState filter) async {
+    try {
+      final fresh = await locationService.getLocation(forceRefresh: true);
+      // Only re-fetch if moved >~100m (0.001 deg)
+      final latDiff = (fresh.latitude - oldLat).abs();
+      final lonDiff = (fresh.longitude - oldLon).abs();
+      if (latDiff < 0.001 && lonDiff < 0.001) return;
+
+      final results = await Future.wait([
+        dioClient.get(AppEndpoints.nearbyPeople, queryParameters: {
+          'uid': uid,
+          'latitude': fresh.latitude,
+          'longitude': fresh.longitude,
+          'radius': filter.maxDistanceKm,
+        }),
+        dioClient.get(AppEndpoints.nearbyBirthdays, queryParameters: {
+          'uid': uid,
+          'latitude': fresh.latitude,
+          'longitude': fresh.longitude,
+          'state': fresh.state ?? '',
+        }),
+      ]);
+      final users = _extractUsers(results[0].data);
+      final birthdays = _extractUsers(results[1].data);
+      final filtered = _applyFilter(users, filter);
+      if (mounted) {
+        setState(() {
+          _users = users;
+          _birthdays = birthdays;
+          _groups = _groupUsers(filtered, birthdays, _me);
+          _isLocationCached = false;
+          _cacheAgeMinutes = 0;
+        });
+      }
+    } catch (_) {}
+  }
+
+  List<dynamic> _extractUsers(dynamic resData) {
+    if (resData is Map) {
+      final d = resData['data'];
+      if (d is List) return d;
+      if (d is Map) {
+        return (d['users'] as List?) ?? (d['data'] as List?) ?? [];
+      }
+      return (resData['users'] as List?) ?? [];
+    }
+    return [];
+  }
+
+  List<dynamic> _applyFilter(List<dynamic> users, NearbyFilterState filter) {
     return users.where((raw) {
       final u = raw as Map<String, dynamic>;
-      if (_genderFilter != 'all') {
+      if (filter.gender != 'all') {
         final g = (u['gender'] as String?)?.toLowerCase() ?? '';
-        if (g != _genderFilter) return false;
+        if (g != filter.gender) return false;
       }
       final age = _calcAge(u['birthday']);
-      if (age != null && (age < _minAge || age > _maxAge)) return false;
+      if (age != null && (age < filter.minAge || age > filter.maxAge)) {
+        return false;
+      }
       return true;
     }).toList();
   }
 
-  void _applyFilters() {
-    setState(() => _groups = _groupUsers(_applyFilter(_users), _me));
+  void _applyFiltersLocally() {
+    final filter = ref.read(nearbyFilterProvider);
+    setState(() =>
+        _groups = _groupUsers(_applyFilter(_users, filter), _birthdays, _me));
   }
 
   Future<void> _refresh() async {
-    setState(() { _users = []; _groups = null; });
-    await _init(force: true);
+    setState(() { _users = []; _birthdays = []; _groups = null; });
+    await _fetchNearbyUsers(quickMode: true);
   }
 
   void _showFilterSheet() {
+    final filter = ref.read(nearbyFilterProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bottomSheetBg,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       isScrollControlled: true,
       builder: (_) => _FilterSheet(
-        gender: _genderFilter,
-        minAge: _minAge,
-        maxAge: _maxAge,
+        gender: filter.gender,
+        minAge: filter.minAge,
+        maxAge: filter.maxAge,
         onApply: (g, min, max) {
-          setState(() { _genderFilter = g; _minAge = min; _maxAge = max; });
-          _applyFilters();
+          ref.read(nearbyFilterProvider.notifier).update(
+              gender: g, minAge: min, maxAge: max);
+          _applyFiltersLocally();
           Navigator.of(context).pop();
         },
       ),
@@ -300,8 +456,12 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
         itemBuilder: (_, i) => Shimmer.fromColors(
           baseColor: AppColors.surface,
           highlightColor: AppColors.border,
-          child: Container(margin: const EdgeInsets.fromLTRB(16, 16, 16, 0), height: 160,
-              decoration: BoxDecoration(color: AppColors.surface, borderRadius: BorderRadius.circular(14))),
+          child: Container(
+              margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              height: 160,
+              decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(14))),
         ),
       );
     }
@@ -311,18 +471,39 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            const Icon(Icons.location_off, size: 64, color: AppColors.textTertiary),
+            const Icon(Icons.location_off,
+                size: 64, color: AppColors.textTertiary),
             const SizedBox(height: 16),
             const Text('Location Permission Required',
-                style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text), textAlign: TextAlign.center),
+                style: TextStyle(
+                    fontSize: 18,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.text),
+                textAlign: TextAlign.center),
             const SizedBox(height: 8),
             const Text('Enable location to discover people near you.',
-                style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: AppColors.textTertiary), textAlign: TextAlign.center),
+                style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Outfit',
+                    color: AppColors.textTertiary),
+                textAlign: TextAlign.center),
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed: () async { await Geolocator.openLocationSettings(); setState(() { _permDenied = false; _loading = true; }); _init(); },
-              style: ElevatedButton.styleFrom(backgroundColor: AppColors.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-              child: const Text('Open Settings', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: Colors.white)),
+              onPressed: () async {
+                await Geolocator.openLocationSettings();
+                setState(() { _permDenied = false; _loading = true; });
+                _fetchNearbyUsers();
+              },
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12))),
+              child: const Text('Open Settings',
+                  style: TextStyle(
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white)),
             ),
           ]),
         ),
@@ -332,23 +513,37 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
     final grp = _groups;
     if (grp == null || grp.isEmpty) {
       return RefreshIndicator(
-        color: AppColors.primary, backgroundColor: AppColors.surface,
+        color: AppColors.primary,
+        backgroundColor: AppColors.surface,
         onRefresh: _refresh,
-        child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: [
-          SizedBox(height: MediaQuery.of(context).size.height * 0.3),
-          const Column(children: [
-            Icon(Icons.people_outline, size: 64, color: AppColors.textTertiary),
-            SizedBox(height: 16),
-            Text('No one nearby right now', style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.text)),
-            SizedBox(height: 8),
-            Text('Try expanding your search radius', style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: AppColors.textTertiary)),
-          ]),
-        ]),
+        child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              SizedBox(height: MediaQuery.of(context).size.height * 0.3),
+              const Column(children: [
+                Icon(Icons.people_outline,
+                    size: 64, color: AppColors.textTertiary),
+                SizedBox(height: 16),
+                Text('No one nearby right now',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.text)),
+                SizedBox(height: 8),
+                Text('Try expanding your search radius',
+                    style: TextStyle(
+                        fontSize: 14,
+                        fontFamily: 'Outfit',
+                        color: AppColors.textTertiary)),
+              ]),
+            ]),
       );
     }
 
     return RefreshIndicator(
-      color: AppColors.primary, backgroundColor: AppColors.surface,
+      color: AppColors.primary,
+      backgroundColor: AppColors.surface,
       onRefresh: _refresh,
       child: Stack(
         children: [
@@ -356,55 +551,136 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 32, top: 4),
             children: [
+              // Stale cache banner
+              if (_isLocationCached && _cacheAgeMinutes >= 5)
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: Row(children: [
+                    const Icon(Icons.access_time,
+                        size: 14, color: AppColors.textTertiary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Showing results from $_cacheAgeMinutes min ago · Updating…',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'Outfit',
+                          color: AppColors.textTertiary),
+                    ),
+                  ]),
+                ),
               if (grp.catchUp.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.cake, iconColor: const Color(0xFFF472B6),
-                  title: 'Celebrate with them', count: grp.catchUp.length,
+                  icon: Icons.cake,
+                  iconColor: const Color(0xFFF472B6),
+                  title: 'Celebrate with them',
+                  count: grp.catchUp.length,
                   liveDot: false,
-                  children: grp.catchUp.map((u) => _UserCard(user: u, isBirthday: true, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  children: grp.catchUp
+                      .map((u) => _UserCard(
+                          user: u,
+                          isBirthday: true,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                   wide: true,
                 ),
               if (grp.onlineNearby.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.wifi_tethering, iconColor: const Color(0xFF22C55E),
-                  title: 'Active Nearby', count: grp.onlineNearby.length, liveDot: true,
-                  children: grp.onlineNearby.map((u) => _UserCard(user: u, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  icon: Icons.wifi_tethering,
+                  iconColor: const Color(0xFF22C55E),
+                  title: 'Active Nearby',
+                  count: grp.onlineNearby.length,
+                  liveDot: true,
+                  children: grp.onlineNearby
+                      .map((u) => _UserCard(
+                          user: u,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                 ),
               if (grp.bestMatches.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.star, iconColor: const Color(0xFF0A84FF),
-                  title: 'Best Matches', count: grp.bestMatches.length, liveDot: false,
-                  children: grp.bestMatches.map((u) => _UserCard(user: u, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  icon: Icons.star,
+                  iconColor: const Color(0xFF0A84FF),
+                  title: 'Best Matches',
+                  count: grp.bestMatches.length,
+                  liveDot: false,
+                  children: grp.bestMatches
+                      .map((u) => _UserCard(
+                          user: u,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                 ),
               if (grp.sharedVibes.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.interests, iconColor: const Color(0xFF8B5CF6),
-                  title: 'Shared Vibes', count: grp.sharedVibes.length, liveDot: false,
-                  children: grp.sharedVibes.map((u) => _UserCard(user: u, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  icon: Icons.interests,
+                  iconColor: const Color(0xFF8B5CF6),
+                  title: 'Shared Vibes',
+                  count: grp.sharedVibes.length,
+                  liveDot: false,
+                  children: grp.sharedVibes
+                      .map((u) => _UserCard(
+                          user: u,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                 ),
               if (grp.sameAge.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.people, iconColor: AppColors.primary,
-                  title: 'Same Age Group', count: grp.sameAge.length, liveDot: false,
-                  children: grp.sameAge.map((u) => _UserCard(user: u, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  icon: Icons.people,
+                  iconColor: AppColors.primary,
+                  title: 'Same Age Group',
+                  count: grp.sameAge.length,
+                  liveDot: false,
+                  children: grp.sameAge
+                      .map((u) => _UserCard(
+                          user: u,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                 ),
               if (grp.nearby.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.location_on, iconColor: const Color(0xFF0751DF),
-                  title: 'Close By', count: grp.nearby.length, liveDot: false,
-                  children: grp.nearby.map((u) => _UserCard(user: u, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  icon: Icons.location_on,
+                  iconColor: const Color(0xFF0751DF),
+                  title: 'Close By',
+                  count: grp.nearby.length,
+                  liveDot: false,
+                  children: grp.nearby
+                      .map((u) => _UserCard(
+                          user: u,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                 ),
               if (grp.others.isNotEmpty)
                 _SectionBlock(
-                  icon: Icons.explore, iconColor: AppColors.textTertiary,
-                  title: 'Discover', count: grp.others.length, liveDot: false,
-                  children: grp.others.map((u) => _UserCard(user: u, onTap: (u) => context.push('/user/${u['id'] ?? u['uid']}'))).toList(),
+                  icon: Icons.explore,
+                  iconColor: AppColors.textTertiary,
+                  title: 'Discover',
+                  count: grp.others.length,
+                  liveDot: false,
+                  children: grp.others
+                      .map((u) => _UserCard(
+                          user: u,
+                          onTap: (u) => context.push(
+                              '/user/${u['id'] ?? u['uid']}')))
+                      .toList(),
                 ),
             ],
           ),
           // Filter FAB
           Positioned(
-            right: 16, bottom: 16,
+            right: 16,
+            bottom: 16,
             child: FloatingActionButton.small(
               onPressed: _showFilterSheet,
               backgroundColor: AppColors.primary,
@@ -429,8 +705,12 @@ class _SectionBlock extends StatelessWidget {
   final bool wide;
 
   const _SectionBlock({
-    required this.icon, required this.iconColor, required this.title,
-    required this.count, required this.liveDot, required this.children,
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.count,
+    required this.liveDot,
+    required this.children,
     this.wide = false,
   });
 
@@ -446,34 +726,60 @@ class _SectionBlock extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
           child: Row(children: [
             Container(
-              width: 28, height: 28,
-              decoration: BoxDecoration(color: iconColor.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(8)),
               child: Icon(icon, size: 15, color: iconColor),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Text(title,
-                  style: const TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700, color: AppColors.text)),
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.text)),
             ),
             if (liveDot) ...[
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(color: const Color(0xFF22C55E).withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF22C55E).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(width: 6, height: 6, decoration: const BoxDecoration(color: Color(0xFF22C55E), shape: BoxShape.circle)),
+                  Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                          color: Color(0xFF22C55E), shape: BoxShape.circle)),
                   const SizedBox(width: 4),
-                  const Text('LIVE', style: TextStyle(fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w700, color: Color(0xFF22C55E), letterSpacing: 0.5)),
+                  const Text('LIVE',
+                      style: TextStyle(
+                          fontSize: 9,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF22C55E),
+                          letterSpacing: 0.5)),
                 ]),
               ),
               const SizedBox(width: 6),
             ],
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
                 color: const Color(0x1A1C1C1E),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Text('$count', style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.textTertiary)),
+              child: Text('$count',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textTertiary)),
             ),
           ]),
         ),
@@ -514,10 +820,12 @@ class _UserCard extends StatelessWidget {
     final dist = _fmtDist(user['distance']);
     final city = user['city'] as String?;
     final isOnline = user['is_online'] == true;
-    final interests = _parseArr(user['interests']).take(2).map((e) => e.toString()).toList();
+    final interests =
+        _parseArr(user['interests']).take(2).map((e) => e.toString()).toList();
     final ci = (user['_ci'] as List?)?.cast<String>() ?? [];
     final pct = (user['_pct'] as double?) ?? 0;
-    final bdColor = gender == 'male' ? const Color(0xFF3591F9) : const Color(0xFFF472B6);
+    final bdColor =
+        gender == 'male' ? const Color(0xFF3591F9) : const Color(0xFFF472B6);
 
     return GestureDetector(
       onTap: () => onTap(user),
@@ -532,24 +840,45 @@ class _UserCard extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: isBirthday
-            ? _WideCardBody(name: name, pic: pic, bio: bio, age: age, gender: gender, dist: dist, city: city, isOnline: isOnline, interests: interests, ci: ci, pct: pct, isBirthday: true, bdColor: bdColor, onTap: () => onTap(user))
+            ? _WideCardBody(
+                name: name,
+                pic: pic,
+                bio: bio,
+                age: age,
+                gender: gender,
+                dist: dist,
+                city: city,
+                isOnline: isOnline,
+                interests: interests,
+                ci: ci,
+                pct: pct,
+                isBirthday: true,
+                bdColor: bdColor,
+                onTap: () => onTap(user))
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  // Match badge
                   if (pct >= 40)
                     Align(
                       alignment: Alignment.topRight,
                       child: Container(
                         margin: const EdgeInsets.only(top: 8, right: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: pct >= 70 ? const Color(0x60065F46) : const Color(0x5092400E),
+                          color: pct >= 70
+                              ? const Color(0x60065F46)
+                              : const Color(0x5092400E),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text('${pct.round()}%',
-                            style: TextStyle(fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w700,
-                                color: pct >= 70 ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D))),
+                            style: TextStyle(
+                                fontSize: 9,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w700,
+                                color: pct >= 70
+                                    ? const Color(0xFF4ADE80)
+                                    : const Color(0xFFFCD34D))),
                       ),
                     ),
                   const SizedBox(height: 4),
@@ -558,15 +887,33 @@ class _UserCard extends StatelessWidget {
                       CircleAvatar(
                         radius: 36,
                         backgroundColor: AppColors.border,
-                        backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
-                        child: pic == null ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: const TextStyle(color: AppColors.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600)) : null,
+                        backgroundImage: pic != null
+                            ? CachedNetworkImageProvider(pic)
+                            : null,
+                        child: pic == null
+                            ? Text(
+                                name.isNotEmpty
+                                    ? name[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                    color: AppColors.text,
+                                    fontFamily: 'Outfit',
+                                    fontWeight: FontWeight.w600))
+                            : null,
                       ),
                       if (isOnline)
-                        Positioned(bottom: 2, right: 2,
-                            child: Container(width: 13, height: 13,
-                                decoration: BoxDecoration(color: const Color(0xFF22C55E), shape: BoxShape.circle,
-                                    border: Border.all(color: const Color(0xFF111827), width: 2)))),
+                        Positioned(
+                            bottom: 2,
+                            right: 2,
+                            child: Container(
+                                width: 13,
+                                height: 13,
+                                decoration: BoxDecoration(
+                                    color: const Color(0xFF22C55E),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: const Color(0xFF111827),
+                                        width: 2)))),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -575,36 +922,80 @@ class _UserCard extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w700, color: AppColors.text))),
-                          if (age != null && gender != null && (gender == 'male' || gender == 'female')) ...[
-                            const SizedBox(width: 4),
-                            _GenderBadge(gender: gender, age: age),
-                          ],
-                        ]),
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Flexible(
+                                  child: Text(name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontSize: 14,
+                                          fontFamily: 'Outfit',
+                                          fontWeight: FontWeight.w700,
+                                          color: AppColors.text))),
+                              if (age != null &&
+                                  gender != null &&
+                                  (gender == 'male' ||
+                                      gender == 'female')) ...[
+                                const SizedBox(width: 4),
+                                _GenderBadge(gender: gender, age: age),
+                              ],
+                            ]),
                         if (bio != null && bio.isNotEmpty)
-                          Text(bio, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary, height: 1.4)),
+                          Text(bio,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  fontFamily: 'Outfit',
+                                  color: AppColors.textTertiary,
+                                  height: 1.4)),
                         if (dist.isNotEmpty || city != null)
-                          Text([dist, city].where((e) => e != null && e!.isNotEmpty).cast<String>().join(' · '),
-                              maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
-                              style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
+                          Text(
+                              [dist, city]
+                                  .where((e) => e != null && e!.isNotEmpty)
+                                  .cast<String>()
+                                  .join(' · '),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontFamily: 'Outfit',
+                                  color: AppColors.textTertiary)),
                         if (interests.isNotEmpty) ...[
                           const SizedBox(height: 8),
-                          Wrap(alignment: WrapAlignment.center, spacing: 4, runSpacing: 4, children: interests.map((tag) {
-                            final isShared = ci.any((c) => c.toLowerCase() == tag.toLowerCase());
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: isShared ? const Color(0xFF042F2E) : const Color(0xFF1E293B),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(_shortenLabel(tag), maxLines: 1, overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500,
-                                      color: isShared ? const Color(0xFF4ECDC4) : AppColors.textTertiary)),
-                            );
-                          }).toList()),
+                          Wrap(
+                              alignment: WrapAlignment.center,
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: interests.map((tag) {
+                                final isShared = ci.any((c) =>
+                                    c.toLowerCase() == tag.toLowerCase());
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: isShared
+                                        ? const Color(0xFF042F2E)
+                                        : const Color(0xFF1E293B),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(_shortenLabel(tag),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          fontSize: 10,
+                                          fontFamily: 'Outfit',
+                                          fontWeight: FontWeight.w500,
+                                          color: isShared
+                                              ? const Color(0xFF4ECDC4)
+                                              : AppColors.textTertiary)),
+                                );
+                              }).toList()),
                         ],
                         const SizedBox(height: 10),
                         SizedBox(
@@ -612,13 +1003,20 @@ class _UserCard extends StatelessWidget {
                           child: GestureDetector(
                             onTap: () => onTap(user),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 7),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 7),
                               decoration: BoxDecoration(
-                                border: Border.all(color: AppColors.primary, width: 1.5),
+                                border: Border.all(
+                                    color: AppColors.primary, width: 1.5),
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Text('Say Hi', textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: AppColors.primary)),
+                              child: const Text('Say Hi',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontFamily: 'Outfit',
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary)),
                             ),
                           ),
                         ),
@@ -649,9 +1047,21 @@ class _WideCardBody extends StatelessWidget {
   final Color bdColor;
   final VoidCallback onTap;
 
-  const _WideCardBody({required this.name, this.pic, this.bio, this.age, this.gender,
-    required this.dist, this.city, required this.isOnline, required this.interests,
-    required this.ci, required this.pct, required this.isBirthday, required this.bdColor, required this.onTap});
+  const _WideCardBody(
+      {required this.name,
+      this.pic,
+      this.bio,
+      this.age,
+      this.gender,
+      required this.dist,
+      this.city,
+      required this.isOnline,
+      required this.interests,
+      required this.ci,
+      required this.pct,
+      required this.isBirthday,
+      required this.bdColor,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -663,52 +1073,103 @@ class _WideCardBody extends StatelessWidget {
             padding: const EdgeInsets.symmetric(vertical: 5),
             alignment: Alignment.center,
             child: const Text('🎂 Birthday Today!',
-                style: TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: Colors.white)),
+                style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white)),
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
           child: Row(
             children: [
               Stack(children: [
-                CircleAvatar(radius: 29, backgroundColor: AppColors.border,
-                    backgroundImage: pic != null ? CachedNetworkImageProvider(pic!) : null,
-                    child: pic == null ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                        style: const TextStyle(color: AppColors.text, fontFamily: 'Outfit')) : null),
+                CircleAvatar(
+                    radius: 29,
+                    backgroundColor: AppColors.border,
+                    backgroundImage: pic != null
+                        ? CachedNetworkImageProvider(pic!)
+                        : null,
+                    child: pic == null
+                        ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(
+                                color: AppColors.text, fontFamily: 'Outfit'))
+                        : null),
                 if (isOnline)
-                  Positioned(bottom: 2, right: 2,
-                      child: Container(width: 13, height: 13,
-                          decoration: BoxDecoration(color: const Color(0xFF22C55E), shape: BoxShape.circle,
-                              border: Border.all(color: const Color(0xFF111827), width: 2)))),
+                  Positioned(
+                      bottom: 2,
+                      right: 2,
+                      child: Container(
+                          width: 13,
+                          height: 13,
+                          decoration: BoxDecoration(
+                              color: const Color(0xFF22C55E),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                  color: const Color(0xFF111827), width: 2)))),
               ]),
               const SizedBox(width: 12),
-              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w700, color: AppColors.text))),
-                  if (age != null && gender != null && (gender == 'male' || gender == 'female')) ...[
-                    const SizedBox(width: 4), _GenderBadge(gender: gender!, age: age!),
-                  ],
-                ]),
-                Text([dist, city].where((e) => e != null && e!.isNotEmpty).cast<String>().join(' · '),
-                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
-                if (bio != null && bio!.isNotEmpty)
-                  Text(bio!, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary)),
-              ])),
+              Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                    Row(children: [
+                      Flexible(
+                          child: Text(name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 14,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.text))),
+                      if (age != null &&
+                          gender != null &&
+                          (gender == 'male' || gender == 'female')) ...[
+                        const SizedBox(width: 4),
+                        _GenderBadge(gender: gender!, age: age!),
+                      ],
+                    ]),
+                    Text(
+                        [dist, city]
+                            .where((e) => e != null && e!.isNotEmpty)
+                            .cast<String>()
+                            .join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'Outfit',
+                            color: AppColors.textTertiary)),
+                    if (bio != null && bio!.isNotEmpty)
+                      Text(bio!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'Outfit',
+                              color: AppColors.textTertiary)),
+                  ])),
               const SizedBox(width: 8),
               GestureDetector(
                 onTap: onTap,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 9),
                   decoration: BoxDecoration(
-                    border: Border.all(color: isBirthday ? bdColor : AppColors.primary, width: 1.5),
+                    border: Border.all(
+                        color: isBirthday ? bdColor : AppColors.primary,
+                        width: 1.5),
                     borderRadius: BorderRadius.circular(22),
                     color: isBirthday ? bdColor : Colors.transparent,
                   ),
                   child: Text(isBirthday ? 'Wish Now' : 'Say Hi',
-                      style: TextStyle(fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w600,
-                          color: isBirthday ? Colors.white : AppColors.primary)),
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                          color:
+                              isBirthday ? Colors.white : AppColors.primary)),
                 ),
               ),
             ],
@@ -727,14 +1188,22 @@ class _GenderBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isMale = gender == 'male';
-    final color = isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
-    final bgColor = isMale ? const Color(0xFF023781) : const Color(0xFF590244);
+    final color =
+        isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
+    final bgColor =
+        isMale ? const Color(0xFF023781) : const Color(0xFF590244);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(4)),
+      decoration:
+          BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(4)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(isMale ? Icons.male : Icons.female, size: 10, color: color),
-        Text('$age', style: TextStyle(fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: color)),
+        Text('$age',
+            style: TextStyle(
+                fontSize: 9,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w600,
+                color: color)),
       ]),
     );
   }
@@ -748,7 +1217,11 @@ class _FilterSheet extends StatefulWidget {
   final int maxAge;
   final void Function(String gender, int min, int max) onApply;
 
-  const _FilterSheet({required this.gender, required this.minAge, required this.maxAge, required this.onApply});
+  const _FilterSheet(
+      {required this.gender,
+      required this.minAge,
+      required this.maxAge,
+      required this.onApply});
 
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
@@ -762,78 +1235,140 @@ class _FilterSheetState extends State<_FilterSheet> {
   void initState() {
     super.initState();
     _gender = widget.gender;
-    _ageRange = RangeValues(widget.minAge.toDouble(), widget.maxAge.toDouble());
+    _ageRange =
+        RangeValues(widget.minAge.toDouble(), widget.maxAge.toDouble());
   }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
-        left: 16, right: 16, top: 20,
+        left: 16,
+        right: 16,
+        top: 20,
         bottom: MediaQuery.of(context).viewInsets.bottom + 30,
       ),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Center(
-          child: Text('Filter People', style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w700, color: AppColors.text)),
-        ),
-        const SizedBox(height: 24),
-        const Text('Gender', style: TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.text)),
-        const SizedBox(height: 12),
-        Row(children: ['all', 'male', 'female'].map((g) {
-          final isActive = _gender == g;
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: GestureDetector(
-                onTap: () => setState(() => _gender = g),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  decoration: BoxDecoration(
-                    color: isActive ? AppColors.primary : AppColors.surface,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: isActive ? AppColors.primary : AppColors.border, width: 1.5),
+      child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Center(
+              child: Text('Filter People',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.text)),
+            ),
+            const SizedBox(height: 24),
+            const Text('Gender',
+                style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.text)),
+            const SizedBox(height: 12),
+            Row(
+                children: ['all', 'male', 'female'].map((g) {
+              final isActive = _gender == g;
+              return Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: GestureDetector(
+                    onTap: () => setState(() => _gender = g),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        color:
+                            isActive ? AppColors.primary : AppColors.surface,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: isActive
+                                ? AppColors.primary
+                                : AppColors.border,
+                            width: 1.5),
+                      ),
+                      child: Text(
+                          g == 'all'
+                              ? 'All'
+                              : g == 'male'
+                                  ? '♂ Male'
+                                  : '♀ Female',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              fontSize: 14,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w500,
+                              color: isActive
+                                  ? Colors.white
+                                  : AppColors.text)),
+                    ),
                   ),
-                  child: Text(g == 'all' ? 'All' : g == 'male' ? '♂ Male' : '♀ Female',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w500,
-                          color: isActive ? Colors.white : AppColors.text)),
                 ),
+              );
+            }).toList()),
+            const SizedBox(height: 24),
+            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+              const Text('Age Range',
+                  style: TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.text)),
+              Text(
+                  '${_ageRange.start.round()} – ${_ageRange.end.round()}',
+                  style: const TextStyle(
+                      fontSize: 16,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary)),
+            ]),
+            RangeSlider(
+              values: _ageRange,
+              min: 18,
+              max: 60,
+              divisions: 42,
+              activeColor: AppColors.primary,
+              inactiveColor: AppColors.border,
+              onChanged: (v) => setState(() => _ageRange = v),
+            ),
+            Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: const [
+                  Text('18',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'Outfit',
+                          color: AppColors.textTertiary)),
+                  Text('60',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'Outfit',
+                          color: AppColors.textTertiary)),
+                ]),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => widget.onApply(
+                    _gender,
+                    _ageRange.start.round(),
+                    _ageRange.end.round()),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Apply',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white)),
               ),
             ),
-          );
-        }).toList()),
-        const SizedBox(height: 24),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          const Text('Age Range', style: TextStyle(fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: AppColors.text)),
-          Text('${_ageRange.start.round()} – ${_ageRange.end.round()}',
-              style: const TextStyle(fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700, color: AppColors.primary)),
-        ]),
-        RangeSlider(
-          values: _ageRange,
-          min: 18, max: 60,
-          divisions: 42,
-          activeColor: AppColors.primary,
-          inactiveColor: AppColors.border,
-          onChanged: (v) => setState(() => _ageRange = v),
-        ),
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [
-          Text('18', style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
-          Text('60', style: TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
-        ]),
-        const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: () => widget.onApply(_gender, _ageRange.start.round(), _ageRange.end.round()),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            ),
-            child: const Text('Apply', style: TextStyle(fontSize: 15, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: Colors.white)),
-          ),
-        ),
-      ]),
+          ]),
     );
   }
 }

@@ -281,6 +281,9 @@ class AppEndpoints {
   // ── Location ──────────────────────────────────────────────────────────
   static const String updateLocation = '/v1/location/update';
   static const String nearbyPeople = '/v1/location/nearby';
+  static const String nearbyBirthdays = '/v1/location/birthdays';
+  static const String locationBounds = '/v1/location/bounds';
+  static const String locationByCity = '/v1/location/city';
   static const String locationAutocomplete = '/v1/location/autocomplete';
   static const String schoolAutocomplete = '/v1/location/school-autocomplete';
 

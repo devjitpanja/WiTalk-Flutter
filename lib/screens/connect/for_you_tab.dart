@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/location_service.dart';
 
 // ─── Providers ───────────────────────────────────────────────────────────────
 
@@ -64,33 +64,29 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
 
   Future<void> _initLocation({bool force = false}) async {
     try {
-      var permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      final granted = permission != LocationPermission.denied &&
-          permission != LocationPermission.deniedForever;
+      final granted = force
+          ? await locationService.requestPermission()
+          : await locationService.checkPermission();
       if (!mounted) return;
       setState(() => _locationGranted = granted);
       if (!granted) {
         setState(() { _peopleLoading = false; _nearbyCommLoading = false; });
         return;
       }
-      final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      ).timeout(const Duration(seconds: 12));
+      // Cache-first: serve immediately, background refresh handled inside getLocation
+      final loc = await locationService.getLocation(forceRefresh: force);
       if (!mounted) return;
-      await Future.wait([_fetchNearbyPeople(pos), _fetchNearbyCommunities(pos)]);
+      await Future.wait([_fetchNearbyPeople(loc), _fetchNearbyCommunities(loc)]);
     } catch (_) {
       if (mounted) setState(() { _peopleLoading = false; _nearbyCommLoading = false; });
     }
   }
 
-  Future<void> _fetchNearbyPeople(Position pos) async {
+  Future<void> _fetchNearbyPeople(CachedLocation loc) async {
     try {
       final uid = ref.read(authProvider).uid ?? '';
       final res = await dioClient.get('/v1/location/nearby', queryParameters: {
-        'uid': uid, 'latitude': pos.latitude, 'longitude': pos.longitude, 'radius': 500,
+        'uid': uid, 'latitude': loc.latitude, 'longitude': loc.longitude, 'radius': 500,
       });
       final data = res.data;
       List users = [];
@@ -104,11 +100,11 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
     }
   }
 
-  Future<void> _fetchNearbyCommunities(Position pos) async {
+  Future<void> _fetchNearbyCommunities(CachedLocation loc) async {
     try {
       final uid = ref.read(authProvider).uid ?? '';
       final res = await dioClient.get('/v1/groups/public/nearby', queryParameters: {
-        'userId': uid, 'latitude': pos.latitude, 'longitude': pos.longitude, 'limit': 20,
+        'userId': uid, 'latitude': loc.latitude, 'longitude': loc.longitude, 'limit': 20,
       });
       final data = res.data;
       if (data is Map && data['success'] == true) {

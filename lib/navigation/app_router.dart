@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
+import '../providers/location_provider.dart';
 import '../screens/auth/auth_screen.dart';
 import '../screens/onboarding/complete_profile_screen.dart';
 import '../screens/onboarding/purpose_interests_screen.dart';
@@ -50,6 +51,7 @@ import '../screens/connect/for_you_screen.dart';
 import '../screens/connect/for_you_tab.dart';
 import '../screens/connect/activities_screen.dart';
 import '../screens/connect/community_info_screen.dart';
+import '../screens/onboarding/location_permission_screen.dart';
 import '../screens/calls/video_call_screen.dart';
 import '../screens/calls/voice_call_screen.dart';
 import '../screens/calls/random_chat_screen.dart';
@@ -71,6 +73,7 @@ import 'shell_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   final authState = ref.watch(authProvider);
+  final locationPerm = ref.watch(locationPermissionProvider);
 
   return GoRouter(
     initialLocation: '/auth',
@@ -78,10 +81,26 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isAuth = authState.status == AuthStatus.authenticated;
       final isUnknown = authState.status == AuthStatus.unknown;
       final onAuthPage = state.matchedLocation.startsWith('/auth');
+      final onLocPerm = state.matchedLocation == '/location-permission';
+      final onOnboarding = state.matchedLocation.startsWith('/complete-profile') ||
+          state.matchedLocation.startsWith('/purpose-interests') ||
+          state.matchedLocation.startsWith('/tutorial');
 
       if (isUnknown) return null;
       if (!isAuth && !onAuthPage) return '/auth';
-      if (isAuth && onAuthPage) return '/home';
+      if (isAuth && onAuthPage) {
+        // After login: show location permission screen if needed
+        if (!locationPerm.granted && !locationPerm.hasSeenScreen) {
+          return '/location-permission';
+        }
+        return '/home';
+      }
+      // When landing on /home for the first time after onboarding (not already on loc perm page)
+      if (isAuth && state.matchedLocation == '/home' && !onLocPerm && !onOnboarding) {
+        if (!locationPerm.granted && !locationPerm.hasSeenScreen) {
+          return '/location-permission';
+        }
+      }
       return null;
     },
     routes: [
@@ -89,6 +108,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/complete-profile', builder: (_, __) => const CompleteProfileScreen()),
       GoRoute(path: '/purpose-interests', builder: (_, __) => const PurposeInterestsScreen()),
       GoRoute(path: '/tutorial', builder: (_, __) => const TutorialScreen()),
+      GoRoute(path: '/location-permission', builder: (_, __) => const LocationPermissionScreen()),
 
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
