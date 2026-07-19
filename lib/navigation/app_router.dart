@@ -45,6 +45,7 @@ import '../screens/connect/adda_screen.dart';
 import '../screens/connect/live_audio_room_screen.dart';
 import '../screens/connect/create_audio_room_screen.dart';
 import '../screens/connect/nearby_people_screen.dart';
+import '../screens/connect/discover_all_screen.dart';
 import '../screens/connect/city_screen.dart';
 import '../screens/connect/explore_communities_screen.dart';
 import '../screens/connect/for_you_screen.dart';
@@ -167,6 +168,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/live-audio/:id', builder: (_, s) => LiveAudioRoomScreen(roomId: s.pathParameters['id']!)),
       GoRoute(path: '/create-audio-room', builder: (_, __) => const CreateAudioRoomScreen()),
       GoRoute(path: '/nearby-people', builder: (_, __) => const NearbyPeopleScreen()),
+      GoRoute(
+        path: '/discover-all',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final users = (extra['users'] as List<dynamic>?)
+                  ?.cast<Map<String, dynamic>>() ??
+              [];
+          final me = extra['me'] as Map<String, dynamic>?;
+          return DiscoverAllScreen(users: users, me: me);
+        },
+      ),
       GoRoute(path: '/city/:id', builder: (_, s) => CityScreen(cityId: s.pathParameters['id']!)),
       GoRoute(path: '/communities', builder: (_, __) => const ExploreCommunitiesScreen()),
       GoRoute(path: '/for-you', builder: (_, __) => const ForYouScreen()),

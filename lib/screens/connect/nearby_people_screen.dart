@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'discover_all_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -16,6 +18,12 @@ import '../../services/location_service.dart';
 List<dynamic> _parseArr(dynamic v) {
   if (v == null) return [];
   if (v is List) return v;
+  if (v is String && v.isNotEmpty) {
+    try {
+      final decoded = jsonDecode(v);
+      if (decoded is List) return decoded;
+    } catch (_) {}
+  }
   return [];
 }
 
@@ -101,6 +109,11 @@ String _shortenLabel(String label) {
   };
   return map[label.toLowerCase()] ?? label;
 }
+
+// Public aliases so DiscoverAllScreen can reuse these helpers
+List<dynamic> nearbyParseArr(dynamic v) => _parseArr(v);
+int? nearbyCalcAge(dynamic birthday) => _calcAge(birthday);
+String nearbyFmtDist(dynamic d) => _fmtDist(d);
 
 // ─── Groups ───────────────────────────────────────────────────────────────────
 
@@ -199,7 +212,7 @@ _UserGroups _groupUsers(
     final dist = (u['distance'] as num?)?.toDouble() ?? double.infinity;
 
     if (isActiveToday) {
-      onlineNearby.add({...u, '_pct': pct, '_ci': ci});
+      onlineNearby.add({...u, '_pct': pct, '_ci': ci, '_isActiveToday': true});
     } else if ((cp.isNotEmpty && ci.length >= 1) || ci.length >= 4) {
       bestMatches.add({...u, '_pct': pct, '_ci': ci});
     } else if (ci.length >= 2) {
@@ -425,6 +438,53 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
     await _fetchNearbyUsers(quickMode: true);
   }
 
+  void _showProfilePreview(BuildContext context, Map<String, dynamic> user) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bottomSheetBg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      isScrollControlled: true,
+      builder: (_) => _ProfilePreviewSheet(user: user, me: _me,
+          onOpenProfile: () {
+            Navigator.of(context).pop();
+            context.push('/user/${user['id'] ?? user['uid']}');
+          }),
+    );
+  }
+
+  List<Widget> _buildSection(
+    BuildContext context,
+    List<Map<String, dynamic>> users, {
+    required IconData icon,
+    required Color color,
+    required String title,
+    required bool isBirthday,
+    required bool liveDot,
+    VoidCallback? onViewAll,
+  }) {
+    if (users.isEmpty) return [];
+    Widget cardFor(Map<String, dynamic> u) => NearbyUserCard(
+          user: u,
+          isBirthday: isBirthday,
+          onTap: (u) => _showProfilePreview(context, u),
+          onSayHi: (u) => context.push('/user/${u['id'] ?? u['uid']}'),
+        );
+    return [
+      _SectionBlock(
+        icon: icon,
+        iconColor: color,
+        title: title,
+        count: users.length,
+        liveDot: liveDot,
+        single: users.length == 1,
+        children: users.map(cardFor).toList(),
+        wide: isBirthday,
+        onViewAll: onViewAll,
+      ),
+    ];
+  }
+
   void _showFilterSheet() {
     final filter = ref.read(nearbyFilterProvider);
     showModalBottomSheet(
@@ -545,12 +605,10 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
       color: AppColors.primary,
       backgroundColor: AppColors.surface,
       onRefresh: _refresh,
-      child: Stack(
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.only(bottom: 32, top: 4),
         children: [
-          ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 32, top: 4),
-            children: [
               // Stale cache banner
               if (_isLocationCached && _cacheAgeMinutes >= 5)
                 Container(
@@ -575,118 +633,16 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
                     ),
                   ]),
                 ),
-              if (grp.catchUp.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.cake,
-                  iconColor: const Color(0xFFF472B6),
-                  title: 'Celebrate with them',
-                  count: grp.catchUp.length,
-                  liveDot: false,
-                  children: grp.catchUp
-                      .map((u) => _UserCard(
-                          user: u,
-                          isBirthday: true,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                  wide: true,
-                ),
-              if (grp.onlineNearby.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.wifi_tethering,
-                  iconColor: const Color(0xFF22C55E),
-                  title: 'Active Nearby',
-                  count: grp.onlineNearby.length,
-                  liveDot: true,
-                  children: grp.onlineNearby
-                      .map((u) => _UserCard(
-                          user: u,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                ),
-              if (grp.bestMatches.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.star,
-                  iconColor: const Color(0xFF0A84FF),
-                  title: 'Best Matches',
-                  count: grp.bestMatches.length,
-                  liveDot: false,
-                  children: grp.bestMatches
-                      .map((u) => _UserCard(
-                          user: u,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                ),
-              if (grp.sharedVibes.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.interests,
-                  iconColor: const Color(0xFF8B5CF6),
-                  title: 'Shared Vibes',
-                  count: grp.sharedVibes.length,
-                  liveDot: false,
-                  children: grp.sharedVibes
-                      .map((u) => _UserCard(
-                          user: u,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                ),
-              if (grp.sameAge.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.people,
-                  iconColor: AppColors.primary,
-                  title: 'Same Age Group',
-                  count: grp.sameAge.length,
-                  liveDot: false,
-                  children: grp.sameAge
-                      .map((u) => _UserCard(
-                          user: u,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                ),
-              if (grp.nearby.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.location_on,
-                  iconColor: const Color(0xFF0751DF),
-                  title: 'Close By',
-                  count: grp.nearby.length,
-                  liveDot: false,
-                  children: grp.nearby
-                      .map((u) => _UserCard(
-                          user: u,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                ),
-              if (grp.others.isNotEmpty)
-                _SectionBlock(
-                  icon: Icons.explore,
-                  iconColor: AppColors.textTertiary,
-                  title: 'Discover',
-                  count: grp.others.length,
-                  liveDot: false,
-                  children: grp.others
-                      .map((u) => _UserCard(
-                          user: u,
-                          onTap: (u) => context.push(
-                              '/user/${u['id'] ?? u['uid']}')))
-                      .toList(),
-                ),
-            ],
-          ),
-          // Filter FAB
-          Positioned(
-            right: 16,
-            bottom: 16,
-            child: FloatingActionButton.small(
-              onPressed: _showFilterSheet,
-              backgroundColor: AppColors.primary,
-              child: const Icon(Icons.tune, color: Colors.white),
-            ),
-          ),
+              ..._buildSection(context, grp.catchUp,     icon: Icons.cake,          color: const Color(0xFFF472B6), title: 'Birthdays Today',             isBirthday: true, liveDot: false),
+              ..._buildSection(context, grp.onlineNearby, icon: Icons.wifi_tethering, color: const Color(0xFF22C55E), title: 'Online Nearby',               isBirthday: false, liveDot: true),
+              ..._buildSection(context, grp.bestMatches,  icon: Icons.stars,          color: const Color(0xFFFF6B6B), title: 'Best Matches',                isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.sharedVibes,  icon: Icons.favorite,       color: const Color(0xFF4ECDC4), title: 'Similar Vibes',               isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.sameAge,      icon: Icons.group,          color: const Color(0xFF45B7D1), title: 'Your Age Group',              isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.nearby,       icon: Icons.near_me,        color: const Color(0xFF96CEB4), title: 'Close By',                    isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.others,       icon: Icons.explore,        color: const Color(0xFF9B59B6), title: 'Discover',                    isBirthday: false, liveDot: false,
+                  onViewAll: grp.others.isNotEmpty ? () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => DiscoverAllScreen(users: grp.others, me: _me),
+                  )) : null),
         ],
       ),
     );
@@ -703,6 +659,8 @@ class _SectionBlock extends StatelessWidget {
   final bool liveDot;
   final List<Widget> children;
   final bool wide;
+  final bool single;
+  final VoidCallback? onViewAll;
 
   const _SectionBlock({
     required this.icon,
@@ -712,24 +670,27 @@ class _SectionBlock extends StatelessWidget {
     required this.liveDot,
     required this.children,
     this.wide = false,
+    this.single = false,
+    this.onViewAll,
   });
 
   @override
   Widget build(BuildContext context) {
-    final cardWidth = (MediaQuery.of(context).size.width - 36) / 2;
-    final wideWidth = MediaQuery.of(context).size.width - 28;
+    final screenW = MediaQuery.of(context).size.width;
+    final cardWidth = (screenW - 36) / 2;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ── Section header (matches RN sectionHeader padding) ──────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
+          padding: const EdgeInsets.fromLTRB(12, 16, 16, 10),
           child: Row(children: [
             Container(
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                  color: iconColor.withOpacity(0.15),
+                  color: iconColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8)),
               child: Icon(icon, size: 15, color: iconColor),
             ),
@@ -744,10 +705,9 @@ class _SectionBlock extends StatelessWidget {
             ),
             if (liveDot) ...[
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                 decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E).withOpacity(0.12),
+                    color: const Color(0xFF052e16).withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(8)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   Container(
@@ -765,37 +725,77 @@ class _SectionBlock extends StatelessWidget {
                           letterSpacing: 0.5)),
                 ]),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
             ],
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0x1A1C1C1E),
-                borderRadius: BorderRadius.circular(10),
+            if (onViewAll != null)
+              GestureDetector(
+                onTap: onViewAll,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('View All',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary)),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.chevron_right, size: 14, color: AppColors.primary),
+                  ]),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0x1A1C1C1E),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('$count',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textTertiary)),
               ),
-              child: Text('$count',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textTertiary)),
-            ),
           ]),
         ),
-        SizedBox(
-          height: wide ? 90 : 200,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemCount: children.length,
-            itemBuilder: (_, i) => SizedBox(
-              width: wide ? wideWidth : cardWidth,
-              child: children[i],
+
+        // ── Card list ──────────────────────────────────────────────────────
+        if (wide)
+          // Birthday wide cards: intrinsic height, padded
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: children.first,
+          )
+        else if (single)
+          // Single non-wide card: constrain height + width like the list does
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 16),
+            child: SizedBox(
+              height: 260,
+              width: cardWidth,
+              child: children.first,
+            ),
+          )
+        else
+          SizedBox(
+            height: 260,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.only(left: 12, right: 16),
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemCount: children.length,
+              itemBuilder: (_, i) => SizedBox(
+                width: cardWidth,
+                child: children[i],
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -803,12 +803,13 @@ class _SectionBlock extends StatelessWidget {
 
 // ─── User card ────────────────────────────────────────────────────────────────
 
-class _UserCard extends StatelessWidget {
+class NearbyUserCard extends StatelessWidget {
   final Map<String, dynamic> user;
   final bool isBirthday;
   final void Function(Map<String, dynamic>) onTap;
+  final void Function(Map<String, dynamic>)? onSayHi;
 
-  const _UserCard({required this.user, required this.onTap, this.isBirthday = false});
+  const NearbyUserCard({super.key, required this.user, required this.onTap, this.onSayHi, this.isBirthday = false});
 
   @override
   Widget build(BuildContext context) {
@@ -820,12 +821,14 @@ class _UserCard extends StatelessWidget {
     final dist = _fmtDist(user['distance']);
     final city = user['city'] as String?;
     final isOnline = user['is_online'] == true;
-    final interests =
-        _parseArr(user['interests']).take(2).map((e) => e.toString()).toList();
+    final allInterests = _parseArr(user['interests']).map((e) => e.toString()).toList();
+    final displayTags = allInterests.take(2).toList();
+    final extraCount = allInterests.length > 2 ? allInterests.length - 2 : 0;
     final ci = (user['_ci'] as List?)?.cast<String>() ?? [];
     final pct = (user['_pct'] as double?) ?? 0;
     final bdColor =
         gender == 'male' ? const Color(0xFF3591F9) : const Color(0xFFF472B6);
+    final isActiveToday = user['_isActiveToday'] == true;
 
     return GestureDetector(
       onTap: () => onTap(user),
@@ -849,20 +852,220 @@ class _UserCard extends StatelessWidget {
                 dist: dist,
                 city: city,
                 isOnline: isOnline,
-                interests: interests,
+                interests: displayTags,
                 ci: ci,
                 pct: pct,
                 isBirthday: true,
                 bdColor: bdColor,
-                onTap: () => onTap(user))
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                onTap: () => (onSayHi ?? onTap)(user))
+            : Stack(
                 children: [
-                  if (pct >= 40)
-                    Align(
-                      alignment: Alignment.topRight,
+                  // Card body
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      // Birthday banner
+                      if (isBirthday)
+                        Container(
+                          color: bdColor,
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          alignment: Alignment.center,
+                          child: const Text('🎂 Birthday Today!',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.white)),
+                        ),
+                      // Avatar — marginTop: 16
+                      Padding(
+                        padding: EdgeInsets.only(
+                            top: isBirthday ? 8 : 16),
+                        child: Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 36,
+                              backgroundColor: AppColors.border,
+                              backgroundImage: pic != null
+                                  ? CachedNetworkImageProvider(pic)
+                                  : null,
+                              child: pic == null
+                                  ? Text(
+                                      name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                      style: const TextStyle(
+                                          color: AppColors.text,
+                                          fontFamily: 'Outfit',
+                                          fontWeight: FontWeight.w600))
+                                  : null,
+                            ),
+                            if (isOnline)
+                              Positioned(
+                                  bottom: 2,
+                                  right: 2,
+                                  child: Container(
+                                      width: 13,
+                                      height: 13,
+                                      decoration: BoxDecoration(
+                                          color: const Color(0xFF22C55E),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                              color: const Color(0xFF111827),
+                                              width: 2))))
+                            else if (isActiveToday)
+                              Positioned(
+                                  bottom: 2,
+                                  right: 2,
+                                  child: Container(
+                                      width: 13,
+                                      height: 13,
+                                      decoration: BoxDecoration(
+                                          color: const Color(0xFFF59E0B),
+                                          shape: BoxShape.circle,
+                                          border: Border.all(
+                                              color: const Color(0xFF111827),
+                                              width: 2)))),
+                          ],
+                        ),
+                      ),
+                      // Content: paddingH:12 paddingTop:8 paddingBottom:12
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              // Name + gender badge
+                              Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Flexible(
+                                        child: Text(name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                                fontSize: 14,
+                                                fontFamily: 'Outfit',
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.text))),
+                                    if (age != null &&
+                                        gender != null &&
+                                        (gender == 'male' || gender == 'female')) ...[
+                                      const SizedBox(width: 4),
+                                      _GenderBadge(gender: gender, age: age),
+                                    ],
+                                  ]),
+                              // Bio
+                              if (bio != null && bio.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Text(bio,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontSize: 12,
+                                          fontFamily: 'Outfit',
+                                          color: AppColors.textTertiary,
+                                          height: 1.4)),
+                                ),
+                              // Distance · city
+                              if (dist.isNotEmpty || city != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                      [dist, city]
+                                          .where((e) => e != null && (e as String).isNotEmpty)
+                                          .cast<String>()
+                                          .join(' · '),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                          fontSize: 11,
+                                          fontFamily: 'Outfit',
+                                          color: AppColors.textTertiary)),
+                                ),
+                              // Interest tags + "+N"
+                              if (!isBirthday && displayTags.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    ...displayTags.map((tag) {
+                                      final isShared = ci.any((c) =>
+                                          c.toLowerCase() == tag.toLowerCase());
+                                      return Flexible(
+                                        fit: FlexFit.loose,
+                                        child: Container(
+                                          margin: const EdgeInsets.only(right: 4),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 7, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: isShared
+                                                ? const Color(0xFF042F2E)
+                                                : const Color(0xFF1E293B),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Text(_shortenLabel(tag),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontFamily: 'Outfit',
+                                                  fontWeight: FontWeight.w500,
+                                                  color: isShared
+                                                      ? const Color(0xFF4ECDC4)
+                                                      : AppColors.textTertiary)),
+                                        ),
+                                      );
+                                    }),
+                                    if (extraCount > 0)
+                                      Text('+$extraCount',
+                                          style: const TextStyle(
+                                              fontSize: 10,
+                                              fontFamily: 'Outfit',
+                                              fontWeight: FontWeight.w500,
+                                              color: AppColors.textTertiary)),
+                                  ],
+                                ),
+                              ],
+                              const Spacer(),
+                              // Say Hi button
+                              GestureDetector(
+                                onTap: () => (onSayHi ?? onTap)(user),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 7),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                        color: AppColors.primary, width: 1.5),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Text('Say Hi',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          fontFamily: 'Outfit',
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.primary)),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  // Match % badge — absolutely positioned top-right (like RN)
+                  if (!isBirthday && pct >= 40)
+                    Positioned(
+                      top: 8,
+                      right: 8,
                       child: Container(
-                        margin: const EdgeInsets.only(top: 8, right: 8),
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
@@ -881,149 +1084,6 @@ class _UserCard extends StatelessWidget {
                                     : const Color(0xFFFCD34D))),
                       ),
                     ),
-                  const SizedBox(height: 4),
-                  Stack(
-                    children: [
-                      CircleAvatar(
-                        radius: 36,
-                        backgroundColor: AppColors.border,
-                        backgroundImage: pic != null
-                            ? CachedNetworkImageProvider(pic)
-                            : null,
-                        child: pic == null
-                            ? Text(
-                                name.isNotEmpty
-                                    ? name[0].toUpperCase()
-                                    : '?',
-                                style: const TextStyle(
-                                    color: AppColors.text,
-                                    fontFamily: 'Outfit',
-                                    fontWeight: FontWeight.w600))
-                            : null,
-                      ),
-                      if (isOnline)
-                        Positioned(
-                            bottom: 2,
-                            right: 2,
-                            child: Container(
-                                width: 13,
-                                height: 13,
-                                decoration: BoxDecoration(
-                                    color: const Color(0xFF22C55E),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: const Color(0xFF111827),
-                                        width: 2)))),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Flexible(
-                                  child: Text(name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                          fontSize: 14,
-                                          fontFamily: 'Outfit',
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.text))),
-                              if (age != null &&
-                                  gender != null &&
-                                  (gender == 'male' ||
-                                      gender == 'female')) ...[
-                                const SizedBox(width: 4),
-                                _GenderBadge(gender: gender, age: age),
-                              ],
-                            ]),
-                        if (bio != null && bio.isNotEmpty)
-                          Text(bio,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  fontFamily: 'Outfit',
-                                  color: AppColors.textTertiary,
-                                  height: 1.4)),
-                        if (dist.isNotEmpty || city != null)
-                          Text(
-                              [dist, city]
-                                  .where((e) => e != null && e!.isNotEmpty)
-                                  .cast<String>()
-                                  .join(' · '),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  fontSize: 11,
-                                  fontFamily: 'Outfit',
-                                  color: AppColors.textTertiary)),
-                        if (interests.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Wrap(
-                              alignment: WrapAlignment.center,
-                              spacing: 4,
-                              runSpacing: 4,
-                              children: interests.map((tag) {
-                                final isShared = ci.any((c) =>
-                                    c.toLowerCase() == tag.toLowerCase());
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: isShared
-                                        ? const Color(0xFF042F2E)
-                                        : const Color(0xFF1E293B),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(_shortenLabel(tag),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          fontFamily: 'Outfit',
-                                          fontWeight: FontWeight.w500,
-                                          color: isShared
-                                              ? const Color(0xFF4ECDC4)
-                                              : AppColors.textTertiary)),
-                                );
-                              }).toList()),
-                        ],
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          width: double.infinity,
-                          child: GestureDetector(
-                            onTap: () => onTap(user),
-                            child: Container(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 7),
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                    color: AppColors.primary, width: 1.5),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: const Text('Say Hi',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      fontFamily: 'Outfit',
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary)),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
                 ],
               ),
       ),
@@ -1113,6 +1173,7 @@ class _WideCardBody extends StatelessWidget {
                   child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                    // Name + gender badge + match % inline
                     Row(children: [
                       Flexible(
                           child: Text(name,
@@ -1129,7 +1190,29 @@ class _WideCardBody extends StatelessWidget {
                         const SizedBox(width: 4),
                         _GenderBadge(gender: gender!, age: age!),
                       ],
+                      if (!isBirthday && pct >= 40) ...[
+                        const SizedBox(width: 4),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: pct >= 70
+                                ? const Color(0x60065F46)
+                                : const Color(0x5092400E),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text('${pct.round()}%',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700,
+                                  color: pct >= 70
+                                      ? const Color(0xFF4ADE80)
+                                      : const Color(0xFFFCD34D))),
+                        ),
+                      ],
                     ]),
+                    // Distance · city
                     Text(
                         [dist, city]
                             .where((e) => e != null && e!.isNotEmpty)
@@ -1141,6 +1224,7 @@ class _WideCardBody extends StatelessWidget {
                             fontSize: 11,
                             fontFamily: 'Outfit',
                             color: AppColors.textTertiary)),
+                    // Bio
                     if (bio != null && bio!.isNotEmpty)
                       Text(bio!,
                           maxLines: 1,
@@ -1149,6 +1233,45 @@ class _WideCardBody extends StatelessWidget {
                               fontSize: 12,
                               fontFamily: 'Outfit',
                               color: AppColors.textTertiary)),
+                    // First tag + "+N" (like RN wide card)
+                    if (interests.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Row(children: [
+                        Container(
+                          constraints: const BoxConstraints(maxWidth: 120),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: ci.any((c) => c.toLowerCase() ==
+                                    interests[0].toLowerCase())
+                                ? const Color(0xFF042F2E)
+                                : const Color(0xFF1E293B),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(_shortenLabel(interests[0]),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w500,
+                                  color: ci.any((c) =>
+                                          c.toLowerCase() ==
+                                          interests[0].toLowerCase())
+                                      ? const Color(0xFF4ECDC4)
+                                      : AppColors.textTertiary)),
+                        ),
+                        if (ci.length > 1) ...[
+                          const SizedBox(width: 4),
+                          Text('+${ci.length - 1}',
+                              style: const TextStyle(
+                                  fontSize: 10,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.textTertiary)),
+                        ],
+                      ]),
+                    ],
                   ])),
               const SizedBox(width: 8),
               GestureDetector(
@@ -1226,6 +1349,301 @@ class _FilterSheet extends StatefulWidget {
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
 }
+
+// ─── Profile preview bottom sheet ────────────────────────────────────────────
+
+class _ProfilePreviewSheet extends StatelessWidget {
+  final Map<String, dynamic> user;
+  final Map<String, dynamic>? me;
+  final VoidCallback onOpenProfile;
+
+  const _ProfilePreviewSheet({
+    required this.user,
+    required this.me,
+    required this.onOpenProfile,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (user['name'] ?? user['username'] ?? 'Unknown') as String;
+    final pic = user['profile_pic'] as String?;
+    final bio = user['bio'] as String?;
+    final age = _calcAge(user['birthday']);
+    final gender = (user['gender'] as String?)?.toLowerCase();
+    final dist = _fmtDist(user['distance']);
+    final city = user['city'] as String?;
+    final country = user['country'] as String?;
+    final isOnline = user['is_online'] == true;
+    final interests = _parseArr(user['interests']).map((e) => e.toString()).toList();
+    final purpose = _parseArr(user['purpose']).map((e) => e.toString()).toList();
+    final myInterests = me != null
+        ? _parseArr(me!['interests']).map((e) => e.toString().toLowerCase()).toSet()
+        : <String>{};
+    final myPurpose = me != null
+        ? _parseArr(me!['purpose']).map((e) => e.toString().toLowerCase()).toSet()
+        : <String>{};
+    final isMale = gender == 'male';
+    final genderColor = isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
+    final genderBg = isMale ? const Color(0xFF023781) : const Color(0xFF590244);
+
+    final locationParts = [
+      if (dist.isNotEmpty) dist,
+      if (city != null && city.isNotEmpty) city,
+      if (country != null && country.isNotEmpty) country,
+    ];
+
+    final maxHeight = MediaQuery.of(context).size.height * 0.85;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxHeight),
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 8,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 28,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: AppColors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+
+            // Header: avatar + info
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 46,
+                      backgroundColor: AppColors.border,
+                      backgroundImage: pic != null
+                          ? CachedNetworkImageProvider(pic)
+                          : null,
+                      child: pic == null
+                          ? Text(
+                              name.isNotEmpty ? name[0].toUpperCase() : '?',
+                              style: const TextStyle(
+                                  fontSize: 28,
+                                  color: AppColors.text,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w600))
+                          : null,
+                    ),
+                    if (isOnline)
+                      Positioned(
+                          bottom: 3,
+                          right: 3,
+                          child: Container(
+                              width: 14,
+                              height: 14,
+                              decoration: BoxDecoration(
+                                  color: const Color(0xFF22C55E),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                      color: AppColors.bottomSheetBg,
+                                      width: 2)))),
+                  ],
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Flexible(
+                          child: Text(name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 20,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.text)),
+                        ),
+                        if (age != null && gender != null && (gender == 'male' || gender == 'female')) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            decoration: BoxDecoration(color: genderBg, borderRadius: BorderRadius.circular(6)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(isMale ? Icons.male : Icons.female, size: 13, color: genderColor),
+                              Text('$age',
+                                  style: TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: genderColor)),
+                            ]),
+                          ),
+                        ],
+                      ]),
+                      if (bio != null && bio.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(bio,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontFamily: 'Outfit',
+                                color: AppColors.textTertiary,
+                                height: 1.4)),
+                      ],
+                      if (locationParts.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(locationParts.join(' · '),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontFamily: 'Outfit',
+                                color: AppColors.textTertiary)),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+
+            // Purpose section
+            if (purpose.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text('Purpose',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: purpose.map((p) {
+                  final isMatch = myPurpose.contains(p.toLowerCase());
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isMatch
+                          ? AppColors.primary.withValues(alpha: 0.12)
+                          : AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: isMatch ? AppColors.primary : AppColors.border,
+                          width: 1.5),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (isMatch) ...[
+                        const Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(p,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w500,
+                              color: isMatch ? AppColors.primary : AppColors.textTertiary)),
+                    ]),
+                  );
+                }).toList(),
+              ),
+              if (purpose.any((p) => myPurpose.contains(p.toLowerCase()))) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${purpose.where((p) => myPurpose.contains(p.toLowerCase())).length} matching purpose',
+                  style: const TextStyle(
+                      fontSize: 12, fontFamily: 'Outfit', color: AppColors.primary),
+                ),
+              ],
+            ],
+
+            // Interests section
+            if (interests.isNotEmpty) ...[
+              const SizedBox(height: 20),
+              const Text('Interests',
+                  style: TextStyle(
+                      fontSize: 15,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text)),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: interests.map((tag) {
+                  final isMatch = myInterests.contains(tag.toLowerCase());
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isMatch
+                          ? AppColors.primary.withValues(alpha: 0.12)
+                          : AppColors.surface,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                          color: isMatch ? AppColors.primary : AppColors.border,
+                          width: 1.5),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      if (isMatch) ...[
+                        const Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(tag,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w500,
+                              color: isMatch ? AppColors.primary : AppColors.textTertiary)),
+                    ]),
+                  );
+                }).toList(),
+              ),
+              if (interests.any((t) => myInterests.contains(t.toLowerCase()))) ...[
+                const SizedBox(height: 6),
+                Text(
+                  '${interests.where((t) => myInterests.contains(t.toLowerCase())).length} matching interest${interests.where((t) => myInterests.contains(t.toLowerCase())).length > 1 ? 's' : ''}',
+                  style: const TextStyle(
+                      fontSize: 12, fontFamily: 'Outfit', color: AppColors.primary),
+                ),
+              ],
+            ],
+
+            // Open Full Profile button
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: onOpenProfile,
+                icon: const Icon(Icons.person, color: Colors.white, size: 20),
+                label: const Text('Open Full Profile',
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Filter bottom sheet ─────────────────────────────────────────────────────
 
 class _FilterSheetState extends State<_FilterSheet> {
   late String _gender;

@@ -235,9 +235,9 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                 subtitle: 'Communities you can join from your location',
                 onSeeAll: () {},
                 child: _nearbyCommLoading
-                    ? _HorizSkeleton(count: 3, itemWidth: 260, itemHeight: 96)
+                    ? _HorizSkeleton(count: 3, itemWidth: 260, itemHeight: 130)
                     : SizedBox(
-                        height: 110,
+                        height: 130,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -307,7 +307,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                       )
                     else
                       SizedBox(
-                        height: 100,
+                        height: 112,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 12),
