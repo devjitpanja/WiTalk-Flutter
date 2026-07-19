@@ -735,8 +735,8 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
   // ─── Quick access grid ─────────────────────────────────────────────────────
   Widget _buildQuickAccess(_T t) {
     final items = [
-      _QuickItem(icon: Icons.card_giftcard, label: 'Rewards', color: const Color(0xFFFF9F0A), bg: const Color(0x1AFF9F0A), showDot: !_hasVisitedRewards, onTap: () { _markVisited('hasVisitedRewards', (v) => _hasVisitedRewards = v); /* no route yet */ }),
-      _QuickItem(icon: Icons.confirmation_number, label: 'Pass', color: const Color(0xFFF59E0B), bg: const Color(0x1AF59E0B), onTap: () {}),
+      _QuickItem(icon: Icons.card_giftcard, label: 'Rewards', color: const Color(0xFFFF9F0A), bg: const Color(0x1AFF9F0A), showDot: !_hasVisitedRewards, onTap: () { _markVisited('hasVisitedRewards', (v) => _hasVisitedRewards = v); context.push('/rewards'); }),
+      _QuickItem(icon: Icons.confirmation_number, label: 'Pass', color: const Color(0xFFF59E0B), bg: const Color(0x1AF59E0B), onTap: () => context.push('/pass')),
       _QuickItem(icon: Icons.account_balance_wallet, label: 'Wallet', color: const Color(0xFF34C759), bg: const Color(0x1A34C759), onTap: () => context.push('/wallet')),
       _QuickItem(icon: Icons.school, label: 'Tutorial', color: const Color(0xFFAF52DE), bg: const Color(0x1AAF52DE), showDot: !_hasVisitedTutorial, onTap: () { _markVisited('hasVisitedTutorial', (v) => _hasVisitedTutorial = v); context.push('/tutorial'); }),
       _QuickItem(icon: Icons.bookmark, label: 'Saved', color: const Color(0xFF007AFF), bg: const Color(0x1A007AFF), onTap: () => context.push('/saved')),
@@ -837,7 +837,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
     _MenuItem(icon: Icons.notifications, title: 'Notifications', description: 'Manage notification preferences', onTap: () => context.push('/settings/notifications')),
     _MenuItem(icon: isDark ? Icons.dark_mode : Icons.light_mode, title: 'Dark Mode', description: isDark ? 'Switch to light mode' : 'Switch to dark mode', showSwitch: true, switchValue: isDark, onSwitchToggle: () => ref.read(themeProvider.notifier).toggle()),
     _MenuItem(icon: Icons.person_add, title: 'Invite Friends', description: 'Earn rewards', badge: 'Earn money', badgeColor: const Color(0xFFFF9F0A), onTap: () => context.push('/referral')),
-    _MenuItem(icon: Icons.bug_report, title: 'Bugs & Suggestions', description: 'Report bugs or suggest features', onTap: () {}),
+    _MenuItem(icon: Icons.bug_report, title: 'Bugs & Suggestions', description: 'Report bugs or suggest features', onTap: () => context.push('/bugs-suggestions')),
     _MenuItem(icon: Icons.help_outline, title: 'Help Center', description: 'Get support', onTap: () => _showSupportSheet(t)),
   ];
 

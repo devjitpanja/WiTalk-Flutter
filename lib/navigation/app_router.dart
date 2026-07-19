@@ -23,6 +23,8 @@ import '../screens/profile/account_screen.dart';
 import '../screens/profile/account_overview_screen.dart';
 import '../screens/profile/blocked_accounts_screen.dart';
 import '../screens/profile/my_purchases_screen.dart';
+import '../screens/profile/rewards_screen.dart';
+import '../screens/profile/pass_screen.dart';
 import '../screens/profile/visitors_screen.dart';
 import '../screens/profile/likes_screen.dart';
 import '../screens/profile/merit_screen.dart';
@@ -65,6 +67,7 @@ import '../screens/settings/notification_settings_screen.dart';
 import '../screens/settings/message_privacy_screen.dart';
 import '../screens/settings/content_preferences_screen.dart';
 import '../screens/settings/storage_data_screen.dart';
+import '../screens/settings/bugs_suggestions_screen.dart';
 import '../screens/media/camera_screen.dart';
 import '../screens/media/fullscreen_video_screen.dart';
 import '../screens/media/mini_screen.dart';
@@ -148,6 +151,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/account-overview', builder: (_, __) => const AccountOverviewScreen()),
       GoRoute(path: '/account-settings', builder: (_, __) => const AccountScreen()),
       GoRoute(path: '/purchases', builder: (_, __) => const MyPurchasesScreen()),
+      GoRoute(path: '/rewards', builder: (_, __) => const RewardsScreen()),
+      GoRoute(path: '/pass', builder: (_, __) => const PassScreen()),
       GoRoute(path: '/blocked-accounts', builder: (_, __) => const BlockedAccountsScreen()),
       GoRoute(path: '/visitors', builder: (_, __) => const VisitorsScreen()),
       GoRoute(path: '/likes', builder: (_, __) => const LikesScreen()),
@@ -212,6 +217,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/settings/message-privacy', builder: (_, __) => const MessagePrivacyScreen()),
       GoRoute(path: '/settings/content', builder: (_, __) => const ContentPreferencesScreen()),
       GoRoute(path: '/settings/storage', builder: (_, __) => const StorageDataScreen()),
+      GoRoute(path: '/bugs-suggestions', builder: (_, __) => const BugsSuggestionsScreen()),
 
       // Media
       GoRoute(path: '/camera', builder: (_, __) => const CameraScreen()),
