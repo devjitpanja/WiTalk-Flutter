@@ -1,127 +1,173 @@
+import 'dart:async';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
 
-typedef MessageCallback = void Function(Map<String, dynamic> data);
-typedef TypingCallback = void Function(String conversationId, String userId, bool isTyping);
-
+// Full socket service — manages the Socket.IO connection lifecycle.
+// The ChatNotifier in chat_provider.dart registers its own event handlers
+// on the shared socket. This service just exposes the socket instance
+// and handles auth, reconnection, and room management.
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
   SocketService._internal();
 
   io.Socket? _socket;
-  final _storage = const FlutterSecureStorage(aOptions: AndroidOptions(encryptedSharedPreferences: true));
+  final _storage = const FlutterSecureStorage(
+      aOptions: AndroidOptions(encryptedSharedPreferences: true));
   bool _isConnected = false;
+  bool _isConnecting = false;
 
-  final Map<String, List<MessageCallback>> _messageListeners = {};
-  final Map<String, List<TypingCallback>> _typingListeners = {};
-  final List<VoidCallback> _connectListeners = [];
+  final _connectCompleter = <Completer<void>>[];
 
+  io.Socket? get socket => _socket;
   bool get isConnected => _isConnected;
+  bool get isConnecting => _isConnecting;
 
-  Future<void> connect() async {
-    if (_isConnected) return;
+  // ── Connect ────────────────────────────────────────────────────────────────
+  Future<io.Socket> connect() async {
+    if (_socket != null && _isConnected) return _socket!;
 
-    final token = await _storage.read(key: 'accessToken');
-    final uid = await _storage.read(key: 'uid');
+    // Coalesce concurrent connect() calls
+    if (_isConnecting) {
+      final c = Completer<void>();
+      _connectCompleter.add(c);
+      await c.future;
+      return _socket!;
+    }
 
-    _socket = io.io(
-      AppConfig.apiBaseUrl,
-      io.OptionBuilder()
-          .setTransports(['websocket'])
-          .setAuth({'token': token, 'userId': uid})
-          .enableAutoConnect()
-          .enableReconnection()
-          .setReconnectionAttempts(10)
-          .setReconnectionDelay(2000)
-          .build(),
-    );
+    _isConnecting = true;
+    try {
+      final token = await _storage.read(key: 'accessToken');
+      final uid = await _storage.read(key: 'uid');
 
-    _socket!.on('connect', (_) {
-      _isConnected = true;
-      for (final cb in _connectListeners) cb();
-    });
+      _socket?.dispose();
+      _socket = io.io(
+        AppConfig.apiBaseUrl,
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .setAuth({'token': token, 'userId': uid})
+            .enableReconnection()
+            .setReconnectionAttempts(double.infinity.toInt())
+            .setReconnectionDelay(1000)
+            .setReconnectionDelayMax(10000)
+            .setRandomizationFactor(0.5)
+            .setTimeout(20000)
+            .disableAutoConnect()
+            .build(),
+      );
 
-    _socket!.on('disconnect', (_) => _isConnected = false);
+      _setupLifecycleListeners();
+      _socket!.connect();
 
-    _socket!.on('new_message', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final convId = d['conversationId'] as String? ?? '';
-      _messageListeners[convId]?.forEach((cb) => cb(d));
-      _messageListeners['*']?.forEach((cb) => cb(d));
-    });
+      // Wait up to 10s for the connection
+      final timer = Timer(const Duration(seconds: 10), () {
+        if (!_isConnected) {
+          _completeWaiters();
+        }
+      });
 
-    _socket!.on('new_group_message', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final groupId = d['groupId'] as String? ?? '';
-      _messageListeners[groupId]?.forEach((cb) => cb(d));
-      _messageListeners['*']?.forEach((cb) => cb(d));
-    });
+      await Future.any([
+        _socket!.onceAsync('connect'),
+        Future.delayed(const Duration(seconds: 10)),
+      ]).then((_) {
+        timer.cancel();
+        _completeWaiters();
+      }).catchError((_) {
+        timer.cancel();
+        _completeWaiters();
+      });
 
-    _socket!.on('typing', (data) {
-      final d = Map<String, dynamic>.from(data as Map);
-      final convId = d['conversationId'] as String? ?? '';
-      final userId = d['userId'] as String? ?? '';
-      final isTyping = d['isTyping'] == true;
-      _typingListeners[convId]?.forEach((cb) => cb(convId, userId, isTyping));
-    });
-
-    _socket!.on('user_online', (data) {});
-    _socket!.on('user_offline', (data) {});
-    _socket!.on('message_read', (data) {});
+      return _socket!;
+    } finally {
+      _isConnecting = false;
+    }
   }
 
+  void _setupLifecycleListeners() {
+    _socket?.on('connect', (_) {
+      _isConnected = true;
+      _completeWaiters();
+    });
+
+    _socket?.on('disconnect', (reason) {
+      _isConnected = false;
+    });
+
+    _socket?.on('connect_error', (error) {
+      _isConnected = false;
+    });
+
+    _socket?.on('reconnect', (_) {
+      _isConnected = true;
+    });
+
+    _socket?.on('reconnect_failed', (_) {
+      _isConnected = false;
+    });
+  }
+
+  void _completeWaiters() {
+    final waiters = List<Completer<void>>.from(_connectCompleter);
+    _connectCompleter.clear();
+    for (final c in waiters) {
+      if (!c.isCompleted) c.complete();
+    }
+  }
+
+  // ── Disconnect ─────────────────────────────────────────────────────────────
   void disconnect() {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
     _isConnected = false;
+    _isConnecting = false;
   }
 
+  // ── Room management ────────────────────────────────────────────────────────
   void joinConversation(String conversationId) {
-    _socket?.emit('join_chat', {'chatId': conversationId});
-  }
-
-  void joinGroup(String groupId) {
-    _socket?.emit('join_group', {'groupId': groupId});
+    _socket?.emit('join_conversation', conversationId);
   }
 
   void leaveConversation(String conversationId) {
-    _socket?.emit('leave_chat', {'chatId': conversationId});
+    _socket?.emit('leave_conversation', conversationId);
   }
 
-  void sendTyping(String conversationId, bool isTyping) {
-    _socket?.emit('typing', {'conversationId': conversationId, 'isTyping': isTyping});
+  void joinGroup(String groupId) {
+    _socket?.emit('join_group', {'group_id': groupId});
   }
 
-  void markRead(String conversationId, String messageId) {
-    _socket?.emit('message_read', {'conversationId': conversationId, 'messageId': messageId});
+  void leaveGroup(String groupId) {
+    _socket?.emit('leave_group', {'group_id': groupId});
   }
 
-  void onMessage(String conversationId, MessageCallback callback) {
-    _messageListeners.putIfAbsent(conversationId, () => []).add(callback);
+  // ── Emit helpers ───────────────────────────────────────────────────────────
+  void emit(String event, [dynamic data]) {
+    _socket?.emit(event, data);
   }
 
-  void onAnyMessage(MessageCallback callback) {
-    _messageListeners.putIfAbsent('*', () => []).add(callback);
+  void on(String event, Function(dynamic) handler) {
+    _socket?.on(event, handler);
   }
 
-  void onTyping(String conversationId, TypingCallback callback) {
-    _typingListeners.putIfAbsent(conversationId, () => []).add(callback);
+  void off(String event, [Function(dynamic)? handler]) {
+    if (handler != null) {
+      _socket?.off(event, handler);
+    } else {
+      _socket?.off(event);
+    }
   }
-
-  void offMessage(String conversationId, MessageCallback callback) {
-    _messageListeners[conversationId]?.remove(callback);
-  }
-
-  void offTyping(String conversationId, TypingCallback callback) {
-    _typingListeners[conversationId]?.remove(callback);
-  }
-
-  void onConnect(VoidCallback callback) => _connectListeners.add(callback);
 }
 
-typedef VoidCallback = void Function();
+// Extension for async once
+extension _SocketOnce on io.Socket {
+  Future<dynamic> onceAsync(String event) {
+    final completer = Completer<dynamic>();
+    once(event, (data) {
+      if (!completer.isCompleted) completer.complete(data);
+    });
+    return completer.future;
+  }
+}
 
 final socketService = SocketService();

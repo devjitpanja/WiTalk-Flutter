@@ -16,6 +16,7 @@ import '../screens/explore/search_screen.dart';
 import '../screens/explore/search_result_screen.dart';
 import '../screens/explore/discover_people_screen.dart';
 import '../screens/profile/profile_screen.dart';
+import '../screens/profile/user_profile_screen.dart';
 
 import '../screens/profile/edit_profile_screen.dart';
 import '../screens/profile/followers_screen.dart';
@@ -39,7 +40,20 @@ import '../screens/chat/group_chat_screen.dart';
 import '../screens/chat/group_list_screen.dart';
 import '../screens/chat/create_group_screen.dart';
 import '../screens/chat/group_info_screen.dart';
+import '../screens/chat/group_permissions_screen.dart';
+import '../screens/chat/group_tools_screen.dart';
+import '../screens/chat/group_action_log_screen.dart';
+import '../screens/chat/add_group_members_screen.dart';
+import '../screens/chat/join_group_screen.dart';
+import '../screens/chat/banned_users_screen.dart';
+import '../screens/chat/welcome_message_screen.dart';
+import '../screens/chat/start_group_adda_screen.dart';
 import '../screens/chat/message_requests_screen.dart';
+import '../screens/chat/pending_requests_screen.dart';
+import '../screens/chat/pinned_messages_screen.dart';
+import '../screens/chat/spam_protection_screen.dart';
+import '../screens/chat/topics/topics_list_view.dart';
+import '../screens/chat/topics/topic_detail_screen.dart';
 import '../screens/channels/channel_list_screen.dart';
 import '../screens/channels/channel_screen.dart';
 import '../screens/channels/explore_channels_screen.dart';
@@ -146,6 +160,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Profile
       GoRoute(path: '/profile', builder: (_, __) => const ProfileScreen()),
+      GoRoute(path: '/profile/:id', builder: (_, s) => UserProfileScreen(userId: s.pathParameters['id']!)),
       GoRoute(path: '/user/:id', builder: (_, s) => UserProfileScreen(userId: s.pathParameters['id']!)),
       GoRoute(path: '/edit-profile', builder: (_, __) => const EditProfileScreen()),
       GoRoute(path: '/followers/:id', builder: (_, s) => FollowersScreen(userId: s.pathParameters['id']!)),
@@ -166,13 +181,78 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/saved', builder: (_, __) => const SavedScreen()),
       GoRoute(path: '/id-verification', builder: (_, __) => const IdVerificationScreen()),
 
-      // Chat
-      GoRoute(path: '/chat/conversation/:id', builder: (_, s) => ChatConversationScreen(chatId: s.pathParameters['id']!)),
+      // Chat — Private
+      GoRoute(
+        path: '/chat/conversation/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ChatConversationScreen(
+            chatId: s.pathParameters['id']!,
+            otherUser: extra?['otherUser'] as Map<String, dynamic>?,
+            conversationStatus: extra?['status'] as String?,
+            initiatorId: extra?['initiatorId'] as String?,
+          );
+        },
+      ),
+      GoRoute(path: '/chat/requests', builder: (_, __) => const MessageRequestsScreen()),
+      GoRoute(path: '/chat/pending-requests', builder: (_, __) => const PendingRequestsScreen()),
+      GoRoute(path: '/chat/pinned/:id', builder: (_, s) => PinnedMessagesScreen(conversationId: s.pathParameters['id']!, isGroup: false)),
+
+      // Chat — Groups
       GoRoute(path: '/chat/group/:id', builder: (_, s) => GroupChatScreen(groupId: s.pathParameters['id']!)),
       GoRoute(path: '/chat/groups', builder: (_, __) => const GroupListScreen()),
       GoRoute(path: '/chat/create-group', builder: (_, __) => const CreateGroupScreen()),
+      GoRoute(path: '/chat/join-group', builder: (_, __) => const JoinGroupScreen()),
       GoRoute(path: '/chat/group-info/:id', builder: (_, s) => GroupInfoScreen(groupId: s.pathParameters['id']!)),
-      GoRoute(path: '/chat/requests', builder: (_, __) => const MessageRequestsScreen()),
+      GoRoute(path: '/chat/group-permissions/:id', builder: (_, s) => GroupPermissionsScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(path: '/chat/group-tools/:id', builder: (_, s) => GroupToolsScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(path: '/chat/group-action-log/:id', builder: (_, s) => GroupActionLogScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/chat/add-group-members/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return AddGroupMembersScreen(
+            groupId: s.pathParameters['id']!,
+            existingMemberIds: (extra?['existingMemberIds'] as List<dynamic>?)
+                    ?.map((e) => e.toString())
+                    .toList() ??
+                [],
+          );
+        },
+      ),
+      GoRoute(path: '/chat/banned-users/:id', builder: (_, s) => BannedUsersScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(path: '/chat/welcome-message/:id', builder: (_, s) => WelcomeMessageScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/chat/start-adda/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return StartGroupAddaScreen(
+            groupId: s.pathParameters['id']!,
+            groupName: extra?['groupName'] as String? ?? 'Group',
+          );
+        },
+      ),
+      GoRoute(path: '/chat/spam-protection/:id', builder: (_, s) => SpamProtectionScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(path: '/chat/group-spam-protection/:id', builder: (_, s) => SpamProtectionScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(path: '/chat/group-pinned/:id', builder: (_, s) => PinnedMessagesScreen(conversationId: s.pathParameters['id']!, isGroup: true)),
+
+      // Chat — Topics
+      GoRoute(
+        path: '/chat/group-topics/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return TopicsListView(
+            groupId: s.pathParameters['id']!,
+            isAdmin: extra?['isAdmin'] == true,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/chat/group-topics/:groupId/:topicId',
+        builder: (_, s) => TopicDetailScreen(
+            groupId: s.pathParameters['groupId']!,
+            topicId: s.pathParameters['topicId']!),
+      ),
 
       // Channels
       GoRoute(path: '/channels', builder: (_, __) => const ChannelListScreen()),
