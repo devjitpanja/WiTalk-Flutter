@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:video_player/video_player.dart';
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import 'verification_badge.dart';
@@ -69,6 +70,8 @@ class PostCard extends StatefulWidget {
   final Map<String, dynamic> post;
   final String? currentUserId;
   final bool isRemoved;
+  /// True when this card is actually visible on screen (used for video autoplay).
+  final bool isVisible;
   final void Function(String postId, bool isLiked, int count)? onLikeUpdate;
   final void Function(String postId, int count)? onCommentUpdate;
   final void Function(String postId, String userId, Map<String, dynamic> extra)? onShowMoreMenu;
@@ -80,6 +83,7 @@ class PostCard extends StatefulWidget {
     required this.post,
     this.currentUserId,
     this.isRemoved = false,
+    this.isVisible = true,
     this.onLikeUpdate,
     this.onCommentUpdate,
     this.onShowMoreMenu,
@@ -99,6 +103,13 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   bool _expanded = false;
   bool _showReadMore = false;
   int _mediaIndex = 0;
+
+  // Video player
+  VideoPlayerController? _videoCtrl;
+  bool _videoInitialized = false;
+  bool _videoMuted = true;
+  bool _isBuffering = false;
+  String? _currentVideoUrl;
 
   // Double-tap heart
   late AnimationController _heartCtrl;
@@ -160,6 +171,25 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     });
 
     _startViewTimer();
+    _initVideoIfNeeded();
+  }
+
+  @override
+  void didUpdateWidget(PostCard old) {
+    super.didUpdateWidget(old);
+    // Autoplay / pause based on visibility
+    if (widget.isVisible != old.isVisible) {
+      if (widget.isVisible) {
+        _videoCtrl?.play();
+      } else {
+        _videoCtrl?.pause();
+      }
+    }
+    // Re-init if media changed
+    if (widget.post != old.post) {
+      _disposeVideo();
+      _initVideoIfNeeded();
+    }
   }
 
   @override
@@ -167,9 +197,68 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     _heartCtrl.dispose();
     _singleTapTimer?.cancel();
     _viewTimer?.cancel();
+    _disposeVideo();
     super.dispose();
   }
 
+  // ── Video ──────────────────────────────────────────────────────────────────
+  void _initVideoIfNeeded() {
+    final items = _mediaItems;
+    if (items.isEmpty) return;
+    final first = items[_mediaIndex];
+    if ((first['type'] as String?) != 'video') return;
+    final url = first['url'] as String?;
+    if (url == null || url.isEmpty || url == _currentVideoUrl) return;
+
+    _currentVideoUrl = url;
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(url))
+      ..setLooping(true)
+      ..setVolume(_videoMuted ? 0.0 : 1.0);
+    _videoCtrl = ctrl;
+    ctrl.addListener(_onVideoListener);
+    ctrl.initialize().then((_) {
+      if (mounted) {
+        setState(() => _videoInitialized = true);
+        if (widget.isVisible) ctrl.play();
+      }
+    });
+  }
+
+  void _onVideoListener() {
+    if (!mounted || _videoCtrl == null) return;
+    final buffering = _videoCtrl!.value.isBuffering;
+    if (buffering != _isBuffering) setState(() => _isBuffering = buffering);
+  }
+
+  void _disposeVideo() {
+    _videoCtrl?.removeListener(_onVideoListener);
+    _videoCtrl?.dispose();
+    _videoCtrl = null;
+    _videoInitialized = false;
+    _isBuffering = false;
+    _currentVideoUrl = null;
+  }
+
+  void _toggleMute() {
+    setState(() {
+      _videoMuted = !_videoMuted;
+      _videoCtrl?.setVolume(_videoMuted ? 0.0 : 1.0);
+    });
+  }
+
+  void _openMiniScreen(String videoUrl) {
+    // Build a post map suitable for MiniScreen
+    final postData = Map<String, dynamic>.from(_p);
+    postData['videoUrl'] = videoUrl;
+    context.push('/mini', extra: {
+      'posts': [postData],
+      'initialIndex': 0,
+      'userId': widget.currentUserId,
+      'fromVideoClick': true,
+    });
+  }
+
+  // ── View tracking ──────────────────────────────────────────────────────────
   void _startViewTimer() {
     _viewTimer = Timer(const Duration(seconds: 3), () {
       if (!_viewTracked && mounted) {
@@ -185,10 +274,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     } catch (_) {}
   }
 
+  // ── Like ───────────────────────────────────────────────────────────────────
   Future<void> _toggleLike() async {
     if (_liking || widget.isRemoved) return;
-    final prev = _isLiked;
-    final prevCount = _likes;
+    final prev = _isLiked, prevCount = _likes;
     final newLiked = !prev;
     final newCount = newLiked ? prevCount + 1 : (prevCount - 1).clamp(0, prevCount);
     setState(() { _liking = true; _isLiked = newLiked; _likes = newCount; });
@@ -211,6 +300,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     }
   }
 
+  // ── Follow ─────────────────────────────────────────────────────────────────
   Future<void> _toggleFollow() async {
     if (widget.currentUserId == null || widget.currentUserId == _userId) return;
     setState(() => _isFollowing = !_isFollowing);
@@ -221,12 +311,12 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     }
   }
 
-  void _handleImageTap(int index) {
+  // ── Double-tap ─────────────────────────────────────────────────────────────
+  void _handleMediaTap(int index) {
     final now = DateTime.now().millisecondsSinceEpoch;
     const doubleTapMs = 300;
     if (_lastTap != null && now - _lastTap! < doubleTapMs) {
-      _singleTapTimer?.cancel();
-      _singleTapTimer = null;
+      _singleTapTimer?.cancel(); _singleTapTimer = null;
       if (!_isLiked && !_liking) _toggleLike();
       _triggerHeart();
       _lastTap = null;
@@ -235,7 +325,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     _lastTap = now;
     _singleTapTimer?.cancel();
     _singleTapTimer = Timer(const Duration(milliseconds: doubleTapMs), () {
-      _openImageViewer(index);
+      final items = _mediaItems;
+      if (index < items.length && (items[index]['type'] as String?) != 'video') {
+        _openImageViewer(index);
+      }
       _lastTap = null;
     });
   }
@@ -245,7 +338,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     _heartCtrl.forward(from: 0);
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -265,10 +358,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   // ── Header ────────────────────────────────────────────────────────────────
   Widget _buildHeader(ThemeColors c) {
-    final name      = _user?['name'] ?? 'Unknown';
-    final pic       = _user?['profile_pic'] as String?;
+    final name       = _user?['name'] ?? 'Unknown';
+    final pic        = _user?['profile_pic'] as String?;
     final isVerified = _user?['is_verified'] == true;
-    final timeStr   = _p['created_on'] != null
+    final badgeData  = _user?['verification_badge'] as Map<String, dynamic>?;
+    final timeStr    = _p['created_on'] != null
         ? timeago.format(DateTime.tryParse(_p['created_on'] as String) ?? DateTime.now())
         : '';
     final isOwnPost = widget.currentUserId != null && widget.currentUserId == _userId;
@@ -283,10 +377,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             backgroundColor: c.border,
             backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
             child: pic == null
-                ? Text(
-                    (name.isNotEmpty ? name[0] : '?').toUpperCase(),
-                    style: TextStyle(color: c.text, fontFamily: 'Outfit'),
-                  )
+                ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(),
+                    style: TextStyle(color: c.text, fontFamily: 'Outfit'))
                 : null,
           ),
         ),
@@ -298,7 +390,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
               Row(children: [
                 Text(name, style: TextStyle(color: c.text, fontWeight: FontWeight.w600,
                     fontSize: 14, fontFamily: 'Outfit')),
-                if (isVerified) ...[const SizedBox(width: 2), const VerificationBadge(size: 14)],
+                if (isVerified) ...[
+                  const SizedBox(width: 2),
+                  VerificationBadge(isVerified: true, badge: badgeData, size: 14),
+                ],
               ]),
               Text(timeStr, style: TextStyle(color: c.textTertiary, fontSize: 12, fontFamily: 'Outfit')),
             ]),
@@ -344,70 +439,58 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     final spans = _parsedContent?.map<InlineSpan>((part) {
       switch (part.type) {
         case _PartType.link:
-          return TextSpan(
-            text: part.content,
-            style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontSize: 14),
-            recognizer: _tapRec(() => _openLink(part.content)),
-          );
+          return TextSpan(text: part.content,
+              style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontSize: 14),
+              recognizer: _tapRec(() => _openLink(part.content)));
         case _PartType.mention:
-          return TextSpan(
-            text: part.content,
-            style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontSize: 14),
-            recognizer: _tapRec(() => _navigateToMention(part.content)),
-          );
+          return TextSpan(text: part.content,
+              style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontSize: 14),
+              recognizer: _tapRec(() => _navigateToMention(part.content)));
         case _PartType.hashtag:
-          return TextSpan(
-            text: part.content,
-            style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontSize: 14),
-            recognizer: _tapRec(() => _navigateToHashtag(part.content)),
-          );
+          return TextSpan(text: part.content,
+              style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontSize: 14),
+              recognizer: _tapRec(() => _navigateToHashtag(part.content)));
         case _PartType.text:
           return TextSpan(text: part.content);
       }
     }).toList();
 
-    return LayoutBuilder(
-      builder: (_, constraints) {
-        if (!_showReadMore) {
-          final tp = TextPainter(
-            text: TextSpan(text: rawText,
-                style: const TextStyle(fontSize: 14, fontFamily: 'Outfit', height: 1.43)),
-            textDirection: TextDirection.ltr,
-            maxLines: lineLimit + 1,
-          )..layout(maxWidth: constraints.maxWidth);
-          if (tp.didExceedMaxLines) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) setState(() => _showReadMore = true);
-            });
-          }
+    return LayoutBuilder(builder: (_, constraints) {
+      if (!_showReadMore) {
+        final tp = TextPainter(
+          text: TextSpan(text: rawText,
+              style: const TextStyle(fontSize: 14, fontFamily: 'Outfit', height: 1.43)),
+          textDirection: TextDirection.ltr,
+          maxLines: lineLimit + 1,
+        )..layout(maxWidth: constraints.maxWidth);
+        if (tp.didExceedMaxLines) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) setState(() => _showReadMore = true);
+          });
         }
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text.rich(
-              TextSpan(
-                children: spans,
-                style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'Outfit', height: 1.43),
-              ),
-              maxLines: _expanded ? null : lineLimit,
-              overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-            ),
-            if (_showReadMore)
-              GestureDetector(
-                onTap: () => setState(() => _expanded = !_expanded),
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    _expanded ? 'Show less' : 'Read more',
+      }
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text.rich(
+            TextSpan(children: spans,
+                style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'Outfit', height: 1.43)),
+            maxLines: _expanded ? null : lineLimit,
+            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          ),
+          if (_showReadMore)
+            GestureDetector(
+              onTap: () => setState(() => _expanded = !_expanded),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(_expanded ? 'Show less' : 'Read more',
                     style: TextStyle(color: c.primaryButton, fontSize: 13,
-                        fontFamily: 'Outfit', fontWeight: FontWeight.w600),
-                  ),
-                ),
+                        fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
               ),
-          ]),
-        );
-      },
-    );
+            ),
+        ]),
+      );
+    });
   }
 
   // ── Media ─────────────────────────────────────────────────────────────────
@@ -431,19 +514,24 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         height: height,
         child: PageView.builder(
           itemCount: items.length,
-          onPageChanged: (i) => setState(() => _mediaIndex = i),
+          onPageChanged: (i) {
+            // Pause old video, start new one if applicable
+            if (_videoInitialized) _videoCtrl?.pause();
+            setState(() { _mediaIndex = i; });
+            _disposeVideo();
+            _initVideoForIndex(i);
+          },
           itemBuilder: (_, i) {
             final item    = items[i];
             final isVideo = (item['type'] as String?) == 'video';
             final url     = (item['url'] ?? '') as String;
-            if (isVideo) return _buildVideoThumb(url, c);
+            if (isVideo) return _buildVideoTile(url, height, c);
             return _buildImageTile(url, i, c);
           },
         ),
       ),
       if (items.length > 1) ...[
-        Positioned(
-          top: 12, right: 12,
+        Positioned(top: 12, right: 12,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(12)),
@@ -452,40 +540,26 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           ),
         ),
         if (_mediaIndex > 0)
-          Positioned(
-            left: 12, top: 0, bottom: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: () => setState(() => _mediaIndex--),
-                child: Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(18)),
-                  child: const Icon(Icons.chevron_left, color: Colors.white, size: 20),
-                ),
-              ),
-            ),
-          ),
+          Positioned(left: 12, top: 0, bottom: 0,
+            child: Center(child: GestureDetector(
+              onTap: () => setState(() => _mediaIndex--),
+              child: Container(width: 36, height: 36,
+                decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(18)),
+                child: const Icon(Icons.chevron_left, color: Colors.white, size: 20)),
+            ))),
         if (_mediaIndex < items.length - 1)
-          Positioned(
-            right: 12, top: 0, bottom: 0,
-            child: Center(
-              child: GestureDetector(
-                onTap: () => setState(() => _mediaIndex++),
-                child: Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(18)),
-                  child: const Icon(Icons.chevron_right, color: Colors.white, size: 20),
-                ),
-              ),
-            ),
-          ),
-        Positioned(
-          bottom: 16, left: 0, right: 0,
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: List.generate(items.length, (i) =>
-            AnimatedContainer(
+          Positioned(right: 12, top: 0, bottom: 0,
+            child: Center(child: GestureDetector(
+              onTap: () => setState(() => _mediaIndex++),
+              child: Container(width: 36, height: 36,
+                decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(18)),
+                child: const Icon(Icons.chevron_right, color: Colors.white, size: 20)),
+            ))),
+        Positioned(bottom: 16, left: 0, right: 0,
+          child: Row(mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(items.length, (i) => AnimatedContainer(
               duration: const Duration(milliseconds: 200),
-              width: i == _mediaIndex ? 8 : 5,
-              height: 5,
+              width: i == _mediaIndex ? 8 : 5, height: 5,
               margin: const EdgeInsets.symmetric(horizontal: 3),
               decoration: BoxDecoration(
                 color: i == _mediaIndex
@@ -493,72 +567,122 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                     : Colors.white.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(2.5),
               ),
-            ),
+            )),
           )),
-        ),
       ],
       if (_showHeart)
-        Positioned.fill(
-          child: IgnorePointer(
-            child: Center(
-              child: FadeTransition(
-                opacity: _heartCtrl,
-                child: ScaleTransition(
-                  scale: _heartCtrl.drive(
-                      Tween(begin: 0.5, end: 1.0).chain(CurveTween(curve: Curves.elasticOut))),
-                  child: Icon(Icons.favorite, color: c.likeColor, size: 80),
-                ),
-              ),
+        Positioned.fill(child: IgnorePointer(
+          child: Center(child: FadeTransition(
+            opacity: _heartCtrl,
+            child: ScaleTransition(
+              scale: _heartCtrl.drive(
+                  Tween(begin: 0.5, end: 1.0).chain(CurveTween(curve: Curves.elasticOut))),
+              child: const Icon(Icons.favorite, color: Color(0xFFFF3040), size: 80),
             ),
-          ),
-        ),
+          )),
+        )),
     ]);
+  }
+
+  void _initVideoForIndex(int index) {
+    final items = _mediaItems;
+    if (index >= items.length) return;
+    final item = items[index];
+    if ((item['type'] as String?) != 'video') return;
+    final url = item['url'] as String?;
+    if (url == null || url.isEmpty) return;
+    _currentVideoUrl = url;
+    final ctrl = VideoPlayerController.networkUrl(Uri.parse(url))
+      ..setLooping(true)
+      ..setVolume(_videoMuted ? 0.0 : 1.0);
+    _videoCtrl = ctrl;
+    ctrl.addListener(_onVideoListener);
+    ctrl.initialize().then((_) {
+      if (mounted) {
+        setState(() => _videoInitialized = true);
+        if (widget.isVisible) ctrl.play();
+      }
+    });
+  }
+
+  Widget _buildVideoTile(String url, double height, ThemeColors c) {
+    return GestureDetector(
+      onTap: () => _openMiniScreen(url),
+      child: Stack(fit: StackFit.expand, children: [
+        // Thumbnail background while loading
+        if ((_mediaItems[_mediaIndex]['thumbnail'] as String?) != null)
+          CachedNetworkImage(
+            imageUrl: _mediaItems[_mediaIndex]['thumbnail'] as String,
+            fit: BoxFit.cover,
+          )
+        else
+          Container(color: Colors.black87),
+
+        // Actual video player
+        if (_videoInitialized && _videoCtrl != null)
+          SizedBox.expand(child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: _videoCtrl!.value.size.width,
+              height: _videoCtrl!.value.size.height,
+              child: VideoPlayer(_videoCtrl!),
+            ),
+          )),
+
+        // Buffering / loading spinner (shown while not yet initialized OR while buffering)
+        if (!_videoInitialized || _isBuffering)
+          const Center(child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5)),
+
+        // Mute toggle (bottom-right like RN)
+        Positioned(bottom: 10, right: 10,
+          child: GestureDetector(
+            onTap: _toggleMute,
+            child: Container(
+              width: 32, height: 32,
+              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              child: Icon(_videoMuted ? Icons.volume_off : Icons.volume_up,
+                  color: Colors.white, size: 18),
+            ),
+          )),
+      ]),
+    );
   }
 
   Widget _buildImageTile(String url, int index, ThemeColors c) {
     return GestureDetector(
-      onTap: () => _handleImageTap(index),
+      onTap: () => _handleMediaTap(index),
       child: Stack(fit: StackFit.expand, children: [
         CachedNetworkImage(
-          imageUrl: url,
-          fit: BoxFit.cover,
+          imageUrl: url, fit: BoxFit.cover,
           placeholder: (_, __) => Container(color: c.border),
           errorWidget: (_, __, ___) => Container(
             color: c.border,
-            child: Icon(Icons.broken_image, color: c.textTertiary, size: 40),
-          ),
+            child: Icon(Icons.broken_image, color: c.textTertiary, size: 40)),
         ),
       ]),
     );
   }
 
-  Widget _buildVideoThumb(String url, ThemeColors c) {
-    return GestureDetector(
-      onTap: () => context.push('/fullscreen-video?url=${Uri.encodeComponent(url)}'),
-      child: Container(
-        color: Colors.black,
-        child: const Center(child: Icon(Icons.play_circle_fill, color: Colors.white, size: 56)),
-      ),
-    );
-  }
-
-  // ── Actions (pill buttons) ────────────────────────────────────────────────
+  // ── Actions (pill buttons – match RN PostCard exactly) ────────────────────
   Widget _buildActions(ThemeColors c) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
       child: Row(children: [
+        // Like pill
         _pillBtn(
-          icon: _isLiked ? Icons.favorite : Icons.favorite_border,
-          iconColor: _isLiked ? c.likeColor : c.textTertiary,
+          iconWidget: Image.asset('assets/icons/heart.png', width: 14, height: 14,
+              color: _isLiked ? c.likeColor : c.iconTint),
+          iconColor: _isLiked ? c.likeColor : c.iconTint,
           count: _likes,
           liked: _isLiked,
           onTap: widget.isRemoved ? null : _toggleLike,
           c: c,
         ),
         const SizedBox(width: 10),
+        // Comment pill
         _pillBtn(
-          icon: Icons.chat_bubble_outline,
-          iconColor: c.textTertiary,
+          iconWidget: Image.asset('assets/icons/comment.png', width: 14, height: 14, color: c.iconTint),
+          iconColor: c.iconTint,
           count: _comments,
           liked: false,
           onTap: widget.isRemoved
@@ -578,9 +702,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           c: c,
         ),
         const SizedBox(width: 10),
+        // Share pill
         _pillBtn(
-          icon: Icons.share_outlined,
-          iconColor: c.textTertiary,
+          iconWidget: Image.asset('assets/icons/share.png', width: 14, height: 14, color: c.iconTint),
+          iconColor: c.iconTint,
           count: (_p['shares'] ?? 0) as int,
           liked: false,
           onTap: widget.isRemoved ? null : () {},
@@ -591,7 +716,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   }
 
   Widget _pillBtn({
-    required IconData icon,
+    required Widget iconWidget,
     required Color iconColor,
     required int count,
     required bool liked,
@@ -613,13 +738,12 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             borderRadius: BorderRadius.circular(100),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon, color: iconColor, size: 14),
+            iconWidget,
             const SizedBox(width: 8),
             Text('$count',
                 style: TextStyle(
                     color: liked ? c.likeColor : c.textTertiary,
-                    fontSize: 12,
-                    fontFamily: 'Outfit')),
+                    fontSize: 12, fontFamily: 'Outfit')),
           ]),
         ),
       ),
@@ -645,12 +769,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             builder: (_, i) => PhotoViewGalleryPageOptions(
                 imageProvider: CachedNetworkImageProvider(urls[i])),
           ),
-          SafeArea(
-            child: IconButton(
-              icon: const Icon(Icons.close, color: Colors.white),
-              onPressed: () => Navigator.pop(context),
-            ),
-          ),
+          SafeArea(child: IconButton(
+            icon: const Icon(Icons.close, color: Colors.white),
+            onPressed: () => Navigator.pop(context),
+          )),
         ]),
       ),
     ));
@@ -667,11 +789,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
       final res = await dioClient.get('/v1/user/find/$username');
       final uid = (res.data['data'] ?? res.data)?['id'] as String?;
       if (uid != null && mounted) {
-        if (uid == widget.currentUserId) {
-          context.push('/profile');
-        } else {
-          context.push('/user/$uid');
-        }
+        if (uid == widget.currentUserId) context.push('/profile');
+        else context.push('/user/$uid');
       }
     } catch (_) {}
   }
@@ -689,14 +808,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
         const SizedBox(height: 8),
-        Container(
-          width: 40, height: 4,
-          decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
-        ),
+        Container(width: 40, height: 4,
+          decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 8),
         _menuItem(Icons.bookmark_border, 'Save post', () {}, c),
-        _menuItem(Icons.flag_outlined, 'Report',
-            () => context.push('/report/post/$_postId'), c),
+        _menuItem(Icons.flag_outlined, 'Report', () => context.push('/report/post/$_postId'), c),
         _menuItem(Icons.block, 'Block user', () {}, c),
         const SizedBox(height: 16),
       ]),

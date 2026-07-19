@@ -212,7 +212,22 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Media
       GoRoute(path: '/camera', builder: (_, __) => const CameraScreen()),
       GoRoute(path: '/fullscreen-video', builder: (_, s) => FullscreenVideoScreen(url: s.uri.queryParameters['url'] ?? '')),
-      GoRoute(path: '/mini', builder: (_, __) => const MiniScreen()),
+      GoRoute(
+        path: '/mini',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final posts = (extra['posts'] as List<dynamic>?)
+                  ?.whereType<Map<String, dynamic>>()
+                  .toList() ??
+              const <Map<String, dynamic>>[];
+          return MiniScreen(
+            initialPosts: posts,
+            initialIndex: (extra['initialIndex'] as int?) ?? 0,
+            currentUserId: extra['userId'] as String?,
+            fromVideoClick: extra['fromVideoClick'] == true,
+          );
+        },
+      ),
 
       // Utility
       GoRoute(path: '/report/:type/:id', builder: (_, s) => ReportScreen(targetType: s.pathParameters['type']!, targetId: s.pathParameters['id']!)),

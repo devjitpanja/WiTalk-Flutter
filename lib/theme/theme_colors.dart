@@ -47,12 +47,13 @@ class ThemeColors {
   final Color secondaryButton;
   final Color secondaryButtonBorder;
 
-  // Post interaction pill buttons
+  // Post interaction pill buttons (match RN PostCard)
   final Color interactionButtonBg;
   final Color interactionButtonBorder;
-  final Color interactionLikedBg;
+  final Color interactionLikedBg;   // red background when liked
   final Color interactionLikedBorder;
-  final Color likeColor;
+  final Color likeColor;            // icon colour when liked (white in RN)
+  final Color iconTint;             // default icon tint on pill buttons
 
   const ThemeColors({
     required this.background,
@@ -94,6 +95,7 @@ class ThemeColors {
     required this.interactionLikedBg,
     required this.interactionLikedBorder,
     required this.likeColor,
+    required this.iconTint,
   });
 }
 
@@ -150,11 +152,13 @@ const _dark = ThemeColors(
   secondaryButton:      Color(0xFF11151F),
   secondaryButtonBorder:Color(0xFF5B51F4),
 
-  interactionButtonBg:     Color(0xFF1C1C1E),
+  // RN darkTheme: interactionButtonBg transparent, interactedButtonBg red
+  interactionButtonBg:     Colors.transparent,
   interactionButtonBorder: Color(0xFF38383A),
-  interactionLikedBg:      Color(0xFF2C1F1F),
-  interactionLikedBorder:  Color(0xFF7B3535),
-  likeColor:               Color(0xFFFF3040),
+  interactionLikedBg:      Color(0xFFD1001C),   // rgba(209,0,28,1)
+  interactionLikedBorder:  Color(0xFFD1001C),
+  likeColor:               Colors.white,         // RN: like '#ffffff'
+  iconTint:                Color(0xFF8E8E93),    // textTertiary used as icon tint
 );
 
 // ── Light theme — matches RN lightTheme ──────────────────────────────────────
@@ -203,9 +207,11 @@ const _light = ThemeColors(
   secondaryButton:      Color(0xFFF0F0F0),
   secondaryButtonBorder:Color(0xFF5B51F4),
 
-  interactionButtonBg:     Color(0xFFF0F0F0),
-  interactionButtonBorder: Color(0xFFDDDDDD),
-  interactionLikedBg:      Color(0xFFFFE9E9),
-  interactionLikedBorder:  Color(0xFFFFB3B3),
-  likeColor:               Color(0xFFE74C3C),
+  // RN lightTheme: interactionButtonBg transparent
+  interactionButtonBg:     Colors.transparent,
+  interactionButtonBorder: Color(0xFFE0E0E0),
+  interactionLikedBg:      Color(0xFFD1001C),   // same red as dark
+  interactionLikedBorder:  Color(0xFFB40036),
+  likeColor:               Colors.white,         // RN: like '#ffffff'
+  iconTint:                Color(0xFF999999),    // textTertiary for light
 );

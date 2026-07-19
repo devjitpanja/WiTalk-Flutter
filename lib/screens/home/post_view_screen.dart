@@ -23,6 +23,7 @@ class _Comment {
   bool isLiked;
   final DateTime createdAt;
   final bool isVerified;
+  final Map<String, dynamic>? badgeData;
   final String? parentId;
   List<_Comment> replies;
 
@@ -36,6 +37,7 @@ class _Comment {
     required this.isLiked,
     required this.createdAt,
     this.isVerified = false,
+    this.badgeData,
     this.parentId,
     List<_Comment>? replies,
   }) : replies = replies ?? [];
@@ -52,6 +54,7 @@ class _Comment {
       isLiked: j['isLiked'] == true,
       createdAt: DateTime.tryParse((j['created_at'] ?? '') as String) ?? DateTime.now(),
       isVerified: j['is_verified'] == true,
+      badgeData: j['verification_badge'] as Map<String, dynamic>?,
       parentId: j['parent_id']?.toString(),
       replies: repliesRaw
           .whereType<Map<String, dynamic>>()
@@ -702,7 +705,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
                 ),
                 if (comment.isVerified) ...[
                   const SizedBox(width: 4),
-                  const VerificationBadge(size: 14),
+                  VerificationBadge(isVerified: true, badge: comment.badgeData, size: 14),
                 ],
                 const SizedBox(width: 8),
                 Text(timeago.format(comment.createdAt),
