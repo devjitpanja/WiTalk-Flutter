@@ -30,6 +30,7 @@ import '../screens/profile/likes_screen.dart';
 import '../screens/profile/merit_screen.dart';
 import '../screens/profile/streak_screen.dart';
 import '../screens/profile/wi_wallet_screen.dart';
+import '../screens/profile/wallet_settings_screen.dart';
 import '../screens/profile/rank_screen.dart';
 import '../screens/profile/saved_screen.dart';
 import '../screens/chat/chat_screen.dart';
@@ -159,6 +160,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/merit', builder: (_, __) => const MeritScreen()),
       GoRoute(path: '/streak', builder: (_, __) => const StreakScreen()),
       GoRoute(path: '/wallet', builder: (_, __) => const WiWalletScreen()),
+      GoRoute(path: '/wallet-settings', builder: (_, __) => const WalletSettingsScreen()),
       GoRoute(path: '/rank', builder: (_, __) => const RankScreen()),
       GoRoute(path: '/ranking-rules', builder: (_, __) => const RankingRulesScreen()),
       GoRoute(path: '/saved', builder: (_, __) => const SavedScreen()),

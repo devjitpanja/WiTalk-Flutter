@@ -260,7 +260,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen>
       filled: true, fillColor: AppColors.surface, hintStyle: const TextStyle(color: AppColors.placeholder, fontFamily: 'Outfit'),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.primaryButton))),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border))),
   );
 
   Widget _buildUsernameField() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -277,7 +277,7 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen>
         filled: true, fillColor: AppColors.surface, hintStyle: const TextStyle(color: AppColors.placeholder, fontFamily: 'Outfit'),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
         enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
-        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.primaryButton))),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border))),
     ),
     if (_usernameError.isNotEmpty)
       Padding(padding: const EdgeInsets.only(top: 6, left: 4),

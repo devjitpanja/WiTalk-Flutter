@@ -73,7 +73,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           CircleAvatar(radius: 20, backgroundColor: AppColors.border, backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null, child: pic == null ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(), style: const TextStyle(color: Colors.white)) : null),
           const SizedBox(width: 12),
           Expanded(child: TextField(controller: _contentCtrl, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontSize: 16), maxLines: null, autofocus: true,
-            decoration: const InputDecoration(hintText: 'What\'s on your mind?', hintStyle: TextStyle(color: AppColors.placeholder, fontFamily: 'Outfit', fontSize: 16), border: InputBorder.none, filled: false))),
+            decoration: const InputDecoration(hintText: 'What\'s on your mind?', hintStyle: TextStyle(color: AppColors.placeholder, fontFamily: 'Outfit', fontSize: 16), border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none, filled: true, fillColor: Colors.transparent))),
         ])),
         if (_selectedMedia.isNotEmpty)
           SizedBox(height: 100, child: ListView.builder(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16),

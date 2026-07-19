@@ -229,6 +229,8 @@ class _ChatConversationScreenState extends ConsumerState<ChatConversationScreen>
           hintText: 'Type a message...', hintStyle: const TextStyle(color: AppColors.placeholder, fontFamily: 'Outfit'),
           filled: true, fillColor: AppColors.surface, contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(22), borderSide: BorderSide.none),
         ),
         onSubmitted: (_) => _sendMessage(),
       )),

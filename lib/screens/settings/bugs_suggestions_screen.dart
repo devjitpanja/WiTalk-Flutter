@@ -547,11 +547,11 @@ class _SubmitSheetState extends State<_SubmitSheet> {
       hintText: hint,
       hintStyle: TextStyle(fontFamily: 'Outfit', color: t.textTertiary),
       counterStyle: TextStyle(color: t.textTertiary),
-      filled: true, fillColor: t.inputBg,
+      filled: true, fillColor: Colors.transparent,
       contentPadding: const EdgeInsets.all(12),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.border)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.primary)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.border)),
     ),
   );
 }

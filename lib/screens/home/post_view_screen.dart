@@ -942,7 +942,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
                   borderSide: BorderSide(color: c.border)),
               focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(20),
-                  borderSide: BorderSide(color: c.primary)),
+                  borderSide: BorderSide(color: c.border)),
               counterText: '',
             ),
             style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 14),

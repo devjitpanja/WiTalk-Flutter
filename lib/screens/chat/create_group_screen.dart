@@ -71,7 +71,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
           decoration: InputDecoration(hintText: 'Group name', hintStyle: const TextStyle(color: AppColors.placeholder, fontFamily: 'Outfit'), filled: true, fillColor: AppColors.surface,
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
             enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border)),
-            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.primaryButton))))),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: AppColors.border))))),
       ])),
       if (_selectedIds.isNotEmpty) Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Align(alignment: Alignment.centerLeft, child: Text('${_selectedIds.length} selected', style: const TextStyle(color: AppColors.primaryButton, fontFamily: 'Outfit', fontSize: 13)))),
       const Divider(color: AppColors.border),
