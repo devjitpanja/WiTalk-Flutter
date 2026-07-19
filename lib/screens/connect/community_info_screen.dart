@@ -8,6 +8,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:dio/dio.dart';
+
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/theme_colors.dart';
@@ -59,22 +61,36 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
 
   Future<void> _loadGroup() async {
     final uid = ref.read(authProvider).uid ?? '';
+    final params = uid.isNotEmpty ? {'userId': uid} : <String, dynamic>{};
+    Map<String, dynamic>? data;
     try {
+      // Try by group ID first
       final res = await dioClient.get(
-        '/v1/groups/invite/${widget.communityId}',
-        queryParameters: uid.isNotEmpty ? {'userId': uid} : {},
+        '/v1/groups/${widget.communityId}',
+        queryParameters: params,
       );
-      if (!mounted) return;
-      setState(() {
-        _group = res.data['data'] as Map<String, dynamic>?;
-        _loading = false;
-      });
-      _afterGroupLoaded();
+      data = res.data['data'] as Map<String, dynamic>?;
     } catch (_) {
-      if (!mounted) return;
+      // Fall back to invite code endpoint
+      try {
+        final res = await dioClient.get(
+          '/v1/groups/invite/${widget.communityId}',
+          queryParameters: params,
+        );
+        data = res.data['data'] as Map<String, dynamic>?;
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    if (data == null) {
       setState(() => _loading = false);
       _showSnackbar('Failed to load community info.', isError: true);
+      return;
     }
+    setState(() {
+      _group = data;
+      _loading = false;
+    });
+    _afterGroupLoaded();
   }
 
   void _afterGroupLoaded() {
@@ -94,7 +110,12 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     final lng = g['location_lng'];
     if (lat == null || lng == null) return;
     try {
-      final res = await dioClient.get(
+      final nominatim = Dio(BaseOptions(
+        connectTimeout: const Duration(seconds: 10),
+        receiveTimeout: const Duration(seconds: 10),
+      ));
+      nominatim.options.headers['User-Agent'] = 'WiTalk App';
+      final res = await nominatim.get(
         'https://nominatim.openstreetmap.org/reverse',
         queryParameters: {
           'format': 'json',

@@ -30,9 +30,9 @@ class ExploreCommunitiesScreen extends ConsumerWidget {
           final c = comms[i] as Map<String, dynamic>; final name = c['name'] ?? ''; final pic = c['image']; final members = c['member_count'] ?? 0; final id = c['id'] ?? '';
           return ListTile(leading: CircleAvatar(radius: 24, backgroundColor: AppColors.border, backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null, child: pic == null ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(), style: const TextStyle(color: Colors.white)) : null),
             title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-            subtitle: Text('\$members members', style: const TextStyle(color: AppColors.textTertiary, fontFamily: 'Outfit', fontSize: 12)),
+            subtitle: Text('$members members', style: const TextStyle(color: AppColors.textTertiary, fontFamily: 'Outfit', fontSize: 12)),
             trailing: ElevatedButton(onPressed: () {}, style: ElevatedButton.styleFrom(backgroundColor: AppColors.primaryButton, minimumSize: const Size(80, 32), padding: const EdgeInsets.symmetric(horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: const Text('Join', style: TextStyle(fontFamily: 'Outfit', fontSize: 13))),
-            onTap: () => context.push('/community-info/\$id'));
+            onTap: () => context.push('/community-info/$id'));
         }),
       ),
     );
