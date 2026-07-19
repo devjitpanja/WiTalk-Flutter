@@ -92,3 +92,16 @@ ios/               # native iOS config
 pubspec.yaml       # dependencies (equivalent to package.json)
 Makefile           # shortcut commands (equivalent to package.json scripts)
 ```
+
+
+
+
+"/Users/dev/Documents/App Development/React Native/WiTalk/frotnend
+
+This is the Migration from RN -> Flutter 
+
+Check all the ChatScreen Files in the RN and then Migrate all the Files, Logic, same to same UI funcation into thr flutter. Private chat, Group chat, realtime sockts connection end to end each and everything properly migrate and should work as working and looking in RN.
+
+All the chat background, logic each and eveything, last thing RN used someother library and logic which are not optimized as we're in flutter use optimized version for smooth chat expriences.
+
+also use the proper app theme color support dark and light mode as RN project"

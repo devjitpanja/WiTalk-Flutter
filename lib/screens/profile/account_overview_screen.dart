@@ -121,7 +121,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
   Map<String, dynamic>? _userData;
   bool _loading = true;
   double _levelProgress = 0;
-  Map<String, dynamic> _streakData = {'currentStreak': 0, 'longestStreak': 0, 'last7Qualified': <bool>[]};
+  Map<String, dynamic> _streakData = {'currentStreak': 0, 'longestStreak': 0, 'last7Qualified': List<bool>.filled(7, false)};
   bool _isVerified = false;
   Map<String, dynamic>? _verificationStatus;
   bool _showLogoutDialog = false;

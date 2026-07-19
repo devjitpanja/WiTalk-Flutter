@@ -1,1 +1,2 @@
-// UserProfileScreen is defined in profile_screen.dart — this file is intentionally empty
+// UserProfileScreen is defined in profile_screen.dart
+export 'profile_screen.dart' show UserProfileScreen;
