@@ -1,6 +1,16 @@
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
+
+String _uuid() {
+  final r = Random.secure();
+  final b = List<int>.generate(16, (_) => r.nextInt(256));
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  final h = b.map((x) => x.toRadixString(16).padLeft(2, '0')).join();
+  return '${h.substring(0,8)}-${h.substring(8,12)}-${h.substring(12,16)}-${h.substring(16,20)}-${h.substring(20)}';
+}
 
 class DioClient {
   static final DioClient _instance = DioClient._internal();
@@ -28,6 +38,11 @@ class DioClient {
         if (!skipAuth.any((p) => options.path.startsWith(p))) {
           final token = await _storage.read(key: 'accessToken');
           if (token != null) options.headers['Authorization'] = 'Bearer $token';
+        }
+        final method = options.method.toLowerCase();
+        if (['post', 'put', 'patch', 'delete'].contains(method)) {
+          options.headers['X-Request-Id'] = _uuid();
+          options.headers['X-Timestamp'] = DateTime.now().millisecondsSinceEpoch.toString();
         }
         handler.next(options);
       },

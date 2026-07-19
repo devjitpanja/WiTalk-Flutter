@@ -70,6 +70,7 @@ import '../screens/media/mini_screen.dart';
 import '../screens/home/report_screen.dart';
 import '../screens/profile/id_verification_screen.dart';
 import '../screens/profile/write_review_screen.dart';
+import '../screens/profile/ranking_rules_screen.dart';
 import 'shell_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -152,6 +153,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/streak', builder: (_, __) => const StreakScreen()),
       GoRoute(path: '/wallet', builder: (_, __) => const WiWalletScreen()),
       GoRoute(path: '/rank', builder: (_, __) => const RankScreen()),
+      GoRoute(path: '/ranking-rules', builder: (_, __) => const RankingRulesScreen()),
       GoRoute(path: '/saved', builder: (_, __) => const SavedScreen()),
       GoRoute(path: '/id-verification', builder: (_, __) => const IdVerificationScreen()),
 
