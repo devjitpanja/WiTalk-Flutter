@@ -47,6 +47,13 @@ class ThemeColors {
   final Color secondaryButton;
   final Color secondaryButtonBorder;
 
+  // Post interaction pill buttons
+  final Color interactionButtonBg;
+  final Color interactionButtonBorder;
+  final Color interactionLikedBg;
+  final Color interactionLikedBorder;
+  final Color likeColor;
+
   const ThemeColors({
     required this.background,
     required this.surface,
@@ -82,6 +89,11 @@ class ThemeColors {
     required this.primaryButtonDisabled,
     required this.secondaryButton,
     required this.secondaryButtonBorder,
+    required this.interactionButtonBg,
+    required this.interactionButtonBorder,
+    required this.interactionLikedBg,
+    required this.interactionLikedBorder,
+    required this.likeColor,
   });
 }
 
@@ -137,6 +149,12 @@ const _dark = ThemeColors(
   primaryButtonDisabled:Color(0xFF3D3A8C),
   secondaryButton:      Color(0xFF11151F),
   secondaryButtonBorder:Color(0xFF5B51F4),
+
+  interactionButtonBg:     Color(0xFF1C1C1E),
+  interactionButtonBorder: Color(0xFF38383A),
+  interactionLikedBg:      Color(0xFF2C1F1F),
+  interactionLikedBorder:  Color(0xFF7B3535),
+  likeColor:               Color(0xFFFF3040),
 );
 
 // ── Light theme — matches RN lightTheme ──────────────────────────────────────
@@ -184,4 +202,10 @@ const _light = ThemeColors(
   primaryButtonDisabled:Color(0xFF9A93E8),
   secondaryButton:      Color(0xFFF0F0F0),
   secondaryButtonBorder:Color(0xFF5B51F4),
+
+  interactionButtonBg:     Color(0xFFF0F0F0),
+  interactionButtonBorder: Color(0xFFDDDDDD),
+  interactionLikedBg:      Color(0xFFFFE9E9),
+  interactionLikedBorder:  Color(0xFFFFB3B3),
+  likeColor:               Color(0xFFE74C3C),
 );

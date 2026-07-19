@@ -124,7 +124,13 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Posts
       GoRoute(path: '/post/:id', builder: (_, s) => PostDetailScreen(postId: s.pathParameters['id']!)),
-      GoRoute(path: '/post-view/:id', builder: (_, s) => PostViewScreen(postId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/post-view/:suffix',
+        builder: (_, s) => PostViewScreen(
+          suffix: s.pathParameters['suffix']!,
+          highlightCommentId: s.uri.queryParameters['commentId'],
+        ),
+      ),
       GoRoute(path: '/create-post', builder: (_, __) => const CreatePostScreen()),
 
       // Explore
