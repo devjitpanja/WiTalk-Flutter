@@ -168,12 +168,12 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
               subtitle: 'Join what people love right now',
               onSeeAll: () => widget.onSwitchTab(1),
               child: topAsync.when(
-                loading: () => _HorizSkeleton(count: 5, itemWidth: 82, itemHeight: 108),
+                loading: () => _HorizSkeleton(count: 5, itemWidth: 82, itemHeight: 128),
                 error: (_, __) => const SizedBox.shrink(),
                 data: (list) => list.isEmpty
                     ? const _EmptyText('No communities found')
                     : SizedBox(
-                        height: 108,
+                        height: 128,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -199,7 +199,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                 title: 'Matched for Your Interests',
                 subtitle: 'Communities picked just for you',
                 onSeeAll: () => widget.onSwitchTab(1),
-                child: _HorizSkeleton(count: 3, itemWidth: 240, itemHeight: 86),
+                child: _HorizSkeleton(count: 3, itemWidth: 240, itemHeight: 106),
               ),
               error: (_, __) => const SizedBox.shrink(),
               data: (list) => list.isEmpty
@@ -210,7 +210,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                       subtitle: 'Communities picked just for you',
                       onSeeAll: () => widget.onSwitchTab(1),
                       child: SizedBox(
-                        height: 96,
+                        height: 106,
                         child: ListView.separated(
                           scrollDirection: Axis.horizontal,
                           padding: const EdgeInsets.symmetric(horizontal: 16),

@@ -223,7 +223,16 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
       final usersRes = results[0].data;
       final meRes = results[1].data;
       List users = [];
-      if (usersRes is Map) users = usersRes['users'] ?? (usersRes['data'] is Map ? usersRes['data']['users'] : null) ?? [];
+      if (usersRes is Map) {
+        final d = usersRes['data'];
+        if (d is List) {
+          users = d;
+        } else if (d is Map) {
+          users = (d['users'] as List?) ?? (d['data'] as List?) ?? [];
+        } else {
+          users = (usersRes['users'] as List?) ?? [];
+        }
+      }
       Map<String, dynamic>? me;
       if (meRes is Map) {
         final u = meRes['user'] ?? meRes['data'];
@@ -236,8 +245,8 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
           _loading = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() { _loading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _loading = false; _groups = _UserGroups(catchUp: [], onlineNearby: [], bestMatches: [], sharedVibes: [], sameAge: [], nearby: [], others: []); });
     }
   }
 
@@ -578,7 +587,7 @@ class _UserCard extends StatelessWidget {
                           Text(bio, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.textTertiary, height: 1.4)),
                         if (dist.isNotEmpty || city != null)
-                          Text([dist, city].where((e) => e != null && (e as String).isNotEmpty).cast<String>().join(' · '),
+                          Text([dist, city].where((e) => e != null && e!.isNotEmpty).cast<String>().join(' · '),
                               maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
                               style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
                         if (interests.isNotEmpty) ...[
@@ -680,7 +689,7 @@ class _WideCardBody extends StatelessWidget {
                     const SizedBox(width: 4), _GenderBadge(gender: gender!, age: age!),
                   ],
                 ]),
-                Text([dist, city].where((e) => e != null && (e as String).isNotEmpty).cast<String>().join(' · '),
+                Text([dist, city].where((e) => e != null && e!.isNotEmpty).cast<String>().join(' · '),
                     maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: AppColors.textTertiary)),
                 if (bio != null && bio!.isNotEmpty)

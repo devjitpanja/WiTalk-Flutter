@@ -1,4 +1,4 @@
-/Users/dev/Documents/App Development/React Native/WiTalk
+/Users/dev/Documents/App Development/React Native/WiTalk/frotnend
 
 
 

@@ -120,10 +120,13 @@ class _PillTabBar extends StatelessWidget {
     return Container(
       color: AppColors.background,
       padding: const EdgeInsets.symmetric(vertical: 7),
+      alignment: Alignment.centerLeft,
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.only(left: 16, right: 16),
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: List.generate(tabs.length, (i) {
             final isActive = i == activeIndex;
             return Padding(
