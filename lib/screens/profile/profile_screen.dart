@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../providers/follow_provider.dart';
 
 // ─── Level ring gradient colors ──────────────────────────────────────────────
 List<Color> _levelRingColors(int level) {
@@ -62,24 +64,7 @@ final _streakProvider = FutureProvider.autoDispose.family<int, String>((ref, uid
   return 0;
 });
 
-final _postsProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, _PostsKey>((ref, key) async {
-  try {
-    final res = await dioClient.get('/v1/posts/${key.profileId}/${key.viewerId}?page=${key.page}&limit=12');
-    final data = res.data;
-    if (data != null && data['posts'] != null) {
-      return List<Map<String, dynamic>>.from((data['posts'] as List).map((e) => Map<String, dynamic>.from(e)));
-    }
-  } catch (_) {}
-  return [];
-});
 
-final _followStatusProvider = FutureProvider.autoDispose.family<bool, _FollowKey>((ref, key) async {
-  try {
-    final res = await dioClient.get('/v1/followers/${key.myId}/status/${key.targetId}');
-    return res.data['data']?['isFollowing'] == true;
-  } catch (_) {}
-  return false;
-});
 
 final _groupsProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, uid) async {
   try {
@@ -94,22 +79,7 @@ final _groupsProvider = FutureProvider.autoDispose.family<List<Map<String, dynam
   return [];
 });
 
-class _PostsKey {
-  final String profileId;
-  final String viewerId;
-  final int page;
-  const _PostsKey(this.profileId, this.viewerId, this.page);
-  @override bool operator ==(Object o) => o is _PostsKey && o.profileId == profileId && o.viewerId == viewerId && o.page == page;
-  @override int get hashCode => Object.hash(profileId, viewerId, page);
-}
 
-class _FollowKey {
-  final String myId;
-  final String targetId;
-  const _FollowKey(this.myId, this.targetId);
-  @override bool operator ==(Object o) => o is _FollowKey && o.myId == myId && o.targetId == targetId;
-  @override int get hashCode => Object.hash(myId, targetId);
-}
 
 // ─── ProfileScreen (own profile tab) ─────────────────────────────────────────
 
@@ -165,26 +135,88 @@ class _ProfileShell extends ConsumerStatefulWidget {
 
 class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerProviderStateMixin {
   late TabController _tabCtrl;
-  bool _isFollowing = false;
-  bool _followLoading = false;
+
+  // Posts pagination
+  final List<Map<String, dynamic>> _posts = [];
+  int _postsPage = 1;
+  int _totalPosts = 0;
+  bool _postsLoading = true;
+  bool _loadingMore = false;
+  bool _hasMore = false;
+  final ScrollController _postsScrollCtrl = ScrollController();
+
   bool _isBlocked = false;
-  int _followerCount = 0;
+  bool _followerCountSeeded = false;
   bool _showImageViewer = false;
   String? _imageViewerUrl;
   bool _showQrModal = false;
-  int _postsPage = 1;
+  bool _notifyPosts = false;
+  bool _notifyLoading = false;
 
   @override
   void initState() {
     super.initState();
     _tabCtrl = TabController(length: 2, vsync: this);
     _checkBlockStatus();
+    _fetchPosts(page: 1);
+    _postsScrollCtrl.addListener(_onPostsScroll);
+    if (!widget.isOwnProfile && widget.viewerUid.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(followProvider.notifier).setCurrentUser(widget.viewerUid);
+        ref.read(followProvider.notifier).checkFollowStatus(widget.profileUid);
+      });
+    }
   }
 
   @override
   void dispose() {
     _tabCtrl.dispose();
+    _postsScrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _onPostsScroll() {
+    if (_postsScrollCtrl.position.pixels >= _postsScrollCtrl.position.maxScrollExtent - 200) {
+      _loadMorePosts();
+    }
+  }
+
+  Future<void> _fetchPosts({required int page, bool append = false}) async {
+    if (!append) setState(() => _postsLoading = true);
+    final viewerId = widget.viewerUid.isNotEmpty ? widget.viewerUid : widget.profileUid;
+    try {
+      final res = await dioClient.get('/v1/posts/${widget.profileUid}/$viewerId?page=$page&limit=12');
+      final data = res.data;
+      if (data != null && data['posts'] != null) {
+        final fetched = List<Map<String, dynamic>>.from(
+          (data['posts'] as List).map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+        final total = (data['totalPosts'] as num?)?.toInt() ?? fetched.length;
+        final hasMore = data['hasMore'] == true;
+        if (mounted) {
+          setState(() {
+            if (append) {
+              final existingIds = _posts.map((p) => p['id']).toSet();
+              _posts.addAll(fetched.where((p) => !existingIds.contains(p['id'])));
+            } else {
+              _posts
+                ..clear()
+                ..addAll(fetched);
+            }
+            _totalPosts = total;
+            _hasMore = hasMore;
+            _postsPage = page;
+          });
+        }
+      }
+    } catch (_) {}
+    if (mounted) setState(() { _postsLoading = false; _loadingMore = false; });
+  }
+
+  Future<void> _loadMorePosts() async {
+    if (_loadingMore || !_hasMore || _postsLoading) return;
+    setState(() => _loadingMore = true);
+    await _fetchPosts(page: _postsPage + 1, append: true);
   }
 
   Future<void> _checkBlockStatus() async {
@@ -202,24 +234,96 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     } catch (_) {}
   }
 
-  Future<void> _toggleFollow() async {
+  void _onFollowButtonPressed(bool isFollowing, String name) {
     if (widget.viewerUid.isEmpty) return;
-    setState(() => _followLoading = true);
-    try {
-      final res = await dioClient.post('/v1/followers/toggle', data: {
-        'followingId': widget.profileUid,
-        'followerId': widget.viewerUid,
-      });
-      final newState = res.data['data']?['isFollowing'] as bool? ?? !_isFollowing;
-      setState(() {
-        _isFollowing = newState;
-        _followerCount += newState ? 1 : -1;
-      });
-    } catch (e) {
-      if (mounted) _showSnack('Failed to update follow status');
-    } finally {
-      if (mounted) setState(() => _followLoading = false);
+    if (isFollowing) {
+      _showFollowOptionsSheet(name);
+    } else {
+      ref.read(followProvider.notifier).toggleFollow(widget.profileUid);
     }
+  }
+
+  void _showFollowOptionsSheet(String name) {
+    final colors = context.colors;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Handle
+            Container(width: 36, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(color: colors.border, borderRadius: BorderRadius.circular(2))),
+            // Username header
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Text(name, style: TextStyle(color: colors.text, fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            Divider(height: 1, thickness: 0.5, color: colors.border),
+            // Post Notifications row
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(children: [
+                Icon(Icons.notifications_outlined, size: 22, color: colors.text),
+                const SizedBox(width: 12),
+                Expanded(child: Text('Post Notifications', style: TextStyle(color: colors.text,
+                    fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 15))),
+                _notifyLoading
+                    ? SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary))
+                    : Switch(
+                        value: _notifyPosts,
+                        onChanged: (v) async {
+                          setSheetState(() => _notifyLoading = true);
+                          setState(() => _notifyLoading = true);
+                          await _toggleNotifyPosts();
+                          if (mounted) {
+                            setSheetState(() => _notifyLoading = false);
+                            setState(() => _notifyLoading = false);
+                          }
+                        },
+                        activeThumbColor: colors.primary,
+                        activeTrackColor: colors.primary.withValues(alpha: 0.5),
+                      ),
+              ]),
+            ),
+            // Unfollow row
+            GestureDetector(
+              onTap: () {
+                Navigator.pop(context);
+                ref.read(followProvider.notifier).toggleFollow(widget.profileUid);
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                child: Row(children: [
+                  const Icon(Icons.person_remove_outlined, size: 22, color: Color(0xFFFF3040)),
+                  const SizedBox(width: 12),
+                  const Text('Unfollow', style: TextStyle(color: Color(0xFFFF3040),
+                      fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 15)),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _toggleNotifyPosts() async {
+    try {
+      final res = await dioClient.post('/v1/followers/notify-posts/toggle', data: {
+        'followingId': widget.profileUid,
+      });
+      if (res.data?['success'] == true && res.data['data']?['notifyPosts'] is bool) {
+        if (mounted) setState(() => _notifyPosts = res.data['data']['notifyPosts'] as bool);
+      } else {
+        if (mounted) setState(() => _notifyPosts = !_notifyPosts);
+      }
+    } catch (_) {}
   }
 
   Future<void> _blockUser() async {
@@ -313,15 +417,12 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     final profileAsync = ref.watch(_profileProvider(widget.profileUid));
     final levelAsync = ref.watch(_levelProvider(widget.profileUid));
     final streakAsync = ref.watch(_streakProvider(widget.profileUid));
-    final followAsync = !widget.isOwnProfile && widget.viewerUid.isNotEmpty
-        ? ref.watch(_followStatusProvider(_FollowKey(widget.viewerUid, widget.profileUid)))
-        : null;
-    final postsAsync = ref.watch(_postsProvider(_PostsKey(
-      widget.profileUid,
-      widget.viewerUid.isNotEmpty ? widget.viewerUid : widget.profileUid,
-      _postsPage,
-    )));
     final groupsAsync = ref.watch(_groupsProvider(widget.profileUid));
+
+    // Global follow state — reactive, shared across all screens
+    final followState = ref.watch(followProvider);
+    final isFollowing = widget.isOwnProfile ? false : followState.getFollowState(widget.profileUid);
+    final followLoading = widget.isOwnProfile ? false : followState.getLoadingState(widget.profileUid);
 
     if (profileAsync.isLoading) {
       return Scaffold(backgroundColor: colors.background, body: const _ProfileSkeleton());
@@ -348,31 +449,19 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
 
     final profile = profileAsync.value!;
 
-    // Sync follow state from server on first load
-    if (followAsync != null && followAsync.hasValue && !_followLoading) {
+    // Seed follower count into global provider once (no-op if already tracked)
+    final profileFollowerCount = (profile['followers_count'] as num?)?.toInt() ?? 0;
+    if (!_followerCountSeeded) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && !_followLoading) {
-          final serverFollow = followAsync.value!;
-          if (_isFollowing != serverFollow) {
-            setState(() => _isFollowing = serverFollow);
-          }
+        if (mounted) {
+          ref.read(followProvider.notifier).seedFollowerCount(widget.profileUid, profileFollowerCount);
+          setState(() => _followerCountSeeded = true);
         }
       });
     }
 
-    // Sync follower count
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        final count = (profile['followers_count'] as num?)?.toInt() ?? 0;
-        if (_followerCount == 0 && count != 0) {
-          setState(() => _followerCount = count);
-        }
-      }
-    });
-
     final levelData = levelAsync.value ?? {'currentLevel': 1, 'levelTitle': 'Newcomer'};
     final streak = streakAsync.value ?? 0;
-    final posts = postsAsync.value ?? [];
     final groups = groupsAsync.value ?? [];
 
     final level = (levelData['currentLevel'] as num?)?.toInt() ?? 1;
@@ -385,9 +474,13 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     final profilePic = profile['profile_pic'] as String?;
     final isVerified = profile['is_verified'] == true;
     final verificationBadge = profile['verification_badge'];
-    final followerCount = _followerCount > 0 ? _followerCount : (profile['followers_count'] as num?)?.toInt() ?? 0;
+
+    // Follower count: tracked by global provider (seeded from profile, adjusted on toggle)
+    final trackedCount = followState.getFollowerCount(widget.profileUid);
+    final followerCount = trackedCount > 0 ? trackedCount : profileFollowerCount;
+
     final friendsCount = (profile['friends_count'] as num?)?.toInt() ?? 0;
-    final totalPosts = posts.length;
+    final totalPosts = _totalPosts;
     final privacyRaw = profile['privacy_settings'];
     Map<String, dynamic> privacy = {'gender': true, 'country': true, 'city': true, 'interests': true};
     if (privacyRaw != null) {
@@ -489,12 +582,12 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
           // ── Action buttons ─────────────────────────────────────────────
           SliverToBoxAdapter(child: _ActionButtons(
             isOwnProfile: widget.isOwnProfile,
-            isFollowing: _isFollowing,
-            followLoading: _followLoading,
+            isFollowing: isFollowing,
+            followLoading: followLoading,
             colors: colors,
             onEditProfile: () => context.push('/edit-profile'),
             onShare: () => setState(() => _showQrModal = true),
-            onFollow: _toggleFollow,
+            onFollow: () => _onFollowButtonPressed(isFollowing, name),
             onMessage: () {
               context.push('/chat/new', extra: {
                 'userId': profile['id'],
@@ -517,17 +610,23 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
           controller: _tabCtrl,
           children: [
             // Posts tab
-            postsAsync.isLoading
+            _postsLoading
                 ? Center(child: CircularProgressIndicator(color: colors.primary))
-                : posts.isEmpty
+                : _posts.isEmpty
                     ? _EmptyPosts(isOwnProfile: widget.isOwnProfile, isBlocked: _isBlocked, colors: colors)
-                    : _PostsGrid(posts: posts, colors: colors, onPostTap: (post) {
-                        if (post['suffix'] != null) {
-                          context.push('/post-view/${post['suffix']}');
-                        } else {
-                          context.push('/post/${post['id']}');
-                        }
-                      }),
+                    : _PostsGrid(
+                        posts: _posts,
+                        colors: colors,
+                        scrollController: _postsScrollCtrl,
+                        loadingMore: _loadingMore,
+                        onPostTap: (post) {
+                          if (post['suffix'] != null) {
+                            context.push('/post-view/${post['suffix']}');
+                          } else {
+                            context.push('/post/${post['id']}');
+                          }
+                        },
+                      ),
             // About tab
             _AboutSection(
               profile: profile,
@@ -847,19 +946,40 @@ class _TabItem extends StatelessWidget {
 class _PostsGrid extends StatelessWidget {
   final List<Map<String, dynamic>> posts;
   final ThemeColors colors;
+  final ScrollController scrollController;
+  final bool loadingMore;
   final void Function(Map<String, dynamic>) onPostTap;
 
-  const _PostsGrid({required this.posts, required this.colors, required this.onPostTap});
+  const _PostsGrid({
+    required this.posts,
+    required this.colors,
+    required this.scrollController,
+    required this.loadingMore,
+    required this.onPostTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: EdgeInsets.zero,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1, childAspectRatio: 2 / 3,
-      ),
-      itemCount: posts.length,
-      itemBuilder: (_, i) => _PostTile(post: posts[i], colors: colors, onTap: () => onPostTap(posts[i])),
+    return CustomScrollView(
+      controller: scrollController,
+      slivers: [
+        SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1, childAspectRatio: 2 / 3,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => _PostTile(post: posts[i], colors: colors, onTap: () => onPostTap(posts[i])),
+            childCount: posts.length,
+          ),
+        ),
+        if (loadingMore)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator(color: colors.primary, strokeWidth: 2)),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -871,15 +991,26 @@ class _PostTile extends StatelessWidget {
 
   const _PostTile({required this.post, required this.colors, required this.onTap});
 
-  String? _firstImageUrl() {
+  List<dynamic> _parseMedia() {
     try {
       final raw = post['media_data'];
-      if (raw == null) return null;
-      List media = raw is List ? raw : [];
-      if (media.isEmpty) return null;
-      final first = Map<String, dynamic>.from(media[0] as Map);
-      if (first['type'] == 'image') return first['url'] as String?;
-      if (first['type'] == 'video') return first['thumbnail'] as String?;
+      if (raw == null) return [];
+      if (raw is List) return raw;
+      if (raw is String && raw.isNotEmpty && raw.trim().startsWith('[')) {
+        return List<dynamic>.from(jsonDecode(raw) as List);
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  String? _firstImageUrl() {
+    try {
+      final media = _parseMedia();
+      if (media.isNotEmpty) {
+        final first = Map<String, dynamic>.from(media[0] as Map);
+        if (first['type'] == 'image') return first['url'] as String?;
+        if (first['type'] == 'video') return first['thumbnail'] as String?;
+      }
     } catch (_) {}
     final imgs = post['images'];
     if (imgs is List && imgs.isNotEmpty) return imgs[0] as String?;
@@ -889,21 +1020,15 @@ class _PostTile extends StatelessWidget {
   bool _isVideo() {
     if (post['media_type'] == 'video') return true;
     try {
-      final raw = post['media_data'];
-      if (raw == null) return false;
-      List media = raw is List ? raw : [];
-      if (media.isEmpty) return false;
-      return (media[0] as Map)['type'] == 'video';
+      final media = _parseMedia();
+      if (media.isNotEmpty) return (media[0] as Map)['type'] == 'video';
     } catch (_) {}
     return false;
   }
 
   bool _hasMultiple() {
     try {
-      final raw = post['media_data'];
-      if (raw == null) return false;
-      List media = raw is List ? raw : [];
-      return media.length > 1;
+      return _parseMedia().length > 1;
     } catch (_) {}
     return false;
   }
@@ -926,7 +1051,10 @@ class _PostTile extends StatelessWidget {
                 child: Text(post['content'] as String? ?? '', style: TextStyle(color: colors.textSecondary, fontSize: 12, fontFamily: 'Outfit'), maxLines: 3, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
               ),
         if (isVideo)
-          const Positioned(top: 4, left: 4, child: Icon(Icons.play_circle_outline, size: 20, color: Colors.white, shadows: [Shadow(blurRadius: 4)])),
+          Positioned(
+            top: 4, left: 4,
+            child: Image.asset('assets/icons/mini.png', width: 20, height: 20, color: Colors.white),
+          ),
         if (hasMultiple)
           Positioned(top: 4, right: 4, child: Container(
             padding: const EdgeInsets.all(2),
