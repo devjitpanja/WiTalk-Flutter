@@ -477,6 +477,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final AppDatabase _db;
   final Ref _ref;
   io.Socket? _socket;
+  io.Socket? _groupSocket;
   String? _currentUserId;
 
   // Reverse index: messageId -> conversationId (O(1) delete/patch)
@@ -494,16 +495,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
   List<String> _pendingMarkReadIds = [];
   Timer? _markReadDebounceTimer;
 
+  // Heartbeat — mirrors RN userStatusService 30s interval
+  Timer? _heartbeatTimer;
+
   ChatNotifier(this._db, this._ref) : super(const ChatState());
 
   io.Socket? get socket => _socket;
   String? get currentUserId => _currentUserId;
 
   // ── Init ────────────────────────────────────────────────────────────────────
-  Future<void> init(io.Socket socket, String userId) async {
+  Future<void> init(io.Socket socket, String userId, {io.Socket? groupSocket}) async {
     _socket = socket;
+    _groupSocket = groupSocket;
     _currentUserId = userId;
     _setupSocketListeners();
+    if (groupSocket != null) _setupGroupSocketListeners(groupSocket);
     await _loadConversationsFromDb();
   }
 
@@ -548,25 +554,33 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('connect', (_) {
       state = state.copyWith(isConnected: true);
       debugPrint('[CHAT NOTIFIER] connect event — currentUserId=$_currentUserId  activeConv=${state.activeConversationId}');
-      // Re-join the chat namespace (adds socket to user:${uid} and all
-      // conversation rooms) — required for message_sent routing.
       if (_currentUserId != null) {
         debugPrint('[CHAT NOTIFIER] Emitting join uid=$_currentUserId');
         s.emit('join', _currentUserId);
       } else {
         debugPrint('[CHAT NOTIFIER] ⚠️ connect: _currentUserId is null — join NOT emitted!');
       }
-      // Also re-join the active conversation room explicitly.
       final activeConvId = state.activeConversationId;
       if (activeConvId != null) {
         debugPrint('[CHAT NOTIFIER] Re-joining conversation room: $activeConvId');
         s.emit('join_conversation', activeConvId);
       }
+      // Start 30s heartbeat — mirrors RN userStatusService
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+        if (_socket != null && _socket!.connected) {
+          _socket!.emit('heartbeat');
+        }
+      });
     });
 
     s.on('disconnect', (_) {
       debugPrint('[CHAT NOTIFIER] disconnect event');
       state = state.copyWith(isConnected: false);
+      // Clear all online presence — we can't trust stale state after a disconnect
+      state = state.copyWith(onlineUsers: {});
+      _heartbeatTimer?.cancel();
+      _heartbeatTimer = null;
     });
 
     s.on('join_success', (data) {
@@ -588,6 +602,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     s.on('error', (data) {
       debugPrint('[Socket] error event: $data');
+    });
+
+    s.on('group_error', (data) {
+      debugPrint('[GroupMsg] ❌ group_error from server: $data');
+    });
+
+    s.on('group_message_error', (data) {
+      debugPrint('[GroupMsg] ❌ group_message_error from server: $data');
     });
 
     s.on('new_message', (data) => _handleNewMessage(data));
@@ -628,6 +650,66 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('group_updated', (_) => _refreshGroups());
     s.on('group_dissolved', (data) => _handleGroupDissolved(data));
     s.on('online_users', (data) => _handleOnlineUsersList(data));
+  }
+
+  // ── /group-chat namespace listeners ──────────────────────────────────────────
+  void _setupGroupSocketListeners(io.Socket gs) {
+    gs.on('connect', (_) {
+      debugPrint('[GROUP-SOCKET] connected — re-joining active group if any');
+      final active = state.activeConversationId;
+      if (active != null && _currentUserId != null) {
+        gs.emit('join_group', {'group_id': active, 'user_id': _currentUserId});
+      }
+    });
+
+    gs.on('new_group_message', (data) => _handleNewGroupMessage(data));
+    gs.on('group_message_sent', (data) => _handleGroupMessageSent(data));
+    gs.on('group_message_deleted', (data) => _handleGroupMessageDeleted(data));
+    gs.on('group_message_edited', (data) => _handleGroupMessageEdited(data));
+    gs.on('group_message_read', (data) => _handleGroupMessageRead(data));
+    gs.on('group_reaction_updated', (data) => _handleGroupReactionUpdated(data));
+    gs.on('group_member_joined', (_) => _refreshGroups());
+    gs.on('group_member_left', (_) => _refreshGroups());
+    gs.on('group_updated', (_) => _refreshGroups());
+    gs.on('group_dissolved', (data) => _handleGroupDissolved(data));
+
+    gs.on('user_typing_group', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final groupId = d['group_id']?.toString();
+      final userId = d['user_id']?.toString();
+      final isTyping = d['is_typing'] != false;
+      if (groupId != null && userId != null) {
+        _handleTyping({'conversation_id': groupId, 'user_id': userId}, isTyping);
+      }
+    });
+
+    gs.on('group_typing_start', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final groupId = d['group_id']?.toString();
+      final userId = d['user_id']?.toString();
+      if (groupId != null && userId != null) {
+        _handleTyping({'conversation_id': groupId, 'user_id': userId}, true);
+      }
+    });
+
+    gs.on('group_typing_stop', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final groupId = d['group_id']?.toString();
+      final userId = d['user_id']?.toString();
+      if (groupId != null && userId != null) {
+        _handleTyping({'conversation_id': groupId, 'user_id': userId}, false);
+      }
+    });
+
+    gs.on('online_users', (data) => _handleOnlineUsersList(data));
+    gs.on('user_online', (data) => _handlePresence(data, true));
+    gs.on('user_offline', (data) => _handlePresence(data, false));
+
+    gs.on('error', (data) => debugPrint('[GROUP-SOCKET] error: $data'));
+    gs.on('group_error', (data) => debugPrint('[GROUP-SOCKET] group_error: $data'));
   }
 
   // ── Private message handlers ─────────────────────────────────────────────────
@@ -695,20 +777,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final msgId = d['message_id']?.toString() ?? d['id']?.toString();
     if (msgId == null) return;
 
-    // Resolve delete type: explicit param > payload field > default show-deleted
-    final deleteType = d['delete_type']?.toString();
-    final isForEveryone = forEveryone ??
-        (deleteType == 'for_everyone' ? true : deleteType == 'for_me' ? false : null);
-
+    // Always remove from list — matches RN (WatermelonDB filters is_deleted=false, never shows placeholder)
     final convId = _messageOwnerMap[msgId];
     if (convId != null) {
-      if (isForEveryone == false) {
-        // "Delete for me" — remove completely from in-memory list (same as RN)
-        _removeMessage(convId, msgId);
-      } else {
-        // "Delete for everyone" (or unknown) — show deleted placeholder bubble
-        _patchMessage(convId, msgId, (m) => m.copyWith(isDeleted: true));
-      }
+      _removeMessage(convId, msgId);
       _messageOwnerMap.remove(msgId);
     }
   }
@@ -875,6 +947,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void _handleGroupMessageSent(dynamic data) {
+    debugPrint('[GroupMsg] group_message_sent received: $data');
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
     final tempId = d['temp_id']?.toString() ?? d['tempId']?.toString();
@@ -882,9 +955,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final groupId = d['group_id']?.toString() ??
         d['conversation_id']?.toString() ??
         (tempId != null ? _messageOwnerMap[tempId] : null);
-    if (serverId == null || groupId == null) return;
+    debugPrint('[GroupMsg] group_message_sent — tempId=$tempId serverId=$serverId groupId=$groupId');
+    if (serverId == null || groupId == null) {
+      debugPrint('[GroupMsg] ❌ group_message_sent: missing serverId or groupId — skipping swap');
+      return;
+    }
     if (tempId != null) {
       _swapTempMessage(groupId, tempId, serverId, d);
+      debugPrint('[GroupMsg] ✅ swapped temp→server: $tempId → $serverId');
     } else {
       _addMessage(groupId, ChatMessage.fromJson({...d, 'status': 'sent'}));
     }
@@ -1285,19 +1363,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _addMessage(groupId, optimistic);
     _updateGroupFromMessage(optimistic);
 
-    if (_socket != null) {
-      _socket!.emit('send_group_message', {
-        'group_id': groupId,
-        'sender_id': uid,
-        'content': content,
-        'message_type': messageType,
-        'media_url': mediaUrl,
-        'media_data': mediaData,
-        'metadata': metadata,
-        'reply_to_id': replyToId,
-        'replyTo': replyTo,
-        'temp_id': tempId,
-      });
+    // The /chat socket namespace does NOT handle send_group_message — that
+    // event only runs on RN's separate /group-chat namespace. Use REST instead.
+    debugPrint('[GroupMsg] sendGroupMessage via REST — tempId=$tempId groupId=$groupId');
+    try {
+      final res = await dioClient.post(
+        AppEndpoints.groupMessages(groupId),
+        data: {
+          'group_id': groupId,
+          'sender_id': uid,
+          'content': content,
+          'message_type': messageType,
+          if (mediaUrl != null) 'media_url': mediaUrl,
+          if (mediaData != null) 'media_data': mediaData,
+          if (metadata != null) 'metadata': metadata,
+          if (replyToId != null) 'reply_to_id': replyToId,
+          if (replyTo != null) 'reply_to': replyTo,
+          'temp_id': tempId,
+        },
+      );
+      final resData = res.data;
+      final msgData = (resData is Map && resData['data'] is Map)
+          ? Map<String, dynamic>.from(resData['data'] as Map)
+          : (resData is Map && resData['message'] is Map)
+              ? Map<String, dynamic>.from(resData['message'] as Map)
+              : null;
+      final serverId = msgData?['id']?.toString() ??
+          (resData is Map ? resData['id']?.toString() : null);
+      debugPrint('[GroupMsg] REST response — serverId=$serverId resData keys=${resData is Map ? (resData as Map).keys.toList() : resData}');
+      if (serverId != null) {
+        _swapTempMessage(groupId, tempId, serverId, msgData ?? {});
+        debugPrint('[GroupMsg] ✅ swapped temp→server: $tempId → $serverId');
+      } else {
+        debugPrint('[GroupMsg] ❌ No serverId in REST response — marking failed');
+        _patchMessage(groupId, tempId, (m) => m.copyWith(status: 'failed'));
+      }
+    } catch (e) {
+      debugPrint('[GroupMsg] ❌ REST send failed: $e');
+      _patchMessage(groupId, tempId, (m) => m.copyWith(status: 'failed'));
     }
   }
 
@@ -1344,14 +1447,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   // ── Typing ──────────────────────────────────────────────────────────────────
-  void startTyping(String conversationId) {
-    _socket?.emit('typing_start',
-        {'conversation_id': conversationId, 'user_id': _currentUserId});
+  void startTyping(String conversationId, {bool isGroup = false}) {
+    if (isGroup) {
+      _groupSocket?.emit('group_typing_start',
+          {'group_id': conversationId, 'user_id': _currentUserId});
+    } else {
+      _socket?.emit('typing_start',
+          {'conversation_id': conversationId, 'user_id': _currentUserId});
+    }
   }
 
-  void stopTyping(String conversationId) {
-    _socket?.emit('typing_stop',
-        {'conversation_id': conversationId, 'user_id': _currentUserId});
+  void stopTyping(String conversationId, {bool isGroup = false}) {
+    if (isGroup) {
+      _groupSocket?.emit('group_typing_stop',
+          {'group_id': conversationId, 'user_id': _currentUserId});
+    } else {
+      _socket?.emit('typing_stop',
+          {'conversation_id': conversationId, 'user_id': _currentUserId});
+    }
   }
 
   // ── Delete message ──────────────────────────────────────────────────────────
@@ -1361,13 +1474,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final convId = _messageOwnerMap[messageId] ?? conversationId;
     if (convId != null) {
-      if (deleteType == 'for_me') {
-        // Remove completely — only this user's view is affected
-        _removeMessage(convId, messageId);
-      } else {
-        // Replace with deleted placeholder visible to all
-        _patchMessage(convId, messageId, (m) => m.copyWith(isDeleted: true));
-      }
+      // Remove from in-memory list entirely — matches RN (WatermelonDB filters is_deleted=false)
+      _removeMessage(convId, messageId);
       _messageOwnerMap.remove(messageId);
     }
 
@@ -1385,20 +1493,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // ── Delete group message ────────────────────────────────────────────────────
   Future<void> deleteGroupMessage(String groupId, String messageId,
       {String deleteType = 'for_everyone'}) async {
-    if (_socket == null) return;
-
-    final convId = groupId;
-    _patchMessage(convId, messageId, (m) => m.copyWith(isDeleted: true));
+    _patchMessage(groupId, messageId, (m) => m.copyWith(isDeleted: true));
     _messageOwnerMap.remove(messageId);
     await _db.chatDao.softDeleteMessage(messageId);
 
-    if (_socket!.connected) {
-      _socket!.emit('delete_group_message', {
-        'group_id': groupId,
-        'message_id': messageId,
-        'user_id': _currentUserId,
-      });
-    }
+    _groupSocket?.emit('delete_group_message', {
+      'group_id': groupId,
+      'message_id': messageId,
+      'user_id': _currentUserId,
+    });
   }
 
   // ── Delete conversation ──────────────────────────────────────────────────────
@@ -1415,7 +1518,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // ── Add/remove reaction ─────────────────────────────────────────────────────
   Future<void> toggleReaction(
       String messageId, String emoji, String username) async {
-    if (_socket == null || _currentUserId == null) return;
+    if (_currentUserId == null) return;
 
     final convId = _messageOwnerMap[messageId];
     if (convId == null) return;
@@ -1423,8 +1526,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final msgs = state.messages[convId];
     if (msgs == null) return;
 
-    final msg = msgs.firstWhere((m) => m.id == messageId,
-        orElse: () => throw StateError('not found'));
+    final msgIdx = msgs.indexWhere((m) => m.id == messageId);
+    if (msgIdx == -1) return;
+    final msg = msgs[msgIdx];
+
+    // Determine if this is a group conversation (has groupId or not in conversations list)
+    final isGroup = msg.groupId != null ||
+        state.conversations.every((c) => c.id != convId);
 
     final reactions = List<Map<String, dynamic>>.from(msg.reactions ?? []);
     final hasReacted =
@@ -1433,8 +1541,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (hasReacted) {
       reactions.removeWhere(
           (r) => r['user_id'].toString() == _currentUserId && r['emoji'] == emoji);
-      _socket!.emit('remove_reaction',
-          {'message_id': messageId, 'user_id': _currentUserId, 'emoji': emoji});
+      if (isGroup) {
+        _groupSocket?.emit('remove_group_reaction',
+            {'message_id': messageId, 'user_id': _currentUserId, 'emoji': emoji});
+      } else {
+        _socket?.emit('remove_reaction',
+            {'message_id': messageId, 'user_id': _currentUserId, 'emoji': emoji});
+      }
     } else {
       final prefs = await SharedPreferences.getInstance();
       reactions.add({
@@ -1445,8 +1558,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
         'emoji': emoji,
         'created_at': DateTime.now().toIso8601String(),
       });
-      _socket!.emit('add_reaction',
-          {'message_id': messageId, 'user_id': _currentUserId, 'emoji': emoji});
+      if (isGroup) {
+        _groupSocket?.emit('add_group_reaction',
+            {'message_id': messageId, 'user_id': _currentUserId, 'emoji': emoji});
+      } else {
+        _socket?.emit('add_reaction',
+            {'message_id': messageId, 'user_id': _currentUserId, 'emoji': emoji});
+      }
     }
 
     _patchMessage(convId, messageId, (m) => m.copyWith(reactions: reactions));
@@ -1465,11 +1583,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void joinGroup(String groupId) {
-    _socket?.emit('join_group', {'group_id': groupId});
+    debugPrint('[GroupMsg] joinGroup — groupSocket=${_groupSocket != null} connected=${_groupSocket?.connected} groupId=$groupId uid=$_currentUserId');
+    _groupSocket?.emit('join_group', {'group_id': groupId, 'user_id': _currentUserId});
   }
 
   void leaveGroup(String groupId) {
-    _socket?.emit('leave_group', {'group_id': groupId});
+    _groupSocket?.emit('leave_group', groupId);
   }
 
   bool isUserOnline(String userId) => state.onlineUsers.contains(userId);
@@ -1484,6 +1603,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   @override
   void dispose() {
     _markReadDebounceTimer?.cancel();
+    _heartbeatTimer?.cancel();
     for (final t in _reactionBatchTimers.values) {
       t.cancel();
     }

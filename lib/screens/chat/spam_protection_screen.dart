@@ -1,666 +1,513 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/chat_api_service.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
-import '../../services/chat_api_service.dart';
 
-// ── Action enum ───────────────────────────────────────────────────────────────
+// ── Defaults ──────────────────────────────────────────────────────────────────
 
-enum _SpamAction { warn, mute, ban }
+const _defaultSpam = {
+  'spam_protection_enabled': 1,
+  'spam_rate_limit_enabled': 1,
+  'spam_rate_limit_count': 5,
+  'spam_duplicate_enabled': 1,
+  'spam_duplicate_threshold': 3,
+  'spam_link_enabled': 1,
+  'spam_link_max': 4,
+  'spam_no_links_enabled': 0,
+  'spam_promo_enabled': 1,
+  'spam_mention_enabled': 1,
+  'spam_mention_max': 6,
+};
 
-extension _SpamActionLabel on _SpamAction {
-  String get label {
-    switch (this) {
-      case _SpamAction.warn: return 'Warn';
-      case _SpamAction.mute: return 'Mute';
-      case _SpamAction.ban:  return 'Ban';
-    }
+Map<String, dynamic> _fromPerms(Map<String, dynamic> perms) {
+  final result = <String, dynamic>{};
+  for (final k in _defaultSpam.keys) {
+    result[k] = perms.containsKey(k) ? perms[k] : _defaultSpam[k];
   }
-
-  String get value {
-    switch (this) {
-      case _SpamAction.warn: return 'warn';
-      case _SpamAction.mute: return 'mute';
-      case _SpamAction.ban:  return 'ban';
-    }
-  }
-
-  static _SpamAction fromString(String? s) {
-    switch (s) {
-      case 'mute': return _SpamAction.mute;
-      case 'ban':  return _SpamAction.ban;
-      default:     return _SpamAction.warn;
-    }
-  }
+  return result;
 }
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class SpamProtectionScreen extends ConsumerStatefulWidget {
   final String groupId;
+  final String? groupName;
 
-  const SpamProtectionScreen({super.key, required this.groupId});
+  const SpamProtectionScreen({super.key, required this.groupId, this.groupName});
 
   @override
-  ConsumerState<SpamProtectionScreen> createState() =>
-      _SpamProtectionScreenState();
+  ConsumerState<SpamProtectionScreen> createState() => _SpamProtectionScreenState();
 }
 
 class _SpamProtectionScreenState extends ConsumerState<SpamProtectionScreen> {
   bool _loading = true;
   bool _saving = false;
-
-  // Settings state
-  bool _enabled = false;
-  int _maxMessagesPerMinute = 10;
-  int _maxIdenticalMessages = 3;
-  _SpamAction _action = _SpamAction.warn;
-  List<String> _blockedWords = [];
-
-  // Word filter input
-  final _wordCtrl = TextEditingController();
-  final _wordFocus = FocusNode();
-
-  // Threshold controllers (bound to int fields)
-  late TextEditingController _rateCtrl;
-  late TextEditingController _identicalCtrl;
+  Map<String, dynamic> _settings = Map.from(_defaultSpam);
 
   @override
   void initState() {
     super.initState();
-    _rateCtrl = TextEditingController(text: '$_maxMessagesPerMinute');
-    _identicalCtrl =
-        TextEditingController(text: '$_maxIdenticalMessages');
-    _loadSettings();
+    _fetchSettings();
   }
 
-  @override
-  void dispose() {
-    _wordCtrl.dispose();
-    _wordFocus.dispose();
-    _rateCtrl.dispose();
-    _identicalCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadSettings() async {
+  Future<void> _fetchSettings() async {
+    final myUid = ref.read(authProvider).uid;
     setState(() => _loading = true);
     try {
-      final data =
-          await chatApiService.getSpamProtectionSettings(widget.groupId);
-      if (data != null && mounted) {
-        final words = data['blocked_words'];
-        setState(() {
-          _enabled = data['enabled'] == true;
-          _maxMessagesPerMinute =
-              (data['max_messages_per_minute'] as num?)?.toInt() ?? 10;
-          _maxIdenticalMessages =
-              (data['max_identical_messages'] as num?)?.toInt() ?? 3;
-          _action = _SpamActionLabel.fromString(data['action']?.toString());
-          _blockedWords = words is List
-              ? List<String>.from(words.map((w) => w.toString()))
-              : [];
-          _rateCtrl.text = '$_maxMessagesPerMinute';
-          _identicalCtrl.text = '$_maxIdenticalMessages';
-          _loading = false;
-        });
-      } else {
-        if (mounted) setState(() => _loading = false);
+      final data = await chatApiService.getGroupPermissions(widget.groupId, userId: myUid);
+      if (data != null) {
+        final perms = data['permissions'] as Map<String, dynamic>? ?? {};
+        if (mounted) setState(() => _settings = _fromPerms(perms));
       }
     } catch (_) {
+      // Use defaults if fetch fails
+    } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _save() async {
-    // Sync text fields → int
-    final rate = int.tryParse(_rateCtrl.text.trim()) ?? _maxMessagesPerMinute;
-    final identical =
-        int.tryParse(_identicalCtrl.text.trim()) ?? _maxIdenticalMessages;
-    setState(() {
-      _maxMessagesPerMinute = rate.clamp(1, 300);
-      _maxIdenticalMessages = identical.clamp(1, 50);
-      _saving = true;
-    });
+  void _set(String key, dynamic value) => setState(() => _settings[key] = value);
+  void _toggle(String key) => _set(key, (_settings[key] == 1 || _settings[key] == true) ? 0 : 1);
 
+  bool _isEnabled(String key) {
+    final v = _settings[key];
+    return v == 1 || v == true;
+  }
+
+  bool get _masterOn => _isEnabled('spam_protection_enabled');
+
+  int _clamp(int val, int min, int max) => val.clamp(min, max);
+
+  Future<void> _save() async {
+    final myUid = ref.read(authProvider).uid;
+    if (myUid == null) return;
+
+    setState(() => _saving = true);
     try {
-      await chatApiService.updateSpamProtectionSettings(widget.groupId, {
-        'enabled': _enabled,
-        'max_messages_per_minute': _maxMessagesPerMinute,
-        'max_identical_messages': _maxIdenticalMessages,
-        'action': _action.value,
-        'blocked_words': _blockedWords,
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Settings saved',
-              style:
-                  TextStyle(fontFamily: 'Outfit', color: context.colors.text)),
-          backgroundColor: context.colors.surface,
-          duration: const Duration(seconds: 2),
-        ));
-      }
-    } catch (_) {
+      await dioClient.put(
+        AppEndpoints.groupPermissions(widget.groupId),
+        data: _settings,
+      );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to save settings')));
+          const SnackBar(
+            content: Text('Spam settings saved', style: TextStyle(fontFamily: 'Outfit')),
+          ),
+        );
+        context.pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(e.toString(), style: const TextStyle(fontFamily: 'Outfit')),
+          ),
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
-  void _addWord() {
-    final word = _wordCtrl.text.trim().toLowerCase();
-    if (word.isEmpty) return;
-    if (_blockedWords.contains(word)) {
-      _wordCtrl.clear();
-      return;
-    }
-    setState(() {
-      _blockedWords = [..._blockedWords, word];
-      _wordCtrl.clear();
-    });
-    _wordFocus.requestFocus();
-  }
-
-  void _removeWord(String word) {
-    setState(() => _blockedWords = _blockedWords.where((w) => w != word).toList());
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: c.background,
+        backgroundColor: c.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: c.text),
           onPressed: () => context.pop(),
         ),
-        title: Text(
-          'Spam Protection',
-          style: TextStyle(
-            color: c.text,
-            fontFamily: 'Outfit',
-            fontWeight: FontWeight.w600,
-            fontSize: 17,
-          ),
+        title: Column(
+          children: [
+            Text(
+              'Spam Protection',
+              style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18),
+            ),
+            if (widget.groupName != null)
+              Text(
+                widget.groupName!,
+                style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 12),
+              ),
+          ],
         ),
+        centerTitle: true,
         actions: [
-          _saving
-              ? const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 16),
-                  child: Center(
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child:
-                          CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  ),
-                )
-              : TextButton(
-                  onPressed: _loading ? null : _save,
-                  child: Text(
-                    'Save',
-                    style: TextStyle(
-                      color: _loading ? c.textTertiary : c.primary,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ),
+          const SizedBox(width: 40),
         ],
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: c.primary))
-          : ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          : _buildBody(c),
+    );
+  }
+
+  Widget _buildBody(ThemeColors c) {
+    return ListView(
+      children: [
+        // ── Master switch ──────────────────────────────────────────────────────
+        Container(
+          color: c.surface,
+          margin: const EdgeInsets.only(top: 12),
+          child: _SettingRow(
+            c: c,
+            icon: Icons.security_outlined,
+            iconColor: _masterOn ? const Color(0xFF10B981) : null,
+            title: 'Enable spam protection',
+            description: 'Master switch. When off, all checks below are disabled and every message passes through.',
+            value: _masterOn,
+            onToggle: () => _toggle('spam_protection_enabled'),
+          ),
+        ),
+
+        // ── Individual checks ─────────────────────────────────────────────────
+        Container(
+          color: c.surface,
+          margin: const EdgeInsets.only(top: 12),
+          child: Opacity(
+            opacity: _masterOn ? 1.0 : 0.45,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── Enable toggle ──
-                _SectionCard(
-                  c: c,
-                  child: Row(
-                    children: [
-                      Icon(Icons.shield_outlined,
-                          color: _enabled ? c.success : c.textTertiary,
-                          size: 22),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Spam Protection',
-                              style: TextStyle(
-                                color: c.text,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15,
-                              ),
-                            ),
-                            Text(
-                              'Automatically detect and act on spam',
-                              style: TextStyle(
-                                color: c.textSecondary,
-                                fontFamily: 'Outfit',
-                                fontSize: 12,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Switch.adaptive(
-                        value: _enabled,
-                        onChanged: (v) => setState(() => _enabled = v),
-                        activeColor: c.primary,
-                      ),
-                    ],
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                  child: Text(
+                    'CHECKS',
+                    style: TextStyle(
+                      color: c.textTertiary,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      fontSize: 11,
+                      letterSpacing: 1,
+                    ),
                   ),
                 ),
 
-                if (_enabled) ...[
-                  const SizedBox(height: 16),
-
-                  // ── Thresholds ──
-                  _SectionHeader(label: 'Thresholds', c: c),
-                  const SizedBox(height: 8),
-                  _SectionCard(
+                // Rate limit
+                _SettingRow(
+                  c: c,
+                  icon: Icons.timer_outlined,
+                  title: 'Rate limiting',
+                  description: 'Block members who send more than ${_settings['spam_rate_limit_count']} messages within 5 seconds.',
+                  value: _isEnabled('spam_rate_limit_enabled'),
+                  onToggle: _masterOn ? () => _toggle('spam_rate_limit_enabled') : null,
+                  disabled: !_masterOn,
+                ),
+                if (_isEnabled('spam_rate_limit_enabled') && _masterOn)
+                  _Stepper(
                     c: c,
-                    child: Column(
-                      children: [
-                        _NumberRow(
-                          label: 'Max messages per minute',
-                          hint:
-                              'How many messages a user can send per minute before being flagged',
-                          ctrl: _rateCtrl,
-                          c: c,
-                          min: 1,
-                          max: 300,
-                        ),
-                        Divider(color: c.border, height: 24),
-                        _NumberRow(
-                          label: 'Max identical messages',
-                          hint:
-                              'How many times the same text can be sent before triggering spam detection',
-                          ctrl: _identicalCtrl,
-                          c: c,
-                          min: 1,
-                          max: 50,
-                        ),
-                      ],
-                    ),
+                    label: 'Messages per 5 s',
+                    value: (_settings['spam_rate_limit_count'] as num).toInt(),
+                    min: 2,
+                    max: 20,
+                    onChange: (v) => _set('spam_rate_limit_count', _clamp(v, 2, 20)),
                   ),
 
-                  const SizedBox(height: 16),
+                Divider(height: 0.5, color: c.border, indent: 56),
 
-                  // ── Action ──
-                  _SectionHeader(label: 'Action on Detection', c: c),
-                  const SizedBox(height: 8),
-                  _SectionCard(
+                // Duplicate flood
+                _SettingRow(
+                  c: c,
+                  icon: Icons.content_copy_outlined,
+                  title: 'Duplicate flood',
+                  description: 'Block identical messages sent ${_settings['spam_duplicate_threshold']} or more times in a row.',
+                  value: _isEnabled('spam_duplicate_enabled'),
+                  onToggle: _masterOn ? () => _toggle('spam_duplicate_enabled') : null,
+                  disabled: !_masterOn,
+                ),
+                if (_isEnabled('spam_duplicate_enabled') && _masterOn)
+                  _Stepper(
                     c: c,
-                    child: Column(
-                      children: _SpamAction.values.map((action) {
-                        final selected = _action == action;
-                        return GestureDetector(
-                          onTap: () =>
-                              setState(() => _action = action),
-                          child: Padding(
-                            padding:
-                                const EdgeInsets.symmetric(vertical: 10),
-                            child: Row(
-                              children: [
-                                AnimatedContainer(
-                                  duration:
-                                      const Duration(milliseconds: 180),
-                                  width: 22,
-                                  height: 22,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: selected
-                                          ? c.primary
-                                          : c.border,
-                                      width: 2,
-                                    ),
-                                    color: selected
-                                        ? c.primary
-                                        : Colors.transparent,
-                                  ),
-                                  child: selected
-                                      ? const Icon(Icons.check,
-                                          size: 13, color: Colors.white)
-                                      : null,
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        action.label,
-                                        style: TextStyle(
-                                          color: c.text,
-                                          fontFamily: 'Outfit',
-                                          fontWeight: selected
-                                              ? FontWeight.w600
-                                              : FontWeight.w400,
-                                          fontSize: 14,
-                                        ),
-                                      ),
-                                      Text(
-                                        _actionDescription(action),
-                                        style: TextStyle(
-                                          color: c.textTertiary,
-                                          fontFamily: 'Outfit',
-                                          fontSize: 12,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
+                    label: 'Repeat threshold',
+                    value: (_settings['spam_duplicate_threshold'] as num).toInt(),
+                    min: 2,
+                    max: 10,
+                    onChange: (v) => _set('spam_duplicate_threshold', _clamp(v, 2, 10)),
                   ),
 
-                  const SizedBox(height: 16),
+                Divider(height: 0.5, color: c.border, indent: 56),
 
-                  // ── Word filter ──
-                  _SectionHeader(label: 'Word Filter', c: c),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Messages containing these words will be flagged.',
-                    style: TextStyle(
-                      color: c.textSecondary,
-                      fontFamily: 'Outfit',
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _SectionCard(
+                // Link spam
+                _SettingRow(
+                  c: c,
+                  icon: Icons.link_outlined,
+                  title: 'Link spam',
+                  description: 'Block messages containing more than ${_settings['spam_link_max']} link(s).',
+                  value: _isEnabled('spam_link_enabled'),
+                  onToggle: _masterOn ? () => _toggle('spam_link_enabled') : null,
+                  disabled: !_masterOn,
+                ),
+                if (_isEnabled('spam_link_enabled') && _masterOn)
+                  _Stepper(
                     c: c,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Input row
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: _wordCtrl,
-                                focusNode: _wordFocus,
-                                style: TextStyle(
-                                    color: c.text, fontFamily: 'Outfit'),
-                                textCapitalization:
-                                    TextCapitalization.none,
-                                onSubmitted: (_) => _addWord(),
-                                decoration: InputDecoration(
-                                  hintText: 'Add blocked word',
-                                  hintStyle: TextStyle(
-                                      color: c.placeholder,
-                                      fontFamily: 'Outfit'),
-                                  filled: true,
-                                  fillColor: c.background,
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 10),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide:
-                                        BorderSide(color: c.border),
-                                  ),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide:
-                                        BorderSide(color: c.border),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                    borderSide:
-                                        BorderSide(color: c.primary),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: _addWord,
-                              child: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: BoxDecoration(
-                                  color: c.primaryButton,
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.add,
-                                    color: Colors.white, size: 20),
-                              ),
-                            ),
-                          ],
-                        ),
-                        // Chip list
-                        if (_blockedWords.isNotEmpty) ...[
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: _blockedWords
-                                .map((word) => _WordChip(
-                                      word: word,
-                                      c: c,
-                                      onRemove: () => _removeWord(word),
-                                    ))
-                                .toList(),
-                          ),
-                        ] else ...[
-                          const SizedBox(height: 10),
-                          Text(
-                            'No blocked words added',
-                            style: TextStyle(
-                              color: c.textTertiary,
-                              fontFamily: 'Outfit',
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                    label: 'Max links per message',
+                    value: (_settings['spam_link_max'] as num).toInt(),
+                    min: 1,
+                    max: 20,
+                    onChange: (v) => _set('spam_link_max', _clamp(v, 1, 20)),
                   ),
-                  const SizedBox(height: 32),
-                ],
+
+                Divider(height: 0.5, color: c.border, indent: 56),
+
+                // Block all links
+                _SettingRow(
+                  c: c,
+                  icon: Icons.link_off,
+                  iconColor: _isEnabled('spam_no_links_enabled') && _masterOn ? const Color(0xFFEF4444) : null,
+                  title: 'Block all links',
+                  description: 'Prevent any message containing a link from being sent. Overrides the link count limit above.',
+                  value: _isEnabled('spam_no_links_enabled'),
+                  onToggle: _masterOn ? () => _toggle('spam_no_links_enabled') : null,
+                  disabled: !_masterOn,
+                  activeTrackColor: const Color(0xFFEF4444),
+                ),
+
+                Divider(height: 0.5, color: c.border, indent: 56),
+
+                // Self-promotion
+                _SettingRow(
+                  c: c,
+                  icon: Icons.campaign_outlined,
+                  title: 'Self-promotion',
+                  description: 'Block messages containing invite links, referral codes, or promotional keywords.',
+                  value: _isEnabled('spam_promo_enabled'),
+                  onToggle: _masterOn ? () => _toggle('spam_promo_enabled') : null,
+                  disabled: !_masterOn,
+                ),
+
+                Divider(height: 0.5, color: c.border, indent: 56),
+
+                // Mention bomb
+                _SettingRow(
+                  c: c,
+                  icon: Icons.alternate_email,
+                  title: 'Mention bomb',
+                  description: 'Block messages that contain ${_settings['spam_mention_max']} or more @mentions.',
+                  value: _isEnabled('spam_mention_enabled'),
+                  onToggle: _masterOn ? () => _toggle('spam_mention_enabled') : null,
+                  disabled: !_masterOn,
+                ),
+                if (_isEnabled('spam_mention_enabled') && _masterOn)
+                  _Stepper(
+                    c: c,
+                    label: 'Max mentions per message',
+                    value: (_settings['spam_mention_max'] as num).toInt(),
+                    min: 2,
+                    max: 20,
+                    onChange: (v) => _set('spam_mention_max', _clamp(v, 2, 20)),
+                  ),
+
+                const SizedBox(height: 8),
               ],
             ),
-    );
-  }
-
-  String _actionDescription(_SpamAction action) {
-    switch (action) {
-      case _SpamAction.warn:
-        return 'Send the user a warning message';
-      case _SpamAction.mute:
-        return 'Temporarily mute the user for 10 minutes';
-      case _SpamAction.ban:
-        return 'Remove the user from the group';
-    }
-  }
-}
-
-// ── Sub-widgets ───────────────────────────────────────────────────────────────
-
-class _SectionHeader extends StatelessWidget {
-  final String label;
-  final ThemeColors c;
-  const _SectionHeader({required this.label, required this.c});
-
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      label.toUpperCase(),
-      style: TextStyle(
-        color: c.textTertiary,
-        fontFamily: 'Outfit',
-        fontWeight: FontWeight.w600,
-        fontSize: 11,
-        letterSpacing: 0.8,
-      ),
-    );
-  }
-}
-
-class _SectionCard extends StatelessWidget {
-  final ThemeColors c;
-  final Widget child;
-  const _SectionCard({required this.c, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: c.border, width: 0.5),
-      ),
-      padding: const EdgeInsets.all(14),
-      child: child,
-    );
-  }
-}
-
-class _NumberRow extends StatelessWidget {
-  final String label;
-  final String hint;
-  final TextEditingController ctrl;
-  final ThemeColors c;
-  final int min;
-  final int max;
-
-  const _NumberRow({
-    required this.label,
-    required this.hint,
-    required this.ctrl,
-    required this.c,
-    required this.min,
-    required this.max,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(
-                  color: c.text,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                hint,
-                style: TextStyle(
-                  color: c.textTertiary,
-                  fontFamily: 'Outfit',
-                  fontSize: 11,
-                  height: 1.3,
-                ),
-              ),
-            ],
           ),
         ),
-        const SizedBox(width: 12),
-        SizedBox(
-          width: 72,
-          child: TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: c.text,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w600,
-              fontSize: 16,
+
+        // ── Notice ────────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+          child: Row(children: [
+            Icon(Icons.info_outline, size: 16, color: c.textTertiary),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Admins and owners are exempt from all spam checks.',
+                style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 12, height: 1.5),
+              ),
             ),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: c.background,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: c.border),
+          ]),
+        ),
+
+        // ── Save button ────────────────────────────────────────────────────────
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+          child: SizedBox(
+            height: 52,
+            child: ElevatedButton(
+              onPressed: _saving ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: c.primary,
+                disabledBackgroundColor: c.primary.withOpacity(0.6),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: c.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: c.primary),
-              ),
+              child: _saving
+                  ? const SizedBox(
+                      width: 20, height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text(
+                      'Save Changes',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
             ),
           ),
         ),
+
+        const SizedBox(height: 32),
       ],
     );
   }
 }
 
-class _WordChip extends StatelessWidget {
-  final String word;
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+class _SettingRow extends StatelessWidget {
   final ThemeColors c;
-  final VoidCallback onRemove;
-  const _WordChip({required this.word, required this.c, required this.onRemove});
+  final IconData icon;
+  final Color? iconColor;
+  final String title;
+  final String? description;
+  final bool value;
+  final VoidCallback? onToggle;
+  final bool disabled;
+  final Color? activeTrackColor;
+
+  const _SettingRow({
+    required this.c,
+    required this.icon,
+    this.iconColor,
+    required this.title,
+    this.description,
+    required this.value,
+    required this.onToggle,
+    this.disabled = false,
+    this.activeTrackColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final resolvedIconColor = iconColor ?? (value && !disabled ? c.primary : c.textTertiary);
+    return Opacity(
+      opacity: disabled ? 0.4 : 1.0,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 36,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(icon, size: 22, color: resolvedIconColor),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 15),
+                    ),
+                    if (description != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        description!,
+                        style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13, height: 1.4),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            Transform.scale(
+              scale: 0.85,
+              child: Switch(
+                value: value,
+                onChanged: onToggle != null ? (_) => onToggle!() : null,
+                activeColor: activeTrackColor ?? c.primary,
+                inactiveThumbColor: Colors.white,
+                inactiveTrackColor: c.border,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _Stepper extends StatelessWidget {
+  final ThemeColors c;
+  final String label;
+  final int value;
+  final int min;
+  final int max;
+  final ValueChanged<int> onChange;
+
+  const _Stepper({
+    required this.c,
+    required this.label,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChange,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: c.error.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: c.error.withOpacity(0.3)),
-      ),
+      color: c.background.withOpacity(0.8),
+      padding: const EdgeInsets.fromLTRB(56, 10, 8, 10),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(
-            word,
-            style: TextStyle(
-              color: c.error,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w500,
-              fontSize: 13,
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13),
             ),
           ),
-          const SizedBox(width: 6),
-          GestureDetector(
-            onTap: onRemove,
-            child: Icon(Icons.close, size: 14, color: c.error),
+          Row(
+            children: [
+              GestureDetector(
+                onTap: value > min ? () => onChange(value - 1) : null,
+                child: Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: c.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.remove, size: 18, color: value > min ? c.primary : c.textTertiary),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 28,
+                child: Text(
+                  '$value',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+              ),
+              const SizedBox(width: 12),
+              GestureDetector(
+                onTap: value < max ? () => onChange(value + 1) : null,
+                child: Container(
+                  width: 30, height: 30,
+                  decoration: BoxDecoration(
+                    color: c.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(Icons.add, size: 18, color: value < max ? c.primary : c.textTertiary),
+                ),
+              ),
+            ],
           ),
         ],
       ),

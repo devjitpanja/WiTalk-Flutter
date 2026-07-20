@@ -12,6 +12,9 @@ class AppConfig {
   // LiveKit
   static const String livekitUrl = 'wss://livekit2.witalk.in';
 
+  // Giphy
+  static const String giphyApiKey = '5ojz23F0ynoyvgiMLhPB8q8bLw3EN9nH';
+
   // OneSignal
   static const String oneSignalAppId = '86f427dd-6fc9-490a-93b9-0f69eeb5c5af';
 

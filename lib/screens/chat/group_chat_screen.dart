@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:giphy_get/giphy_get.dart';
+import '../../config/app_config.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -62,7 +64,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scrollCtrl.addListener(_onScroll);
-    _init();
+    // Defer until after the first frame so StateNotifier.state= is never
+    // called synchronously inside the widget-mount/build phase.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
   }
 
   @override
@@ -91,7 +95,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   Future<void> _init() async {
     final uid = ref.read(authProvider).uid;
     _currentUserId = uid;
+    debugPrint('[GroupChat] _init — uid=$uid groupId=${widget.groupId}');
     if (uid == null) {
+      debugPrint('[GroupChat] _init — uid is null, aborting');
       setState(() => _loading = false);
       return;
     }
@@ -103,6 +109,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     // Serve from cache immediately
     final cached = _groupDetailsCache[widget.groupId];
     if (cached != null) {
+      debugPrint('[GroupChat] Serving group info from cache');
       setState(() {
         _groupInfo = cached;
         _topicsEnabled = cached['topics_enabled'] == true;
@@ -111,27 +118,32 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     }
 
     // Serve messages from store immediately
-    final stored =
-        ref.read(conversationMessagesProvider(widget.groupId));
+    final stored = ref.read(conversationMessagesProvider(widget.groupId));
+    debugPrint('[GroupChat] Store has ${stored.length} messages already');
     if (stored.isNotEmpty) {
       _buildListItems(stored);
       setState(() => _loading = false);
     }
 
     // Parallel: load details + messages
+    debugPrint('[GroupChat] Starting parallel fetch');
     await Future.wait([
       _loadGroupDetails(uid),
       _loadMessages(reset: true),
     ]);
+    debugPrint('[GroupChat] Parallel fetch done');
 
     ref.read(chatProvider.notifier).markAsRead(widget.groupId);
 
     if (mounted) setState(() => _loading = false);
+    debugPrint('[GroupChat] _init complete, _loading=false');
   }
 
   Future<void> _loadGroupDetails(String uid) async {
+    debugPrint('[GroupChat] _loadGroupDetails start');
     try {
-      final data = await chatApiService.getGroupDetail(widget.groupId);
+      final data = await chatApiService.getGroupDetail(widget.groupId, userId: uid);
+      debugPrint('[GroupChat] getGroupDetail response: ${data == null ? "NULL" : "OK, keys=${data.keys.toList()}"}');
       if (data == null) return;
 
       _groupDetailsCache[widget.groupId] = data;
@@ -140,14 +152,35 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       _members =
           membersList.map((m) => Map<String, dynamic>.from(m as Map)).toList();
 
-      final me = _members.firstWhere(
-          (m) => m['user_id']?.toString() == uid || m['id']?.toString() == uid,
-          orElse: () => {});
-      _isAdmin = me['role'] == 'admin' || me['role'] == 'moderator';
-      _isOwner = me['role'] == 'owner' || data['owner_id']?.toString() == uid;
-      _isMember = me.isNotEmpty;
+      // Backend returns user_role directly — this is the authoritative source.
+      // The members array only includes admins/owners for privacy, so searching
+      // it for the current user is unreliable for regular members.
+      final userRole = data['user_role']?.toString();
+      debugPrint('[GroupChat] user_role=$userRole members=${_members.length}');
+      if (userRole != null) {
+        _isMember = true;
+        _isOwner = userRole == 'super_admin' || data['owner_id']?.toString() == uid;
+        _isAdmin = _isOwner || userRole == 'admin';
+      } else {
+        // user_role null means not a member — fall back to members array check
+        final me = _members.firstWhere(
+            (m) => m['user_id']?.toString() == uid || m['id']?.toString() == uid,
+            orElse: () => {});
+        _isAdmin = me['role'] == 'admin' || me['role'] == 'moderator';
+        _isOwner = me['role'] == 'owner' || data['owner_id']?.toString() == uid;
+        _isMember = me.isNotEmpty;
+      }
+      debugPrint('[GroupChat] isMember=$_isMember isAdmin=$_isAdmin isOwner=$_isOwner');
 
-      final perms = await chatApiService.getGroupPermissions(widget.groupId);
+      // Check mute status
+      final muteInfo = data['current_user_mute'] as Map?;
+      if (muteInfo != null) {
+        _isMuted = muteInfo['is_muted'] == 1 || muteInfo['is_muted'] == true;
+      }
+
+      debugPrint('[GroupChat] Fetching permissions');
+      final perms = await chatApiService.getGroupPermissions(widget.groupId, userId: uid);
+      debugPrint('[GroupChat] Permissions: ${perms == null ? "NULL" : "OK"}');
 
       if (mounted) {
         setState(() {
@@ -156,12 +189,15 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           _topicsEnabled = data['topics_enabled'] == true;
         });
       }
-    } catch (_) {}
+    } catch (e, st) {
+      debugPrint('[GroupChat] _loadGroupDetails ERROR: $e\n$st');
+    }
   }
 
   Future<void> _loadMessages({bool reset = false}) async {
     if (_loadingMore && !reset) return;
     final uid = _currentUserId;
+    debugPrint('[GroupChat] _loadMessages reset=$reset uid=$uid');
     if (uid == null) return;
 
     if (reset) {
@@ -172,11 +208,14 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     }
 
     try {
+      debugPrint('[GroupChat] Calling getGroupMessages offset=$_offset');
       final msgs = await chatApiService.getGroupMessages(
         widget.groupId,
         limit: _pageSize,
         offset: _offset,
+        userId: uid,
       );
+      debugPrint('[GroupChat] getGroupMessages returned ${msgs.length} messages');
 
       final chatMsgs = msgs
           .map((m) => _normalizeGroupMessage(m))
@@ -196,22 +235,39 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
       _offset += msgs.length;
       _hasMore = msgs.length >= _pageSize;
-    } catch (_) {}
+      debugPrint('[GroupChat] _loadMessages done: offset=$_offset hasMore=$_hasMore');
+    } catch (e, st) {
+      debugPrint('[GroupChat] _loadMessages ERROR: $e\n$st');
+    }
 
     if (mounted) setState(() => _loadingMore = false);
   }
 
   ChatMessage _normalizeGroupMessage(Map<String, dynamic> m) {
-    // Group messages have sender info nested
     final sender = m['sender'] as Map<String, dynamic>? ?? {};
+    // API returns sender info both nested in `sender` and as top-level fields
+    // (sender_profile_pic_medium, sender_profile_pic, sender_name, etc.).
+    // Prefer medium variant → original → nested sender → top-level fallbacks.
+    final senderPic =
+        m['sender_profile_pic_medium']?.toString() ??
+        sender['profile_pic_medium']?.toString() ??
+        m['sender_profile_pic']?.toString() ??
+        sender['profile_pic']?.toString() ??
+        m['sender_pic']?.toString();
+    final senderName =
+        m['sender_name']?.toString().isNotEmpty == true
+            ? m['sender_name'].toString()
+            : sender['name']?.toString() ??
+              sender['username']?.toString() ??
+              '';
     return ChatMessage.fromJson({
       ...m,
       'conversation_id': widget.groupId,
-      'sender_name': sender['name'] ?? sender['username'] ?? m['sender_name'] ?? '',
-      'sender_pic': sender['profile_pic'] ?? m['sender_pic'],
-      'sender_username': sender['username'],
-      'is_verified': sender['is_verified'] ?? false,
-      'verification_badge': sender['verification_badge'],
+      'sender_name': senderName,
+      'sender_pic': senderPic,
+      'sender_username': m['sender_username']?.toString() ?? sender['username']?.toString(),
+      'is_verified': sender['is_verified'] ?? m['is_verified'] ?? false,
+      'verification_badge': sender['verification_badge'] ?? m['verification_badge'],
     });
   }
 
@@ -273,7 +329,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     }
 
     _inputCtrl.clear();
-    ref.read(chatProvider.notifier).stopTyping(widget.groupId);
+    ref.read(chatProvider.notifier).stopTyping(widget.groupId, isGroup: true);
 
     await ref.read(chatProvider.notifier).sendGroupMessage(
           groupId: widget.groupId,
@@ -291,6 +347,45 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               : null,
         );
 
+    _scrollToBottom();
+  }
+
+  Future<void> _openGiphyPicker() async {
+    final uid = _currentUserId;
+    if (uid == null) return;
+
+    final gif = await GiphyGet.getGif(
+      context: context,
+      apiKey: AppConfig.giphyApiKey,
+      queryText: '',
+      showGIFs: true,
+      showStickers: true,
+      showEmojis: false,
+      tabColor: Theme.of(context).colorScheme.primary,
+    );
+
+    if (gif == null || !mounted) return;
+
+    final gifUrl = gif.images?.original?.url ?? gif.images?.fixedWidth.url;
+    if (gifUrl == null) return;
+
+    final isSticker = gif.isSticker == 1;
+    final messageType = isSticker ? 'giphy_sticker' : 'giphy_gif';
+    final w = gif.images?.original?.width;
+    final h = gif.images?.original?.height;
+    final mediaData = {
+      'gif_id': gif.id,
+      'width': w != null ? int.tryParse(w) : null,
+      'height': h != null ? int.tryParse(h) : null,
+    };
+
+    await ref.read(chatProvider.notifier).sendGroupMessage(
+          groupId: widget.groupId,
+          content: '',
+          messageType: messageType,
+          mediaUrl: gifUrl,
+          mediaData: mediaData,
+        );
     _scrollToBottom();
   }
 
@@ -378,7 +473,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   }
 
   void _handleMessageAction(MessageAction action, ChatMessage msg) {
-    final uid = _currentUserId;
     switch (action) {
       case MessageAction.reply:
         _inputCtrl.setReplyTo(msg);
@@ -481,7 +575,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         ref.watch(conversationTypingProvider(widget.groupId));
 
     final name = _groupInfo?['name'] ?? 'Group';
-    final pic = _groupInfo?['image'] ?? _groupInfo?['avatar'];
+    final pic = _groupInfo?['picture'] ?? _groupInfo?['image'] ?? _groupInfo?['avatar'] ?? _groupInfo?['profile_pic'];
     final memberCount =
         _groupInfo?['member_count'] ?? _members.length;
     final isLive = _groupInfo?['is_live'] == true;
@@ -646,53 +740,66 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       ),
       body: Column(children: [
         Expanded(
-          child: _loading && _listItems.isEmpty
-              ? Center(
-                  child: CircularProgressIndicator(color: c.primary))
-              : _listItems.isEmpty
-                  ? _EmptyGroup(c: c, groupName: name)
-                  : ListView.builder(
-                      controller: _scrollCtrl,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
-                      itemCount: _listItems.length +
-                          (_loadingMore ? 1 : 0),
-                      itemBuilder: (ctx, i) {
-                        if (i == 0 && _loadingMore) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: c.primary)),
-                            ),
+          child: Stack(children: [
+            // Chat background image (matches RN: dark/light variant)
+            Positioned.fill(
+              child: Image.asset(
+                c.background.computeLuminance() > 0.5
+                    ? 'assets/images/LightchatBg.jpeg'
+                    : 'assets/images/chatbg.jpeg',
+                fit: BoxFit.cover,
+                opacity: AlwaysStoppedAnimation(
+                    c.background.computeLuminance() > 0.5 ? 1.0 : 0.15),
+              ),
+            ),
+            _loading && _listItems.isEmpty
+                ? Center(
+                    child: CircularProgressIndicator(color: c.primary))
+                : _listItems.isEmpty
+                    ? _EmptyGroup(c: c, groupName: name)
+                    : ListView.builder(
+                        controller: _scrollCtrl,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        itemCount: _listItems.length +
+                            (_loadingMore ? 1 : 0),
+                        itemBuilder: (ctx, i) {
+                          if (i == 0 && _loadingMore) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: c.primary)),
+                              ),
+                            );
+                          }
+                          final idx = _loadingMore ? i - 1 : i;
+                          final item = _listItems[idx];
+                          if (item.isDivider) {
+                            return DateDivider(date: item.date!);
+                          }
+                          final msg = item.message!;
+                          return MessageBubble(
+                            key: ValueKey(msg.id),
+                            message: msg,
+                            isMyMessage: msg.senderId == uid,
+                            showAvatar: msg.senderId != uid,
+                            senderName: msg.senderName,
+                            onLongPress: () =>
+                                _onMessageLongPress(msg),
+                            onReactionTap: (emoji) {
+                              ref
+                                  .read(chatProvider.notifier)
+                                  .toggleReaction(msg.id, emoji, uid);
+                            },
                           );
-                        }
-                        final idx = _loadingMore ? i - 1 : i;
-                        final item = _listItems[idx];
-                        if (item.isDivider) {
-                          return DateDivider(date: item.date!);
-                        }
-                        final msg = item.message!;
-                        return MessageBubble(
-                          key: ValueKey(msg.id),
-                          message: msg,
-                          isMyMessage: msg.senderId == uid,
-                          showAvatar: msg.senderId != uid,
-                          senderName: msg.senderName,
-                          onLongPress: () =>
-                              _onMessageLongPress(msg),
-                          onReactionTap: (emoji) {
-                            ref
-                                .read(chatProvider.notifier)
-                                .toggleReaction(msg.id, emoji, uid);
-                          },
-                        );
-                      },
-                    ),
+                        },
+                      ),
+          ]),
         ),
         ChatInputBar(
           controller: _inputCtrl,
@@ -703,11 +810,12 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           uploadingMedia: _uploadingMedia,
           onSend: _handleSend,
           startTyping: (id) =>
-              ref.read(chatProvider.notifier).startTyping(id),
+              ref.read(chatProvider.notifier).startTyping(id, isGroup: true),
           stopTyping: (id) =>
-              ref.read(chatProvider.notifier).stopTyping(id),
+              ref.read(chatProvider.notifier).stopTyping(id, isGroup: true),
           onPickAndSendImage: _pickAndSendImage,
           onStartVoiceRecording: () {},
+          onOpenGiphyPicker: _openGiphyPicker,
         ),
       ]),
     );

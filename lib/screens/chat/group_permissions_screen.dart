@@ -19,53 +19,22 @@ class _GroupPermissionsScreenState
   bool _loading = true;
   bool _saving = false;
   bool _canEdit = false;
+  String _groupType = 'private';
+  bool _topicsEnabled = false;
   String? _error;
 
-  // Permission keys → human-readable labels + icons
-  static const _permMeta = <String, _PermMeta>{
-    'send_messages': _PermMeta(
-      label: 'Send Messages',
-      subtitle: 'Allow members to send messages',
-      icon: Icons.chat_bubble_outline,
-    ),
-    'send_media': _PermMeta(
-      label: 'Send Media',
-      subtitle: 'Allow members to send photos and files',
-      icon: Icons.image_outlined,
-    ),
-    'add_members': _PermMeta(
-      label: 'Add Members',
-      subtitle: 'Allow members to invite others',
-      icon: Icons.person_add_outlined,
-    ),
-    'pin_messages': _PermMeta(
-      label: 'Pin Messages',
-      subtitle: 'Allow members to pin messages',
-      icon: Icons.push_pin_outlined,
-    ),
-    'change_group_info': _PermMeta(
-      label: 'Change Group Info',
-      subtitle: 'Allow members to edit name and description',
-      icon: Icons.edit_outlined,
-    ),
-    'create_topics': _PermMeta(
-      label: 'Create Topics',
-      subtitle: 'Allow members to start new topics',
-      icon: Icons.topic_outlined,
-    ),
-    'use_reactions': _PermMeta(
-      label: 'Use Reactions',
-      subtitle: 'Allow members to react to messages',
-      icon: Icons.emoji_emotions_outlined,
-    ),
+  // Permission keys → current value
+  final Map<String, bool> _perms = {
+    'edit_group_settings': false,
+    'send_new_messages': true,
+    'add_other_members': false,
+    'approve_new_members': true,
+    'allow_members_to_post_topics': false,
   };
-
-  late Map<String, bool> _perms;
 
   @override
   void initState() {
     super.initState();
-    _perms = {for (final k in _permMeta.keys) k: true};
     _load();
   }
 
@@ -73,53 +42,53 @@ class _GroupPermissionsScreenState
     final myUid = ref.read(authProvider).uid;
     setState(() { _loading = true; _error = null; });
     try {
-      final detail = await chatApiService.getGroupDetail(widget.groupId);
-      if (detail != null && myUid != null) {
-        final members = (detail['members'] as List? ?? [])
-            .map((m) => Map<String, dynamic>.from(m as Map))
-            .toList();
-        final me = members.firstWhere(
-          (m) => m['user_id']?.toString() == myUid || m['id']?.toString() == myUid,
-          orElse: () => {},
-        );
-        _canEdit = me['role'] == 'admin' ||
-            me['role'] == 'moderator' ||
-            me['role'] == 'owner' ||
-            detail['owner_id']?.toString() == myUid;
-      }
+      final data = await chatApiService.getGroupPermissions(widget.groupId, userId: myUid);
+      if (data != null) {
+        final perms = data['permissions'] as Map<String, dynamic>? ?? {};
+        final role = data['userRole'] as String? ?? 'member';
+        final gType = data['groupType'] as String? ?? 'private';
+        final tEnabled = data['topicsEnabled'] == true;
 
-      final p = await chatApiService.getGroupPermissions(widget.groupId);
-      if (p != null) {
-        for (final k in _permMeta.keys) {
-          if (p.containsKey(k)) {
-            _perms[k] = p[k] == true;
+        _canEdit = role == 'super_admin' || role == 'admin' || role == 'owner';
+        _groupType = gType;
+        _topicsEnabled = tEnabled;
+
+        for (final k in _perms.keys) {
+          if (perms.containsKey(k)) {
+            _perms[k] = perms[k] == true || perms[k] == 1;
           }
         }
       }
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
   }
 
-  Future<void> _save() async {
+  Future<void> _toggle(String key) async {
+    if (!_canEdit || _saving) return;
+
+    // Check if disabled
+    if (key == 'approve_new_members' && _isPublic) return;
+    if (key == 'allow_members_to_post_topics' && (!_isPublic || !_topicsEnabled)) return;
+
+    final newValue = !(_perms[key] ?? false);
+
+    // Optimistic update
+    setState(() => _perms[key] = newValue);
     setState(() => _saving = true);
+
     try {
-      await chatApiService.updateGroupPermissions(widget.groupId, Map<String, dynamic>.from(_perms));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Permissions saved', style: TextStyle(fontFamily: 'Outfit')),
-            duration: Duration(seconds: 2),
-          ),
-        );
-        context.pop();
-      }
+      await chatApiService.updateGroupPermissions(widget.groupId, {
+        key: newValue ? 1 : 0,
+      });
     } catch (_) {
+      // Revert on error
+      if (mounted) setState(() => _perms[key] = !newValue);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Failed to save permissions', style: TextStyle(fontFamily: 'Outfit')),
+            content: Text('Failed to update permission', style: TextStyle(fontFamily: 'Outfit')),
           ),
         );
       }
@@ -128,6 +97,9 @@ class _GroupPermissionsScreenState
     }
   }
 
+  bool get _isPublic => _groupType == 'public';
+  String get _label => _isPublic ? 'Community' : 'Group';
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -135,30 +107,33 @@ class _GroupPermissionsScreenState
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: c.background,
+        backgroundColor: c.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: c.text),
           onPressed: () => context.pop(),
         ),
-        title: Text('Group Permissions',
-            style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 17)),
+        title: Column(
+          children: [
+            Text(
+              '$_label permissions',
+              style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 17),
+            ),
+          ],
+        ),
+        centerTitle: true,
         actions: [
-          if (_canEdit && !_loading)
-            _saving
-                ? Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: c.primary),
-                    ),
-                  )
-                : TextButton(
-                    onPressed: _save,
-                    child: Text('Save',
-                        style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-                  ),
+          if (_saving)
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: SizedBox(
+                width: 20, height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2, color: c.primary),
+              ),
+            )
+          else
+            const SizedBox(width: 40),
         ],
       ),
       body: _loading
@@ -172,87 +147,115 @@ class _GroupPermissionsScreenState
   Widget _buildBody(ThemeColors c) {
     return ListView(
       children: [
-        // Banner for non-admins
+        // ── Members can ────────────────────────────────────────────────────────
+        _buildSection(c, title: 'Members can:', children: [
+          _PermItem(
+            c: c,
+            icon: Icons.edit_outlined,
+            title: 'Edit group settings',
+            description: 'This includes the name, icon, description, disappearing message timer, advanced chat privacy and the ability to pin, keep or unkeep messages.',
+            value: _perms['edit_group_settings']!,
+            enabled: _canEdit,
+            onToggle: () => _toggle('edit_group_settings'),
+          ),
+          _PermItem(
+            c: c,
+            icon: Icons.chat_bubble_outlined,
+            title: 'Send new messages',
+            description: null,
+            value: _perms['send_new_messages']!,
+            enabled: _canEdit,
+            onToggle: () => _toggle('send_new_messages'),
+          ),
+          _PermItem(
+            c: c,
+            icon: Icons.person_add_outlined,
+            title: 'Add other members',
+            description: null,
+            value: _perms['add_other_members']!,
+            enabled: _canEdit,
+            onToggle: () => _toggle('add_other_members'),
+          ),
+          Opacity(
+            opacity: (!_isPublic || !_topicsEnabled) ? 0.5 : 1.0,
+            child: _PermItem(
+              c: c,
+              icon: Icons.forum_outlined,
+              title: 'Post topics',
+              description: !_isPublic
+                  ? 'Post topics is only available for public communities.'
+                  : !_topicsEnabled
+                      ? 'Topics must be enabled for this ${_label.toLowerCase()} before setting member permissions.'
+                      : 'When turned on, any member can create new discussion topics. When off, only admins can post topics.',
+              value: _perms['allow_members_to_post_topics']!,
+              enabled: _canEdit && _isPublic && _topicsEnabled,
+              onToggle: () => _toggle('allow_members_to_post_topics'),
+            ),
+          ),
+        ]),
+
+        // ── Admins can ─────────────────────────────────────────────────────────
+        _buildSection(c, title: 'Admins can:', children: [
+          Opacity(
+            opacity: _isPublic ? 0.5 : 1.0,
+            child: _PermItem(
+              c: c,
+              icon: Icons.how_to_reg_outlined,
+              title: 'Approve new members',
+              description: _isPublic
+                  ? 'This option is disabled for ${_label.toLowerCase()}s. Anyone can join without approval.'
+                  : 'When turned on, admins must approve anyone who wants to join the ${_label.toLowerCase()}.',
+              value: _perms['approve_new_members']!,
+              enabled: _canEdit && !_isPublic,
+              onToggle: () => _toggle('approve_new_members'),
+            ),
+          ),
+        ]),
+
         if (!_canEdit)
           Container(
-            margin: const EdgeInsets.all(16),
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: c.warning.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: c.warning.withOpacity(0.3)),
+              color: c.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: c.border),
             ),
             child: Row(children: [
-              Icon(Icons.info_outline, color: c.warning, size: 18),
+              Icon(Icons.info_outline, size: 20, color: c.textSecondary),
               const SizedBox(width: 8),
               Expanded(
-                child: Text('Only admins can modify group permissions.',
-                    style: TextStyle(color: c.warning, fontFamily: 'Outfit', fontSize: 13)),
+                child: Text(
+                  'Only admins can modify ${_label.toLowerCase()} permissions',
+                  style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13),
+                ),
               ),
             ]),
           ),
 
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-          child: Text('MEMBER PERMISSIONS',
-              style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 11,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.8)),
-        ),
-
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: c.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: c.border),
-          ),
-          child: Column(
-            children: _permMeta.entries.toList().asMap().entries.map((entry) {
-              final i = entry.key;
-              final kv = entry.value;
-              final isLast = i == _permMeta.length - 1;
-              return Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Row(children: [
-                      Container(
-                        width: 38, height: 38,
-                        decoration: BoxDecoration(
-                          color: c.primary.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Icon(kv.value.icon, color: c.primary, size: 20),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(kv.value.label,
-                              style: TextStyle(color: c.text, fontFamily: 'Outfit',
-                                  fontWeight: FontWeight.w500, fontSize: 15)),
-                          Text(kv.value.subtitle,
-                              style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 12)),
-                        ]),
-                      ),
-                      Switch(
-                        value: _perms[kv.key] ?? true,
-                        onChanged: _canEdit
-                            ? (v) => setState(() => _perms[kv.key] = v)
-                            : null,
-                        activeColor: c.primary,
-                        inactiveThumbColor: c.textTertiary,
-                      ),
-                    ]),
-                  ),
-                  if (!isLast)
-                    Divider(color: c.border, height: 1, indent: 66, endIndent: 16),
-                ],
-              );
-            }).toList(),
-          ),
-        ),
         const SizedBox(height: 32),
       ],
+    );
+  }
+
+  Widget _buildSection(ThemeColors c, {required String title, required List<Widget> children}) {
+    return Container(
+      color: c.surface,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 16),
+            child: Text(
+              title,
+              style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 14),
+            ),
+          ),
+          ...children,
+        ],
+      ),
     );
   }
 
@@ -272,9 +275,59 @@ class _GroupPermissionsScreenState
   }
 }
 
-class _PermMeta {
-  final String label;
-  final String subtitle;
+class _PermItem extends StatelessWidget {
+  final ThemeColors c;
   final IconData icon;
-  const _PermMeta({required this.label, required this.subtitle, required this.icon});
+  final String title;
+  final String? description;
+  final bool value;
+  final bool enabled;
+  final VoidCallback onToggle;
+
+  const _PermItem({
+    required this.c,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.value,
+    required this.enabled,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Icon(icon, size: 24, color: c.textSecondary),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title,
+                  style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 16)),
+              if (description != null) ...[
+                const SizedBox(height: 4),
+                Text(description!,
+                    style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 14, height: 1.4)),
+              ],
+            ]),
+          ),
+          const SizedBox(width: 12),
+          Switch(
+            value: value,
+            onChanged: enabled ? (_) => onToggle() : null,
+            activeColor: enabled ? Colors.black : c.textTertiary,
+            activeTrackColor: enabled ? Colors.black.withOpacity(0.5) : c.border,
+            inactiveThumbColor: Colors.white,
+            inactiveTrackColor: const Color(0xFFE5E5EA),
+          ),
+        ],
+      ),
+    );
+  }
 }

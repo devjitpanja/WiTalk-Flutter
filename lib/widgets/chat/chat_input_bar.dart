@@ -351,6 +351,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
                           color: c.textSecondary, size: 22),
                       onPressed: widget.onPickAndSendImage,
                     ),
+                    // GIF / sticker (shown when callback is provided)
+                    if (widget.onOpenGiphyPicker != null)
+                      IconButton(
+                        icon: Icon(Icons.gif_box_outlined,
+                            color: c.textSecondary, size: 24),
+                        onPressed: widget.onOpenGiphyPicker,
+                      ),
                   ]),
                 ),
               ),

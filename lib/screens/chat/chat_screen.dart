@@ -1231,9 +1231,11 @@ class _ChatTile extends StatelessWidget {
                   ]),
                   const SizedBox(height: 4),
                   Row(children: [
+                    // Only show tick when my message AND has text content (mirrors RN check)
                     if (isMyMessage &&
                         !iBlockedThem &&
-                        !isLastActivityReaction)
+                        !isLastActivityReaction &&
+                        (conv.lastMessage?.isNotEmpty ?? false))
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: Icon(

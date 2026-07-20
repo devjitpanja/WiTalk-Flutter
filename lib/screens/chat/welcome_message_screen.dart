@@ -1,33 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/theme_colors.dart';
-import '../../providers/auth_provider.dart';
-import '../../api/dio_client.dart';
-import '../../api/app_endpoints.dart';
 import '../../services/chat_api_service.dart';
+
+const _defaultTemplate = 'Welcome to {group_name}, {name}! We\'re glad to have you here.';
+const _maxLength = 500;
 
 class WelcomeMessageScreen extends ConsumerStatefulWidget {
   final String groupId;
+  final String? groupName;
+  final bool isPublic;
 
-  const WelcomeMessageScreen({super.key, required this.groupId});
+  const WelcomeMessageScreen({
+    super.key,
+    required this.groupId,
+    this.groupName,
+    this.isPublic = false,
+  });
 
   @override
-  ConsumerState<WelcomeMessageScreen> createState() =>
-      _WelcomeMessageScreenState();
+  ConsumerState<WelcomeMessageScreen> createState() => _WelcomeMessageScreenState();
 }
 
 class _WelcomeMessageScreenState extends ConsumerState<WelcomeMessageScreen> {
   final _msgCtrl = TextEditingController();
+  final _msgFocus = FocusNode();
+
   bool _loading = true;
   bool _saving = false;
-  bool _enabled = true;
+  bool _enabled = false;
+  bool _hasChanges = false;
   String? _error;
-  String? _originalMessage;
-  bool _isDirty = false;
 
-  static const int _maxLength = 500;
+  String _originalTemplate = _defaultTemplate;
+  bool _originalEnabled = false;
+
+  // Track cursor position for field insertion
+  int _cursorPos = 0;
 
   @override
   void initState() {
@@ -40,78 +50,88 @@ class _WelcomeMessageScreenState extends ConsumerState<WelcomeMessageScreen> {
   void dispose() {
     _msgCtrl.removeListener(_onTextChanged);
     _msgCtrl.dispose();
+    _msgFocus.dispose();
     super.dispose();
   }
 
   void _onTextChanged() {
-    setState(() {
-      _isDirty = _msgCtrl.text.trim() != (_originalMessage ?? '').trim() ||
-          _enabled != (_enabled);
-    });
+    final changed = _msgCtrl.text != _originalTemplate || _enabled != _originalEnabled;
+    if (changed != _hasChanges) setState(() => _hasChanges = changed);
   }
 
   Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+    setState(() { _loading = true; _error = null; });
     try {
-      final data =
-          await chatApiService.getGroupWelcomeMessage(widget.groupId);
+      final data = await chatApiService.getGroupWelcomeMessage(widget.groupId);
       if (data != null) {
-        final msg = data['message'] as String? ?? '';
+        final msg = data['message'] as String? ?? _defaultTemplate;
         final enabled = data['enabled'] != false;
-        _originalMessage = msg;
+        _originalTemplate = msg;
+        _originalEnabled = enabled;
         _msgCtrl.text = msg;
-        setState(() => _enabled = enabled);
+        if (mounted) setState(() => _enabled = enabled);
       } else {
-        _originalMessage = '';
+        _msgCtrl.text = _defaultTemplate;
+        _originalTemplate = _defaultTemplate;
       }
     } catch (_) {
-      setState(() => _error = 'Failed to load welcome message.');
+      if (mounted) setState(() => _error = 'Failed to load welcome message.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  void _insertField(String field) {
+    final pos = _cursorPos.clamp(0, _msgCtrl.text.length);
+    final current = _msgCtrl.text;
+    final newText = current.substring(0, pos) + field + current.substring(pos);
+    if (newText.length > _maxLength) return;
+    _msgCtrl.text = newText;
+    final newPos = pos + field.length;
+    _msgCtrl.selection = TextSelection.collapsed(offset: newPos);
+    _cursorPos = newPos;
+    _msgFocus.requestFocus();
+  }
+
+  void _reset() {
+    _msgCtrl.text = _defaultTemplate;
+    _msgCtrl.selection = TextSelection.collapsed(offset: _defaultTemplate.length);
+    _cursorPos = _defaultTemplate.length;
+    final changed = _msgCtrl.text != _originalTemplate || _enabled != _originalEnabled;
+    setState(() => _hasChanges = changed);
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     final text = _msgCtrl.text.trim();
-
     setState(() => _saving = true);
     try {
+      // Use updateWelcomeMessageSettings if available, else fall back
       await chatApiService.setGroupWelcomeMessage(widget.groupId, text);
-      // Also persist enabled state if API supports it
+      // Try the full endpoint that includes enabled flag
       try {
-        await dioClient.put('/v1/groups/${widget.groupId}/welcome-message', data: {
-          'message': text,
-          'enabled': _enabled,
+        await chatApiService.updateGroupPermissions(widget.groupId, {
+          'welcome_message_enabled': _enabled ? 1 : 0,
+          'welcome_message_template': text.isEmpty ? null : text,
         });
       } catch (_) {
-        // If the combined endpoint fails, the basic set above succeeded — acceptable
+        // Fallback succeeded above
       }
-      _originalMessage = text;
-      setState(() => _isDirty = false);
+      _originalTemplate = text;
+      _originalEnabled = _enabled;
+      if (mounted) setState(() => _hasChanges = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Welcome message saved.',
-              style: const TextStyle(fontFamily: 'Outfit'),
-            ),
-            backgroundColor: context.colors.success,
+          const SnackBar(
+            content: Text('Welcome message settings updated successfully', style: TextStyle(fontFamily: 'Outfit')),
           ),
         );
       }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Failed to save welcome message.',
-              style: TextStyle(fontFamily: 'Outfit'),
-            ),
-            backgroundColor: context.colors.error,
+          const SnackBar(
+            content: Text('Failed to save settings. Please try again.', style: TextStyle(fontFamily: 'Outfit')),
           ),
         );
       }
@@ -120,419 +140,358 @@ class _WelcomeMessageScreenState extends ConsumerState<WelcomeMessageScreen> {
     }
   }
 
+  String get _label => widget.isPublic ? 'Community' : 'Group';
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final remaining = _maxLength - _msgCtrl.text.length;
 
     return Scaffold(
       backgroundColor: c.background,
       appBar: AppBar(
-        backgroundColor: c.background,
+        backgroundColor: c.surface,
         elevation: 0,
         scrolledUnderElevation: 0,
         leading: IconButton(
           icon: Icon(Icons.arrow_back, color: c.text),
           onPressed: () => context.pop(),
         ),
-        title: Text(
-          'Welcome Message',
-          style: TextStyle(
-            color: c.text,
-            fontFamily: 'Outfit',
-            fontWeight: FontWeight.w600,
-            fontSize: 18,
-          ),
-        ),
-        actions: [
-          if (!_loading)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: TextButton(
-                onPressed: _saving ? null : _save,
-                child: _saving
-                    ? SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: c.primaryButton,
-                        ),
-                      )
-                    : Text(
-                        'Save',
-                        style: TextStyle(
-                          color: c.primaryButton,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w700,
-                          fontSize: 15,
-                        ),
-                      ),
-              ),
+        title: Column(
+          children: [
+            Text(
+              'Welcome message',
+              style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18),
             ),
+            if (widget.groupName != null)
+              Text(
+                widget.groupName!,
+                style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 12),
+              ),
+          ],
+        ),
+        centerTitle: true,
+        actions: [
+          const SizedBox(width: 40),
         ],
       ),
       body: _loading
-          ? Center(child: CircularProgressIndicator(color: c.primaryButton))
+          ? Center(child: CircularProgressIndicator(color: c.primary))
           : _error != null
-              ? _ErrorView(message: _error!, onRetry: _load, c: c)
-              : SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
+              ? _buildError(c)
+              : _buildBody(c),
+    );
+  }
+
+  Widget _buildBody(ThemeColors c) {
+    final previewMessage = _msgCtrl.text
+        .replaceAll('{name}', '@john_doe')
+        .replaceAll('{group_name}', widget.groupName ?? 'My Group');
+
+    return SingleChildScrollView(
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      child: Column(
+        children: [
+          // ── Enable toggle ──────────────────────────────────────────────────
+          Container(
+            color: c.surface,
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.emoji_people_outlined,
+                  size: 24,
+                  color: _enabled ? const Color(0xFF10B981) : c.textSecondary,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Info banner
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: c.primaryButton.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                              color: c.primaryButton.withOpacity(0.2)),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(Icons.info_outline,
-                                size: 18, color: c.primaryButton),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'This message is sent automatically to new members when they join the group.',
-                                style: TextStyle(
-                                  color: c.textSecondary,
-                                  fontFamily: 'Outfit',
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Enable toggle
-                      Container(
-                        decoration: BoxDecoration(
-                          color: c.surface,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: c.border),
-                        ),
-                        child: SwitchListTile(
-                          value: _enabled,
-                          onChanged: (v) {
-                            setState(() {
-                              _enabled = v;
-                              _isDirty = true;
-                            });
-                          },
-                          activeColor: c.primaryButton,
-                          title: Text(
-                            'Enable Welcome Message',
-                            style: TextStyle(
-                              color: c.text,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
-                          subtitle: Text(
-                            _enabled ? 'Sent to new members' : 'Disabled',
-                            style: TextStyle(
-                              color: _enabled ? c.success : c.textTertiary,
-                              fontFamily: 'Outfit',
-                              fontSize: 12,
-                            ),
-                          ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 4),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14)),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Label
                       Text(
-                        'Message',
-                        style: TextStyle(
-                          color: c.text,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
+                        'Enable welcome message',
+                        style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 16),
                       ),
-                      const SizedBox(height: 8),
-
-                      // Text field
-                      TextField(
-                        controller: _msgCtrl,
-                        enabled: _enabled,
-                        maxLines: 6,
-                        maxLength: _maxLength,
-                        style: TextStyle(
-                          color: _enabled ? c.text : c.textTertiary,
-                          fontFamily: 'Outfit',
-                          fontSize: 14,
-                        ),
-                        decoration: InputDecoration(
-                          hintText:
-                              'Hi {name}, welcome to the group! 👋\n\nPlease read the group rules and enjoy your stay.',
-                          hintStyle: TextStyle(
-                            color: c.placeholder,
-                            fontFamily: 'Outfit',
-                            fontSize: 13,
-                          ),
-                          filled: true,
-                          fillColor: _enabled
-                              ? c.surface
-                              : c.surface.withOpacity(0.5),
-                          counterStyle: TextStyle(
-                            color: remaining < 50 ? c.warning : c.textTertiary,
-                            fontFamily: 'Outfit',
-                            fontSize: 11,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(color: c.border),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(color: c.border),
-                          ),
-                          disabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(
-                                color: c.border.withOpacity(0.5)),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(14),
-                            borderSide: BorderSide(
-                                color: c.primaryButton, width: 1.5),
-                          ),
-                          contentPadding: const EdgeInsets.all(14),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-
-                      // Variable hint
+                      const SizedBox(height: 2),
                       Text(
-                        'Tip: Use {name} to insert the new member\'s name.',
+                        'Automatically send a message when new members join',
+                        style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ),
+                Switch(
+                  value: _enabled,
+                  onChanged: (v) {
+                    setState(() {
+                      _enabled = v;
+                      _hasChanges = _msgCtrl.text != _originalTemplate || v != _originalEnabled;
+                    });
+                  },
+                  activeColor: Colors.black,
+                  inactiveThumbColor: Colors.white,
+                  inactiveTrackColor: const Color(0xFFE5E5EA),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Template editor ────────────────────────────────────────────────
+          Container(
+            color: c.surface,
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Message template',
+                  style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Use dynamic fields to personalize the welcome message.\n{name} will insert @username mention of the new member.',
+                  style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13, height: 1.5),
+                ),
+                const SizedBox(height: 16),
+
+                // Dynamic field buttons
+                Row(
+                  children: [
+                    _FieldButton(
+                      c: c,
+                      icon: Icons.person_outlined,
+                      label: '{name}',
+                      onTap: () => _insertField('{name}'),
+                    ),
+                    const SizedBox(width: 10),
+                    _FieldButton(
+                      c: c,
+                      icon: Icons.group_outlined,
+                      label: '{group_name}',
+                      onTap: () => _insertField('{group_name}'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Template input
+                TextField(
+                  controller: _msgCtrl,
+                  focusNode: _msgFocus,
+                  maxLines: null,
+                  maxLength: _maxLength,
+                  style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 15),
+                  onTap: () {
+                    _cursorPos = _msgCtrl.selection.extentOffset;
+                  },
+                  onChanged: (_) {
+                    _cursorPos = _msgCtrl.selection.extentOffset;
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Type your welcome message here...',
+                    hintStyle: TextStyle(color: c.placeholder, fontFamily: 'Outfit'),
+                    filled: true,
+                    fillColor: c.background,
+                    counterStyle: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.primary, width: 1.5),
+                    ),
+                    contentPadding: const EdgeInsets.all(14),
+                  ),
+                ),
+                const SizedBox(height: 4),
+
+                // Reset to default
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _reset,
+                    child: Text(
+                      'Reset to default',
+                      style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 13),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Preview ────────────────────────────────────────────────────────
+          Container(
+            color: c.surface,
+            margin: const EdgeInsets.only(top: 12),
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Preview',
+                  style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: c.background,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: c.border),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.chat_bubble_outlined, size: 16, color: c.textSecondary),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Message preview',
+                            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        previewMessage.isEmpty ? '(empty)' : previewMessage,
+                        style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 15, height: 1.5),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'This message will be sent from your account when a new member joins',
                         style: TextStyle(
-                          color: c.textTertiary,
+                          color: c.textSecondary,
                           fontFamily: 'Outfit',
                           fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-
-                      // Preview card
-                      if (_msgCtrl.text.trim().isNotEmpty && _enabled) ...[
-                        Text(
-                          'Preview',
-                          style: TextStyle(
-                            color: c.text,
-                            fontFamily: 'Outfit',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        _PreviewBubble(
-                          message: _msgCtrl.text
-                              .trim()
-                              .replaceAll('{name}', 'Alex'),
-                          c: c,
-                        ),
-                      ],
-
-                      const SizedBox(height: 24),
-
-                      // Save button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 54,
-                        child: ElevatedButton(
-                          onPressed: _saving ? null : _save,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: c.primaryButton,
-                            disabledBackgroundColor: c.primaryButtonDisabled,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
-                          ),
-                          child: _saving
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text(
-                                  'Save Changes',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontFamily: 'Outfit',
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 16,
-                                  ),
-                                ),
+                          fontStyle: FontStyle.italic,
                         ),
                       ),
                     ],
                   ),
                 ),
-    );
-  }
-}
+              ],
+            ),
+          ),
 
-class _PreviewBubble extends StatelessWidget {
-  final String message;
-  final ThemeColors c;
-
-  const _PreviewBubble({required this.message, required this.c});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: c.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: c.primaryButton.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  'Preview',
-                  style: TextStyle(
-                    color: c.primaryButton,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 10,
+          // ── Info note ──────────────────────────────────────────────────────
+          Container(
+            margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: c.surface,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: c.border),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 18, color: c.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'The welcome message is sent as a regular chat message from the ${_label.toLowerCase()} owner\'s account. '
+                    'Use {name} to @mention the new member and {group_name} for the ${_label.toLowerCase()} name.',
+                    style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13, height: 1.5),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              CircleAvatar(
-                radius: 16,
-                backgroundColor: c.primaryButton.withOpacity(0.2),
-                child: Text(
-                  'B',
-                  style: TextStyle(
-                    color: c.primaryButton,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+
+          // ── Save button (only when changed) ────────────────────────────────
+          if (_hasChanges)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _saving ? null : _save,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    disabledBackgroundColor: Colors.black.withOpacity(0.6),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
+                  child: _saving
+                      ? const SizedBox(
+                          width: 20, height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Text(
+                          'Save changes',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                          ),
+                        ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Bot',
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: c.primaryButton.withOpacity(0.1),
-                        borderRadius: const BorderRadius.only(
-                          topRight: Radius.circular(12),
-                          bottomLeft: Radius.circular(12),
-                          bottomRight: Radius.circular(12),
-                        ),
-                      ),
-                      child: Text(
-                        message,
-                        style: TextStyle(
-                          color: c.text,
-                          fontFamily: 'Outfit',
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+            ),
+
+          const SizedBox(height: 40),
         ],
       ),
     );
   }
+
+  Widget _buildError(ThemeColors c) {
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.error_outline, size: 48, color: c.error),
+        const SizedBox(height: 12),
+        Text(_error!, style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 14)),
+        const SizedBox(height: 20),
+        TextButton(
+          onPressed: _load,
+          child: Text('Retry', style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
 }
 
-class _ErrorView extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
+class _FieldButton extends StatelessWidget {
   final ThemeColors c;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
 
-  const _ErrorView({
-    required this.message,
-    required this.onRetry,
+  const _FieldButton({
     required this.c,
+    required this.icon,
+    required this.label,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: c.primary.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: c.primary.withOpacity(0.3)),
+        ),
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.error_outline, size: 48, color: c.error),
-            const SizedBox(height: 14),
+            Icon(icon, size: 16, color: c.primary),
+            const SizedBox(width: 6),
             Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: c.textSecondary, fontFamily: 'Outfit', fontSize: 14),
-            ),
-            const SizedBox(height: 20),
-            OutlinedButton(
-              onPressed: onRetry,
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: c.primaryButton),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: Text(
-                'Retry',
-                style: TextStyle(
-                  color: c.primaryButton,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
+              label,
+              style: TextStyle(color: c.primary, fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 14),
             ),
           ],
         ),

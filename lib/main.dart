@@ -77,11 +77,15 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
   /// Wire socket → chatProvider → load initial conversations + groups.
   Future<void> _initChatSystem(String uid) async {
     try {
-      // 1. Connect socket
+      // 1. Connect socket (also starts /group-chat namespace connection)
       final socket = await socketService.connect();
 
-      // 2. Wire socket into chatProvider so it receives all events
-      ref.read(chatProvider.notifier).init(socket, uid);
+      // 2. Wire both sockets into chatProvider so it receives all events
+      ref.read(chatProvider.notifier).init(
+        socket,
+        uid,
+        groupSocket: socketService.groupSocket,
+      );
 
       // 3. Initialize offline sync manager
       final db = ref.read(appDatabaseProvider);

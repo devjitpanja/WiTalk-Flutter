@@ -5,15 +5,17 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
 
 // Full socket service — manages the Socket.IO connection lifecycle.
-// The ChatNotifier in chat_provider.dart registers its own event handlers
-// on the shared socket. This service just exposes the socket instance
-// and handles auth, reconnection, and room management.
+// Two namespaces mirror the RN architecture:
+//   /chat       — private DMs, presence, conversations
+//   /group-chat — all group messaging events
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
   SocketService._internal();
 
   io.Socket? _socket;
+  io.Socket? _groupSocket;
+
   final _storage = const FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true));
   bool _isConnected = false;
@@ -22,6 +24,7 @@ class SocketService {
   final _connectCompleter = <Completer<void>>[];
 
   io.Socket? get socket => _socket;
+  io.Socket? get groupSocket => _groupSocket;
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
 
@@ -46,15 +49,17 @@ class SocketService {
     try {
       final token = await _storage.read(key: 'accessToken');
       final uid = await _storage.read(key: 'uid');
-      final url = '${AppConfig.apiBaseUrl}/chat';
+      final chatUrl = '${AppConfig.apiBaseUrl}/chat';
+      final groupUrl = '${AppConfig.apiBaseUrl}/group-chat';
 
-      debugPrint('[SOCKET] Connecting to: $url');
+      debugPrint('[SOCKET] Connecting to: $chatUrl');
       debugPrint('[SOCKET] uid from storage: $uid');
       debugPrint('[SOCKET] token present: ${token != null && token.isNotEmpty}');
 
+      // ── /chat namespace ──────────────────────────────────────────────────
       _socket?.dispose();
       _socket = io.io(
-        url,
+        chatUrl,
         io.OptionBuilder()
             .setTransports(['websocket'])
             .setAuth({'token': token, 'userId': uid})
@@ -67,11 +72,29 @@ class SocketService {
             .disableAutoConnect()
             .build(),
       );
-
       _setupLifecycleListeners(uid);
       _socket!.connect();
 
-      // Wait up to 10s for the connection
+      // ── /group-chat namespace ────────────────────────────────────────────
+      _groupSocket?.dispose();
+      _groupSocket = io.io(
+        groupUrl,
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .setAuth({'token': token, 'userId': uid})
+            .enableReconnection()
+            .setReconnectionAttempts(99999)
+            .setReconnectionDelay(1000)
+            .setReconnectionDelayMax(10000)
+            .setRandomizationFactor(0.5)
+            .setTimeout(20000)
+            .disableAutoConnect()
+            .build(),
+      );
+      _setupGroupLifecycleListeners(uid);
+      _groupSocket!.connect();
+
+      // Wait up to 10s for the /chat connection
       final timer = Timer(const Duration(seconds: 10), () {
         if (!_isConnected) {
           debugPrint('[SOCKET] ⚠️ Connect timeout after 10s — _isConnected=$_isConnected');
@@ -102,8 +125,6 @@ class SocketService {
     _socket?.on('connect', (_) {
       _isConnected = true;
       debugPrint('[SOCKET] ✅ Connected! socket.id=${_socket?.id}  namespace=${_socket?.nsp}');
-      // Emit join with userId so the backend adds this socket to user:${uid}
-      // and all conversation rooms — required for message_sent/new_message routing.
       if (uid != null) {
         debugPrint('[SOCKET] Emitting join with uid=$uid');
         _socket?.emit('join', uid);
@@ -138,14 +159,43 @@ class SocketService {
     _socket?.on('reconnect', (_) {
       _isConnected = true;
       debugPrint('[SOCKET] 🔄 Reconnected — re-emitting join uid=$uid');
-      if (uid != null) {
-        _socket?.emit('join', uid);
-      }
+      if (uid != null) _socket?.emit('join', uid);
     });
 
     _socket?.on('reconnect_failed', (_) {
       _isConnected = false;
       debugPrint('[SOCKET] ❌ Reconnect failed');
+    });
+  }
+
+  void _setupGroupLifecycleListeners(String? uid) {
+    _groupSocket?.on('connect', (_) {
+      debugPrint('[GROUP-SOCKET] ✅ Connected! id=${_groupSocket?.id}');
+      if (uid != null) {
+        _groupSocket?.emit('join', uid);
+        debugPrint('[GROUP-SOCKET] Emitting join uid=$uid');
+      }
+    });
+
+    _groupSocket?.on('join_success', (data) {
+      debugPrint('[GROUP-SOCKET] ✅ join_success: $data');
+    });
+
+    _groupSocket?.on('disconnect', (reason) {
+      debugPrint('[GROUP-SOCKET] ❌ Disconnected: $reason');
+    });
+
+    _groupSocket?.on('connect_error', (error) {
+      debugPrint('[GROUP-SOCKET] ❌ connect_error: $error');
+    });
+
+    _groupSocket?.on('error', (error) {
+      debugPrint('[GROUP-SOCKET] ❌ error: $error');
+    });
+
+    _groupSocket?.on('reconnect', (_) {
+      debugPrint('[GROUP-SOCKET] 🔄 Reconnected — re-emitting join uid=$uid');
+      if (uid != null) _groupSocket?.emit('join', uid);
     });
   }
 
@@ -162,6 +212,9 @@ class SocketService {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
+    _groupSocket?.disconnect();
+    _groupSocket?.dispose();
+    _groupSocket = null;
     _isConnected = false;
     _isConnecting = false;
   }
@@ -176,14 +229,14 @@ class SocketService {
   }
 
   void joinGroup(String groupId) {
-    _socket?.emit('join_group', {'group_id': groupId});
+    _groupSocket?.emit('join_group', {'group_id': groupId});
   }
 
   void leaveGroup(String groupId) {
-    _socket?.emit('leave_group', {'group_id': groupId});
+    _groupSocket?.emit('leave_group', groupId);
   }
 
-  // ── Emit helpers ───────────────────────────────────────────────────────────
+  // ── Emit helpers (/chat namespace) ─────────────────────────────────────────
   void emit(String event, [dynamic data]) {
     _socket?.emit(event, data);
   }
@@ -197,6 +250,23 @@ class SocketService {
       _socket?.off(event, handler);
     } else {
       _socket?.off(event);
+    }
+  }
+
+  // ── Emit helpers (/group-chat namespace) ──────────────────────────────────
+  void emitGroup(String event, [dynamic data]) {
+    _groupSocket?.emit(event, data);
+  }
+
+  void onGroup(String event, Function(dynamic) handler) {
+    _groupSocket?.on(event, handler);
+  }
+
+  void offGroup(String event, [Function(dynamic)? handler]) {
+    if (handler != null) {
+      _groupSocket?.off(event, handler);
+    } else {
+      _groupSocket?.off(event);
     }
   }
 }

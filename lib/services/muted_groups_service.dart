@@ -29,6 +29,32 @@ class MutedGroupsService {
     return res.data as Map<String, dynamic>;
   }
 
+  // Sets notification preference: 'all' | 'smart' | 'mentions_replies' | 'muted'
+  Future<void> setNotificationPreference(
+      String userId, String groupId, String preference) async {
+    if (preference == 'all') {
+      await unmuteGroup(userId: userId, groupId: groupId);
+    } else {
+      await muteGroup(
+        userId: userId,
+        groupId: groupId,
+        muteDuration: 'always',
+        notificationType: preference,
+      );
+    }
+  }
+
+  // Returns { success, data: { isMuted, notificationPreference, ... } }
+  Future<Map<String, dynamic>?> checkGroupMuteStatus(
+      String userId, String groupId) async {
+    try {
+      final res = await dioClient.get('$_base/check/$userId/$groupId');
+      return res.data as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> getUserMutedGroups(String userId) async {
     final res = await dioClient.get('$_base/user/$userId');
     final data = res.data;

@@ -133,8 +133,11 @@ class ChatApiService {
     return [];
   }
 
-  Future<Map<String, dynamic>?> getGroupDetail(String groupId) async {
-    final res = await dioClient.get(AppEndpoints.groupDetail(groupId));
+  Future<Map<String, dynamic>?> getGroupDetail(String groupId, {String? userId}) async {
+    final res = await dioClient.get(
+      AppEndpoints.groupDetail(groupId),
+      queryParameters: {if (userId != null) 'userId': userId},
+    );
     return res.data['data'] as Map<String, dynamic>?;
   }
 
@@ -145,14 +148,51 @@ class ChatApiService {
     return [];
   }
 
+  Future<Map<String, dynamic>?> sendGroupMessageRest(
+    String groupId, {
+    required String senderId,
+    required String content,
+    required String messageType,
+    String? mediaUrl,
+    Map<String, dynamic>? mediaData,
+    Map<String, dynamic>? metadata,
+    String? replyToId,
+    Map<String, dynamic>? replyTo,
+    String? tempId,
+  }) async {
+    final res = await dioClient.post(
+      AppEndpoints.groupMessages(groupId),
+      data: {
+        'group_id': groupId,
+        'sender_id': senderId,
+        'content': content,
+        'message_type': messageType,
+        if (mediaUrl != null) 'media_url': mediaUrl,
+        if (mediaData != null) 'media_data': mediaData,
+        if (metadata != null) 'metadata': metadata,
+        if (replyToId != null) 'reply_to_id': replyToId,
+        if (replyTo != null) 'reply_to': replyTo,
+        if (tempId != null) 'temp_id': tempId,
+      },
+    );
+    final data = res.data;
+    if (data is Map<String, dynamic>) return data;
+    return null;
+  }
+
   Future<List<Map<String, dynamic>>> getGroupMessages(
     String groupId, {
     int limit = 50,
     int offset = 0,
+    String? userId,
   }) async {
     final res = await dioClient.get(
       AppEndpoints.groupMessages(groupId),
-      queryParameters: {'limit': limit, 'offset': offset},
+      queryParameters: {
+        'limit': limit,
+        'offset': offset,
+        if (userId != null) 'userId': userId,
+      },
     );
     final data = res.data['data'];
     if (data is List) return List<Map<String, dynamic>>.from(data);
@@ -212,9 +252,21 @@ class ChatApiService {
         data: {'user_id': userId});
   }
 
-  Future<void> promoteGroupMember(String groupId, String userId) async {
-    await dioClient.post(AppEndpoints.promoteGroupMember(groupId),
-        data: {'user_id': userId});
+  Future<void> promoteGroupMember(String groupId, String userId,
+      {Map<String, dynamic>? permissions, String? adminTitle}) async {
+    await dioClient.post(AppEndpoints.promoteGroupMember(groupId), data: {
+      'user_id': userId,
+      if (permissions != null) ...permissions,
+      if (adminTitle != null) 'admin_title': adminTitle,
+    });
+  }
+
+  Future<void> updateGroupAdminPermissions(
+      String groupId, String memberId, Map<String, dynamic> permissions) async {
+    await dioClient.post('/v1/groups/$groupId/members/admin-permissions', data: {
+      'user_id': memberId,
+      ...permissions,
+    });
   }
 
   Future<void> demoteGroupMember(String groupId, String userId) async {
@@ -254,8 +306,11 @@ class ChatApiService {
         data: {'user_id': userId});
   }
 
-  Future<Map<String, dynamic>?> getGroupPermissions(String groupId) async {
-    final res = await dioClient.get(AppEndpoints.groupPermissions(groupId));
+  Future<Map<String, dynamic>?> getGroupPermissions(String groupId, {String? userId}) async {
+    final res = await dioClient.get(
+      AppEndpoints.groupPermissions(groupId),
+      queryParameters: {if (userId != null) 'userId': userId},
+    );
     return res.data['data'] as Map<String, dynamic>?;
   }
 
@@ -433,6 +488,46 @@ class ChatApiService {
       String userId, Map<String, dynamic> settings) async {
     await dioClient.put('/v1/spam-protection/settings/$userId',
         data: settings);
+  }
+
+  // ── Group rules ───────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>?> getGroupRules(String groupId) async {
+    try {
+      final res = await dioClient.get(AppEndpoints.groupRules(groupId));
+      return res.data['data'] as Map<String, dynamic>?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> updateGroupRules(String groupId, String? rules) async {
+    await dioClient.put(AppEndpoints.groupRules(groupId), data: {'rules': rules});
+  }
+
+  // ── Disappearing messages ─────────────────────────────────────────────────
+  Future<void> setGroupDisappearingMessages(String groupId, int seconds) async {
+    await dioClient.post(AppEndpoints.groupDisappearingMessages(groupId), data: {
+      'timer': seconds,
+    });
+  }
+
+  // ── Member search ─────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> searchGroupMembers(
+      String groupId, String query, {int page = 1, int limit = 50}) async {
+    try {
+      final res = await dioClient.get(
+        AppEndpoints.groupMembers(groupId),
+        queryParameters: {'q': query, 'page': page, 'limit': limit},
+      );
+      final data = res.data['data'];
+      if (data is Map && data['members'] is List) {
+        return List<Map<String, dynamic>>.from(data['members'] as List);
+      }
+      if (data is List) return List<Map<String, dynamic>>.from(data);
+      return [];
+    } catch (_) {
+      return [];
+    }
   }
 
   // ── Pinned messages (private chat) ────────────────────────────────────────
