@@ -480,7 +480,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit-SemiBold', fontSize: 14),
           isScrollable: true,
           tabAlignment: TabAlignment.start,
-          dividerColor: c.border.withValues(alpha: 0.3),
+          dividerColor: Colors.transparent,
           tabs: const [
             Tab(text: 'Users'),
             Tab(text: 'Posts'),

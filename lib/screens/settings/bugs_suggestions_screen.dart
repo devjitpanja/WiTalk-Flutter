@@ -255,6 +255,8 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
             controller: _tabCtrl,
             indicatorColor: t.primary,
             indicatorWeight: 2,
+
+            dividerColor: Colors.transparent,
             labelColor: t.primary,
             unselectedLabelColor: t.textSecondary,
             labelStyle: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 14),

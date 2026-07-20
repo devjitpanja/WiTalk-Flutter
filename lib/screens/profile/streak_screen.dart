@@ -187,6 +187,8 @@ class _StreakScreenState extends ConsumerState<StreakScreen> with SingleTickerPr
                 labelStyle: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 13, letterSpacing: 0.8),
                 indicatorColor: Colors.white,
                 indicatorWeight: 2.5,
+
+                dividerColor: Colors.transparent,
                 tabs: const [Tab(text: 'PERSONAL'), Tab(text: 'FRIENDS'), Tab(text: 'GLOBAL')],
               ),
               // Hero row

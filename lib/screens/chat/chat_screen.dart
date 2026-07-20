@@ -131,10 +131,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   Widget _buildTabBar(ThemeColors c) => Container(
         decoration: BoxDecoration(
           color: c.background,
-          border: Border(
-            bottom: BorderSide(
-                color: c.border.withValues(alpha: 0.3), width: 1),
-          ),
+
         ),
         child: TabBar(
           controller: _tabCtrl,
@@ -142,6 +139,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           unselectedLabelColor: c.textSecondary,
           indicatorColor: c.primary,
           indicatorWeight: 2.5,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 10),
+          dividerColor: Colors.transparent,
           labelStyle: const TextStyle(
               fontFamily: 'Outfit',
               fontWeight: FontWeight.w600,

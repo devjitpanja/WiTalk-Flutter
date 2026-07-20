@@ -773,8 +773,6 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   Widget _buildTabBar(bool isDark, ThemeColors colors) {
     return Container(
       decoration: BoxDecoration(
-        border:
-            Border(bottom: BorderSide(color: colors.border, width: 1)),
         color: colors.background,
       ),
       child: Row(

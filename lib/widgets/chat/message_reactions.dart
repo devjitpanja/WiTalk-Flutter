@@ -129,6 +129,8 @@ class _MessageReactionSheetState extends State<MessageReactionSheet>
           labelColor: c.primary,
           unselectedLabelColor: c.textSecondary,
           indicatorColor: c.primary,
+
+          dividerColor: Colors.transparent,
           isScrollable: true,
           tabs: _emojis.map((e) {
             final count = e == 'All'

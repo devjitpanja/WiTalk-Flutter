@@ -169,6 +169,8 @@ class _TopicsListViewState extends ConsumerState<TopicsListView>
             labelColor: c.primary,
             unselectedLabelColor: c.textTertiary,
             indicatorColor: c.primary,
+
+            dividerColor: Colors.transparent,
             labelStyle: const TextStyle(
               fontFamily: 'Outfit',
               fontWeight: FontWeight.w600,

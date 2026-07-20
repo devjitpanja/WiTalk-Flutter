@@ -48,6 +48,8 @@ class _FollowersScreenState extends ConsumerState<FollowersScreen> with SingleTi
         labelColor: Colors.white,
         unselectedLabelColor: AppColors.textTertiary,
         indicatorColor: AppColors.primaryButton,
+
+        dividerColor: Colors.transparent,
         tabs: [
           Tab(text: 'Followers (${_followers.length})'),
           Tab(text: 'Following (${_following.length})'),

@@ -12,7 +12,8 @@
       "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/src/theme/**)",
       "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/src/assets/**)",
       "Bash(grep -r \"OneSignal\\\\|onesignal_app_id\\\\|setAppId\\\\|OneSignalAppId\" \"/Users/dev/Documents/App Development/React Native/witalk/frontend\" --include=\"*.js\" --include=\"*.jsx\" --include=\"*.ts\" --include=\"*.tsx\" -l 2>/dev/null | grep -v node_modules | grep -v \".git\")",
-      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/**)"
+      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/**)",
+      "Bash(python3 -)"
     ]
   }
 }
