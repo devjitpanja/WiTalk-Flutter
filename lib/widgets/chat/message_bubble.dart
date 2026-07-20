@@ -617,7 +617,7 @@ class _TimeStatus extends StatelessWidget {
     }
     if (message.isRead || message.status == 'read') {
       return Icon(Icons.done_all, size: 14,
-          color: isMyMessage ? const Color(0xFF90CAF9) : c.primary);
+          color: isMyMessage ? Colors.white : c.primary);
     }
     // sent or delivered — grey double tick
     return Icon(Icons.done_all, size: 14, color: color);

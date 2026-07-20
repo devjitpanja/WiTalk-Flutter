@@ -226,7 +226,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bottomPad = MediaQuery.of(context).padding.bottom;
+    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -290,7 +290,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           // Input row
           Container(
             padding: EdgeInsets.fromLTRB(
-                8, 8, 8, bottomPad > 30 ? 16 : bottomPad + 8),
+                8, 8, 8, bottomPad + 8),
             decoration: BoxDecoration(
               color: c.background,
               border: Border(
