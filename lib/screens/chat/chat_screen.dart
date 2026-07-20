@@ -1,38 +1,21 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
 import '../../services/muted_chats_service.dart';
+import '../../services/muted_groups_service.dart';
 import '../../services/message_sync_manager.dart';
 import '../../services/chat_api_service.dart';
 import '../../widgets/common/verification_badge.dart';
-import 'dart:async';
 
-// ── Providers ─────────────────────────────────────────────────────────────────
-final _channelsProvider =
-    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final res = await dioClient.get(AppEndpoints.myChannels);
-  final data = res.data['data'];
-  if (data is List) return List<Map<String, dynamic>>.from(data);
-  if (data is Map && data['channels'] is List) {
-    return List<Map<String, dynamic>>.from(data['channels'] as List);
-  }
-  return [];
-});
-
-final _mutedChatsProvider =
-    FutureProvider.autoDispose.family<Set<String>, String>((ref, userId) async {
-  final list = await mutedChatsService.getUserMutedChats(userId);
-  return list.map((m) => (m['mutedUserId'] ?? '').toString()).toSet();
-});
 
 // ── ChatScreen ────────────────────────────────────────────────────────────────
 class ChatScreen extends ConsumerStatefulWidget {
@@ -59,11 +42,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         }
       });
 
-    // Subscribe to sync status — drives header title reactively
     _syncUnsub = messageSyncManager.onStatusChange((status) {
       if (!mounted) return;
-      final online = ref.read(chatProvider).isConnected;
-      final title = status.syncing ? 'Updating...' : (online ? 'Chats' : 'Chats');
+      final title = status.syncing ? 'Updating...' : 'Chats';
       if (_headerTitle != title) setState(() => _headerTitle = title);
     });
   }
@@ -78,7 +59,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    // Header title follows sync status — never shows "Connecting..." permanently
     final isSyncing = ref.watch(chatProvider.select((s) => s.isSyncing));
     final title = isSyncing ? 'Updating...' : 'Chats';
     if (_headerTitle != title) {
@@ -153,7 +133,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           color: c.background,
           border: Border(
             bottom: BorderSide(
-                color: c.border.withOpacity(0.3), width: 1),
+                color: c.border.withValues(alpha: 0.3), width: 1),
           ),
         ),
         child: TabBar(
@@ -179,54 +159,66 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ),
       );
 
+  // RN uses a top-right dropdown modal, not a BottomSheet
   void _showGroupMenu(BuildContext context, ThemeColors c) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: c.surface,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 12),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-              color: c.border, borderRadius: BorderRadius.circular(2)),
-        ),
-        const SizedBox(height: 16),
-        ListTile(
-          leading: Icon(Icons.group_add, color: c.text),
-          title: Text('Create New Group',
-              style: TextStyle(
-                  color: c.text,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w500)),
-          onTap: () {
-            Navigator.pop(context);
-            context.push('/chat/create-group');
-          },
-        ),
-        Divider(height: 1, color: c.border),
-        ListTile(
-          leading: Icon(Icons.login, color: c.text),
-          title: Text('Join Group by Code',
-              style: TextStyle(
-                  color: c.text,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w500)),
-          onTap: () {
-            Navigator.pop(context);
-            context.push('/chat/join-group');
-          },
-        ),
-        SizedBox(height: MediaQuery.of(context).padding.bottom + 12),
-      ]),
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay =
+        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final RelativeRect position = RelativeRect.fromRect(
+      Rect.fromPoints(
+        button.localToGlobal(button.size.topRight(Offset.zero),
+            ancestor: overlay),
+        button.localToGlobal(button.size.bottomRight(Offset.zero),
+            ancestor: overlay),
+      ),
+      Offset.zero & overlay.size,
     );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      color: c.surface,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 5,
+      items: [
+        PopupMenuItem<String>(
+          value: 'create',
+          child: Row(children: [
+            Icon(Icons.group_add, size: 24, color: c.text),
+            const SizedBox(width: 12),
+            Text('Create New Group',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w500,
+                    color: c.text)),
+          ]),
+        ),
+        PopupMenuDivider(height: 1),
+        PopupMenuItem<String>(
+          value: 'join',
+          child: Row(children: [
+            Icon(Icons.login, size: 24, color: c.text),
+            const SizedBox(width: 12),
+            Text('Join Group by Code',
+                style: TextStyle(
+                    fontSize: 16,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w500,
+                    color: c.text)),
+          ]),
+        ),
+      ],
+    ).then((value) {
+      if (!context.mounted) return;
+      if (value == 'create') context.push('/chat/create-group');
+      if (value == 'join') context.push('/chat/join-group');
+    });
   }
 }
 
 // ── All Chats List ─────────────────────────────────────────────────────────────
-// Mirrors AllChatsList.jsx: merges private + groups, sorted by last activity
+// Mirrors AllChatsList.jsx: merges private + groups + channels, sorted by last activity
 class _AllChatsList extends ConsumerStatefulWidget {
   final int tabIndex;
   const _AllChatsList({required this.tabIndex});
@@ -236,14 +228,20 @@ class _AllChatsList extends ConsumerStatefulWidget {
 }
 
 class _AllChatsListState extends ConsumerState<_AllChatsList> {
-  bool _refreshing = false;
   bool _initialLoading = true;
+  List<Map<String, dynamic>> _channels = [];
+  Timer? _sortDebounce;
 
   @override
   void initState() {
     super.initState();
-    // Fetch on first mount if the store is empty (cold start or page first open)
     WidgetsBinding.instance.addPostFrameCallback((_) => _fetchIfEmpty());
+  }
+
+  @override
+  void dispose() {
+    _sortDebounce?.cancel();
+    super.dispose();
   }
 
   Future<void> _fetchIfEmpty() async {
@@ -251,75 +249,149 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     final groups = ref.read(chatProvider).groups;
     if (convs.isEmpty && groups.isEmpty) {
       await _refresh(showLoading: false);
+    } else {
+      if (mounted) setState(() => _initialLoading = false);
     }
-    if (mounted) setState(() => _initialLoading = false);
   }
 
   Future<void> _refresh({bool showLoading = true}) async {
-    if (showLoading) setState(() => _refreshing = true);
     final uid = ref.read(authProvider).uid;
     if (uid == null) {
-      if (mounted) setState(() => _refreshing = false);
+      if (mounted) setState(() => _initialLoading = false);
       return;
     }
     try {
       final chatNotifier = ref.read(chatProvider.notifier);
-      final results = await Future.wait([
-        chatApiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]),
-        chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]),
-      ]);
+      final convsFuture = chatApiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final groupsFuture = chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final channelsFuture = _fetchChannels();
+      final mutedChatsFuture = _fetchMutedChats(uid);
+      final mutedGroupsFuture = _fetchMutedGroups(uid);
 
-      final convs = (results[0] as List<Map<String, dynamic>>)
-          .map((e) => ChatConversation.fromJson(e))
-          .toList();
-      final groups = (results[1] as List<Map<String, dynamic>>)
-          .map((e) => ChatConversation.fromJson(e))
-          .toList();
+      final convsList = await convsFuture;
+      final groupsList = await groupsFuture;
+      final channels = await channelsFuture;
+      final mutedChats = await mutedChatsFuture;
+      final mutedGroups = await mutedGroupsFuture;
+
+      final convs = convsList.map((e) => ChatConversation.fromJson(e)).toList();
+      final groups = groupsList.map((e) => ChatConversation.fromJson(e)).toList();
 
       chatNotifier.setConversations(convs);
       chatNotifier.setGroups(groups);
+      chatNotifier.setMutedChats(mutedChats);
+      chatNotifier.setMutedGroups(mutedGroups);
+
+      if (mounted) setState(() => _channels = channels);
     } catch (_) {}
-    if (mounted) setState(() => _refreshing = false);
+    if (mounted) setState(() => _initialLoading = false);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final uid = ref.watch(authProvider).uid ?? '';
-    final conversations =
-        ref.watch(chatProvider.select((s) => s.conversations));
-    final groups = ref.watch(chatProvider.select((s) => s.groups));
-    final onlineUsers =
-        ref.watch(chatProvider.select((s) => s.onlineUsers));
-    final mutedChatsAsync = ref.watch(_mutedChatsProvider(uid));
-    final mutedChats = mutedChatsAsync.valueOrNull ?? {};
+  Future<List<Map<String, dynamic>>> _fetchChannels() async {
+    try {
+      final res = await dioClient.get(AppEndpoints.myChannels);
+      final data = res.data['data'];
+      if (data is Map && data['channels'] is List) {
+        return List<Map<String, dynamic>>.from(data['channels'] as List);
+      }
+      if (data is List) return List<Map<String, dynamic>>.from(data);
+    } catch (_) {}
+    return [];
+  }
 
-    // Merge and sort by last activity
-    final all = <_ChatItem>[];
-    for (final c in conversations) {
-      final ts = c.updatedAt?.millisecondsSinceEpoch ??
-          (c.lastMessageTime != null
-              ? DateTime.tryParse(c.lastMessageTime!)?.millisecondsSinceEpoch
-              : null) ??
-          0;
-      all.add(_ChatItem(conv: c, isGroup: false, ts: ts));
+  Future<Set<String>> _fetchMutedChats(String uid) async {
+    try {
+      final list = await mutedChatsService.getUserMutedChats(uid);
+      return list.map((m) => (m['mutedUserId'] ?? '').toString()).toSet();
+    } catch (_) {
+      return {};
     }
+  }
+
+  Future<Map<String, String>> _fetchMutedGroups(String uid) async {
+    try {
+      final list = await mutedGroupsService.getUserMutedGroups(uid);
+      return {for (final m in list) (m['groupId'] ?? '').toString(): (m['notificationType'] ?? '').toString()};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  List<_CombinedItem> _buildCombinedList(
+    List<ChatConversation> conversations,
+    List<ChatConversation> groups,
+    List<Map<String, dynamic>> channels,
+    String uid,
+  ) {
+    final pending = <ChatConversation>[];
+    final active = <ChatConversation>[];
+    for (final c in conversations) {
+      if (c.status == 'request_pending' && c.initiatorId != uid) {
+        pending.add(c);
+      } else {
+        active.add(c);
+      }
+    }
+
+    final items = <_CombinedItem>[];
+
+    for (final c in active) {
+      final msgTs = c.lastMessageTime != null
+          ? DateTime.tryParse(c.lastMessageTime!)?.millisecondsSinceEpoch ?? 0
+          : 0;
+      final reactTs = c.lastReactionAt != null
+          ? DateTime.tryParse(c.lastReactionAt!)?.millisecondsSinceEpoch ?? 0
+          : 0;
+      items.add(_CombinedItem(
+        type: 'private',
+        conv: c,
+        ts: msgTs > reactTs ? msgTs : reactTs,
+      ));
+    }
+
     for (final g in groups) {
       final ts = g.updatedAt?.millisecondsSinceEpoch ??
           (g.lastMessageTime != null
               ? DateTime.tryParse(g.lastMessageTime!)?.millisecondsSinceEpoch
               : null) ??
           0;
-      all.add(_ChatItem(conv: g, isGroup: true, ts: ts));
+      items.add(_CombinedItem(type: 'group', conv: g, ts: ts));
     }
-    all.sort((a, b) => b.ts.compareTo(a.ts));
 
-    // Show skeleton only on first load before any data arrives
-    if (_initialLoading && all.isEmpty) {
+    for (final ch in channels) {
+      final ts = ch['last_message_at'] != null
+          ? (DateTime.tryParse(ch['last_message_at'].toString())
+                  ?.millisecondsSinceEpoch ??
+              0)
+          : 0;
+      items.add(_CombinedItem(type: 'channel', channelData: ch, ts: ts));
+    }
+
+    items.sort((a, b) => b.ts.compareTo(a.ts));
+    return items;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final uid = ref.watch(authProvider).uid ?? '';
+    final conversations = ref.watch(chatProvider.select((s) => s.conversations));
+    final groups = ref.watch(chatProvider.select((s) => s.groups));
+    final onlineUsers = ref.watch(chatProvider.select((s) => s.onlineUsers));
+    final mutedChats = ref.watch(chatProvider.select((s) => s.mutedChats));
+    final mutedGroups = ref.watch(chatProvider.select((s) => s.mutedGroups));
+
+    final pendingRequests = conversations
+        .where((c) => c.status == 'request_pending' && c.initiatorId != uid)
+        .toList();
+
+    final combined = _buildCombinedList(conversations, groups, _channels, uid);
+
+    if (_initialLoading && combined.isEmpty) {
       return _buildSkeleton(c);
     }
 
-    if (all.isEmpty) {
+    if (combined.isEmpty && pendingRequests.isEmpty) {
       return RefreshIndicator(
         onRefresh: _refresh,
         color: c.primary,
@@ -327,78 +399,91 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
           physics: const AlwaysScrollableScrollPhysics(),
           child: SizedBox(
             height: MediaQuery.of(context).size.height * 0.6,
-            child: _buildEmpty(c, 'all'),
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.chat_bubble_outline, size: 64, color: c.textTertiary),
+                const SizedBox(height: 16),
+                Text('No chats yet',
+                    style: TextStyle(
+                        color: c.text,
+                        fontSize: 18,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Text(
+                    'Start a conversation or join a group\nto see your chats here',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 14,
+                        fontFamily: 'Outfit')),
+              ]),
+            ),
           ),
         ),
       );
     }
 
+    final listCount = combined.length + (pendingRequests.isNotEmpty ? 1 : 0);
+
     return RefreshIndicator(
       onRefresh: _refresh,
       color: c.primary,
       child: ListView.builder(
-        itemCount: all.length,
-        itemExtent: 88,
+        itemCount: listCount,
         itemBuilder: (ctx, i) {
-          final item = all[i];
-          final conv = item.conv;
-          final isOnline = !item.isGroup &&
+          // Message requests banner at top
+          if (pendingRequests.isNotEmpty && i == 0) {
+            return _MessageRequestsBanner(count: pendingRequests.length);
+          }
+          final item = combined[pendingRequests.isNotEmpty ? i - 1 : i];
+
+          if (item.type == 'channel') {
+            final ch = item.channelData!;
+            return _ChannelTile(channelData: ch, currentUserId: uid);
+          }
+
+          if (item.type == 'group') {
+            final conv = item.conv!;
+            final isGroupMuted = mutedGroups[conv.id] == 'muted';
+            return _ChatTile(
+              conv: conv,
+              isGroup: true,
+              isOnline: false,
+              isMuted: isGroupMuted,
+              currentUserId: uid,
+            );
+          }
+
+          // private
+          final conv = item.conv!;
+          final theyBlockedMe = conv.theyBlockedMe;
+          final isOnline = !theyBlockedMe &&
+              conv.status != 'request_pending' &&
               conv.otherUserId != null &&
               onlineUsers.contains(conv.otherUserId);
-          final isMuted = !item.isGroup &&
-              conv.otherUserId != null &&
+          final isMuted = conv.otherUserId != null &&
               mutedChats.contains(conv.otherUserId);
           return _ChatTile(
             conv: conv,
-            isGroup: item.isGroup,
+            isGroup: false,
             isOnline: isOnline,
             isMuted: isMuted,
             currentUserId: uid,
-            onLongPress: () => _onLongPress(context, conv, isMuted, uid),
+            onLongPress: () => _showQuickActionsSheet(context, conv, isMuted, uid),
           );
         },
       ),
     );
   }
 
-  void _onLongPress(BuildContext context, ChatConversation conv,
-      bool isMuted, String uid) {
-    _showQuickActionsSheet(context, conv, isMuted, uid);
-  }
-
-  Widget _buildEmpty(ThemeColors c, String type) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.chat_bubble_outline,
-                size: 64, color: c.textTertiary),
-            const SizedBox(height: 12),
-            Text('No conversations yet',
-                style: TextStyle(
-                    color: c.text,
-                    fontSize: 18,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 6),
-            Text(
-                'Start chatting by visiting a profile\nand tapping the message button',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 14,
-                    fontFamily: 'Outfit')),
-          ],
-        ),
-      );
-
   Widget _buildSkeleton(ThemeColors c) => ListView.builder(
-        itemCount: 8,
-        itemExtent: 88,
-        itemBuilder: (_, __) => Shimmer.fromColors(
+        itemCount: 9,
+        itemBuilder: (context, i) => Shimmer.fromColors(
           baseColor: c.surface,
           highlightColor: c.border,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Row(children: [
               CircleAvatar(radius: 28, backgroundColor: c.surface),
               const SizedBox(width: 12),
@@ -411,28 +496,40 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
                           width: 140,
                           decoration: BoxDecoration(
                               color: c.surface,
-                              borderRadius: BorderRadius.circular(4))),
-                      const SizedBox(height: 6),
+                              borderRadius: BorderRadius.circular(6))),
+                      const SizedBox(height: 8),
                       Container(
                           height: 12,
                           width: 200,
                           decoration: BoxDecoration(
                               color: c.surface,
-                              borderRadius: BorderRadius.circular(4))),
+                              borderRadius: BorderRadius.circular(6))),
                     ]),
               ),
+              const SizedBox(width: 12),
+              Container(
+                  height: 11,
+                  width: 34,
+                  decoration: BoxDecoration(
+                      color: c.surface,
+                      borderRadius: BorderRadius.circular(4))),
             ]),
           ),
         ),
       );
 }
 
-class _ChatItem {
-  final ChatConversation conv;
-  final bool isGroup;
+class _CombinedItem {
+  final String type; // 'private' | 'group' | 'channel'
+  final ChatConversation? conv;
+  final Map<String, dynamic>? channelData;
   final int ts;
-  const _ChatItem(
-      {required this.conv, required this.isGroup, required this.ts});
+  const _CombinedItem({
+    required this.type,
+    this.conv,
+    this.channelData,
+    required this.ts,
+  });
 }
 
 // ── Private Chat List ──────────────────────────────────────────────────────────
@@ -442,38 +539,33 @@ class _PrivateChatList extends ConsumerStatefulWidget {
 }
 
 class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
-  bool _refreshing = false;
-
   Future<void> _refresh() async {
-    setState(() => _refreshing = true);
     final uid = ref.read(authProvider).uid;
-    if (uid == null) {
-      if (mounted) setState(() => _refreshing = false);
-      return;
-    }
+    if (uid == null) return;
     try {
-      final convs = await chatApiService.getConversations(uid);
-      ref.read(chatProvider.notifier).setConversations(
-          convs.map((e) => ChatConversation.fromJson(e)).toList());
+      final convsList = await chatApiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final mutedList = await mutedChatsService.getUserMutedChats(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final convs = convsList.map((e) => ChatConversation.fromJson(e)).toList();
+      final mutedSet = mutedList.map((m) => (m['mutedUserId'] ?? '').toString()).toSet();
+      ref.read(chatProvider.notifier).setConversations(convs);
+      ref.read(chatProvider.notifier).setMutedChats(mutedSet);
     } catch (_) {}
-    if (mounted) setState(() => _refreshing = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final uid = ref.watch(authProvider).uid ?? '';
-    final conversations =
-        ref.watch(chatProvider.select((s) => s.conversations));
-    final onlineUsers =
-        ref.watch(chatProvider.select((s) => s.onlineUsers));
-    final mutedChatsAsync = ref.watch(_mutedChatsProvider(uid));
-    final mutedChats = mutedChatsAsync.valueOrNull ?? {};
+    final conversations = ref.watch(chatProvider.select((s) => s.conversations));
+    final onlineUsers = ref.watch(chatProvider.select((s) => s.onlineUsers));
+    final mutedChats = ref.watch(chatProvider.select((s) => s.mutedChats));
 
-    final pending = conversations.where((c) =>
-        c.status == 'request_pending' && c.initiatorId != uid).toList();
-    final active =
-        conversations.where((c) => !(c.status == 'request_pending' && c.initiatorId != uid)).toList();
+    final pending = conversations
+        .where((c) => c.status == 'request_pending' && c.initiatorId != uid)
+        .toList();
+    final active = conversations
+        .where((c) => !(c.status == 'request_pending' && c.initiatorId != uid))
+        .toList();
 
     if (conversations.isEmpty) {
       return RefreshIndicator(
@@ -486,16 +578,20 @@ class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.chat_bubble_outline, size: 64, color: c.textTertiary),
-                const SizedBox(height: 12),
-                Text('No messages yet',
+                const SizedBox(height: 16),
+                Text('No conversations yet',
                     style: TextStyle(
                         color: c.text,
                         fontSize: 18,
                         fontFamily: 'Outfit',
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Text('Start chatting by visiting a profile',
-                    style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 14)),
+                const SizedBox(height: 8),
+                Text('Start chatting by visiting a profile\nand tapping the message button',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 14,
+                        fontFamily: 'Outfit')),
               ]),
             ),
           ),
@@ -508,26 +604,25 @@ class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
       color: c.primary,
       child: ListView.builder(
         itemCount: active.length + (pending.isNotEmpty ? 1 : 0),
-        itemExtent: 88,
         itemBuilder: (ctx, i) {
           if (pending.isNotEmpty && i == 0) {
-            // Message requests banner
             return _MessageRequestsBanner(count: pending.length);
           }
-          final conv =
-              active[pending.isNotEmpty ? i - 1 : i];
-          final isOnline = conv.otherUserId != null &&
+          final conv = active[pending.isNotEmpty ? i - 1 : i];
+          final theyBlockedMe = conv.theyBlockedMe;
+          final isOnline = !theyBlockedMe &&
+              conv.status != 'request_pending' &&
+              conv.otherUserId != null &&
               onlineUsers.contains(conv.otherUserId);
-          final isMuted = conv.otherUserId != null &&
-              mutedChats.contains(conv.otherUserId);
+          final isMuted =
+              conv.otherUserId != null && mutedChats.contains(conv.otherUserId);
           return _ChatTile(
             conv: conv,
             isGroup: false,
             isOnline: isOnline,
             isMuted: isMuted,
             currentUserId: uid,
-            onLongPress: () =>
-                _showQuickActionsSheet(ctx, conv, isMuted, uid),
+            onLongPress: () => _showQuickActionsSheet(ctx, conv, isMuted, uid),
           );
         },
       ),
@@ -546,9 +641,15 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
     final uid = ref.read(authProvider).uid;
     if (uid == null) return;
     try {
-      final groups = await chatApiService.getUserGroups(uid);
-      ref.read(chatProvider.notifier).setGroups(
-          groups.map((e) => ChatConversation.fromJson(e)).toList());
+      final groupsList = await chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final mutedList = await mutedGroupsService.getUserMutedGroups(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final groups = groupsList.map((e) => ChatConversation.fromJson(e)).toList();
+      final mutedMap = {
+        for (final m in mutedList)
+          (m['groupId'] ?? '').toString(): (m['notificationType'] ?? '').toString()
+      };
+      ref.read(chatProvider.notifier).setGroups(groups);
+      ref.read(chatProvider.notifier).setMutedGroups(mutedMap);
     } catch (_) {}
   }
 
@@ -557,6 +658,7 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
     final c = context.colors;
     final uid = ref.watch(authProvider).uid ?? '';
     final groups = ref.watch(chatProvider.select((s) => s.groups));
+    final mutedGroups = ref.watch(chatProvider.select((s) => s.mutedGroups));
 
     if (groups.isEmpty) {
       return RefreshIndicator(
@@ -569,15 +671,16 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.group_outlined, size: 64, color: c.textTertiary),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 Text('No groups yet',
                     style: TextStyle(
                         color: c.text,
                         fontSize: 18,
                         fontFamily: 'Outfit',
                         fontWeight: FontWeight.w600)),
-                const SizedBox(height: 6),
-                Text('Create or join a group to start',
+                const SizedBox(height: 8),
+                Text('Create a group or join one using an invite code',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                         color: c.textSecondary,
                         fontSize: 14,
@@ -594,86 +697,343 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
       color: c.primary,
       child: ListView.builder(
         itemCount: groups.length,
-        itemExtent: 88,
-        itemBuilder: (ctx, i) => _ChatTile(
-          conv: groups[i],
-          isGroup: true,
-          isOnline: false,
-          isMuted: false,
+        itemBuilder: (ctx, i) {
+          final g = groups[i];
+          final isGroupMuted = mutedGroups[g.id] == 'muted';
+          return _ChatTile(
+            conv: g,
+            isGroup: true,
+            isOnline: false,
+            isMuted: isGroupMuted,
+            currentUserId: uid,
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ── Channel Chat List ──────────────────────────────────────────────────────────
+class _ChannelChatList extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_ChannelChatList> createState() => _ChannelChatListState();
+}
+
+class _ChannelChatListState extends ConsumerState<_ChannelChatList> {
+  List<Map<String, dynamic>> _channels = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchChannels();
+  }
+
+  Future<void> _fetchChannels() async {
+    try {
+      final res = await dioClient.get(AppEndpoints.myChannels);
+      final data = res.data['data'];
+      List<Map<String, dynamic>> channels = [];
+      if (data is Map && data['channels'] is List) {
+        channels = List<Map<String, dynamic>>.from(data['channels'] as List);
+      } else if (data is List) {
+        channels = List<Map<String, dynamic>>.from(data);
+      }
+      if (mounted) {
+        setState(() {
+          _channels = channels;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _refresh() => _fetchChannels();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final uid = ref.watch(authProvider).uid ?? '';
+
+    if (_loading) {
+      return Center(child: CircularProgressIndicator(color: c.primary));
+    }
+
+    if (_channels.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _refresh,
+        color: c.primary,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * 0.6,
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.campaign_outlined, size: 64, color: c.textTertiary),
+                const SizedBox(height: 16),
+                Text('No channels yet',
+                    style: TextStyle(
+                        color: c.text,
+                        fontSize: 18,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600)),
+              ]),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _refresh,
+      color: c.primary,
+      child: ListView.builder(
+        itemCount: _channels.length,
+        itemBuilder: (ctx, i) => _ChannelTile(
+          channelData: _channels[i],
           currentUserId: uid,
+          onUnreadZeroed: (id) {
+            setState(() {
+              final idx = _channels.indexWhere((ch) => ch['id'].toString() == id);
+              if (idx != -1) {
+                _channels[idx] = {..._channels[idx], 'unread_count': 0};
+              }
+            });
+          },
         ),
       ),
     );
   }
 }
 
-// ── Channel List ───────────────────────────────────────────────────────────────
-class _ChannelChatList extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final c = context.colors;
-    final channelsAsync = ref.watch(_channelsProvider);
-    final uid = ref.watch(authProvider).uid ?? '';
+// ── ChannelTile ────────────────────────────────────────────────────────────────
+// Mirrors ChannelListScreen's ChannelItem from the RN project
+class _ChannelTile extends StatelessWidget {
+  final Map<String, dynamic> channelData;
+  final String currentUserId;
+  final void Function(String id)? onUnreadZeroed;
 
-    return channelsAsync.when(
-      loading: () =>
-          Center(child: CircularProgressIndicator(color: c.primary)),
-      error: (e, _) => Center(
-          child: Text('Error loading channels',
-              style: TextStyle(color: c.textTertiary))),
-      data: (channels) {
-        if (channels.isEmpty) {
-          return Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.campaign_outlined,
-                  size: 64, color: c.textTertiary),
-              const SizedBox(height: 12),
-              Text('No channels yet',
-                  style: TextStyle(
-                      color: c.text,
-                      fontSize: 18,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600)),
+  const _ChannelTile({
+    required this.channelData,
+    required this.currentUserId,
+    this.onUnreadZeroed,
+  });
+
+  String _getLastMessageText() {
+    final ch = channelData;
+    if (ch['last_message_at'] == null) return 'No updates yet';
+    final type = ch['last_message_type']?.toString();
+    if (type == 'image') return '📷 Photo';
+    if (type == 'image_album') return '📷 Album';
+    if (type == 'video') return '🎥 Video';
+    if (type == 'voice') return '🎤 Voice Message';
+    if (type == 'audio') return '🎵 Audio';
+    if (type == 'file') return '📄 File';
+    if (type == 'giphy_gif') return '🎞 GIF';
+    if (type == 'giphy_sticker') return '🎭 Sticker';
+    if (type == 'poll') return '📊 Poll';
+    return ch['last_message']?.toString() ?? 'New update';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final ch = channelData;
+    final isBanned = ch['is_banned'] == 1 || ch['is_banned'] == true;
+    final isMuted = ch['is_muted'] == 1 || ch['is_muted'] == true;
+    final isVerified = ch['is_verified'] == 1 || ch['is_verified'] == true;
+    final hasUnread = (ch['unread_count'] as num? ?? 0) > 0;
+    final unreadCount = (ch['unread_count'] as num?)?.toInt() ?? 0;
+
+    final timeStr = ch['last_message_at'] != null
+        ? _formatChatListTime(
+            DateTime.tryParse(ch['last_message_at'].toString()) ?? DateTime.now())
+        : null;
+
+    return Material(
+      color: isBanned ? c.background.withValues(alpha: 0.75) : c.background,
+      child: InkWell(
+        onTap: () {
+          onUnreadZeroed?.call(ch['id'].toString());
+          context.push('/channel/${ch['id']}');
+        },
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                  color: c.border.withValues(alpha: 0.15), width: 0.5),
+            ),
+          ),
+          child: Row(children: [
+            // Avatar
+            Stack(children: [
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: isBanned ? const Color(0xFF999999) : c.primary,
+                backgroundImage: ch['icon'] != null
+                    ? CachedNetworkImageProvider(ch['icon'].toString())
+                    : null,
+                child: ch['icon'] == null
+                    ? isBanned
+                        ? const Icon(Icons.gavel, color: Colors.white, size: 24)
+                        : Text(
+                            ((ch['name']?.toString() ?? 'C').isNotEmpty
+                                    ? (ch['name']?.toString() ?? 'C')[0]
+                                    : 'C')
+                                .toUpperCase(),
+                            style: const TextStyle(
+                                fontSize: 22,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white))
+                    : null,
+              ),
+              if (isBanned)
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF3B30),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: c.background, width: 2),
+                    ),
+                    child: const Icon(Icons.gavel, size: 11, color: Colors.white),
+                  ),
+                ),
             ]),
-          );
-        }
-        return ListView.builder(
-          itemCount: channels.length,
-          itemExtent: 88,
-          itemBuilder: (ctx, i) {
-            final ch = channels[i];
-            final conv = ChatConversation(
-              id: (ch['id'] ?? '').toString(),
-              type: 'channel',
-              name: ch['name'] ?? '',
-              profilePic: ch['image'],
-              lastMessage:
-                  ch['last_message_content'] ?? ch['last_message'],
-              lastMessageTime: ch['updated_at']?.toString(),
-              unreadCount:
-                  (ch['unread_count'] as num?)?.toInt() ?? 0,
-            );
-            return _ChatTile(
-              conv: conv,
-              isGroup: false,
-              isOnline: false,
-              isMuted: false,
-              currentUserId: uid,
-              isChannel: true,
-            );
-          },
-        );
-      },
+            const SizedBox(width: 12),
+            // Content
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Row(children: [
+                        Flexible(
+                          child: Text(
+                            ch['name']?.toString() ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w500,
+                              color: isBanned ? c.textSecondary : c.text,
+                            ),
+                          ),
+                        ),
+                        if (!isBanned && isVerified)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 3),
+                            child: Icon(Icons.verified,
+                                size: 16, color: const Color(0xFF0751DF)),
+                          ),
+                      ]),
+                    ),
+                    const SizedBox(width: 8),
+                    if (isBanned)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF3B30),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.gavel, size: 9, color: Colors.white),
+                          const SizedBox(width: 3),
+                          const Text('BANNED',
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white)),
+                        ]),
+                      )
+                    else if (timeStr != null)
+                      Text(
+                        timeStr,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'Outfit',
+                          color: hasUnread ? c.primary : c.textSecondary,
+                          fontWeight: hasUnread
+                              ? FontWeight.w500
+                              : FontWeight.normal,
+                        ),
+                      ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Row(children: [
+                    Expanded(
+                      child: Text(
+                        isBanned
+                            ? 'This channel has been banned by the platform'
+                            : _getLastMessageText(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontFamily: 'Outfit',
+                          color: isBanned ? const Color(0xFFFF3B30) : c.textSecondary,
+                          fontStyle:
+                              isBanned ? FontStyle.italic : FontStyle.normal,
+                          fontWeight: hasUnread && !isBanned
+                              ? FontWeight.w500
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    if (!isBanned && isMuted)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: Icon(Icons.notifications_off,
+                            size: 14, color: c.textSecondary),
+                      ),
+                    if (!isBanned && hasUnread) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 5, vertical: 2),
+                        constraints:
+                            const BoxConstraints(minWidth: 20, minHeight: 20),
+                        decoration: BoxDecoration(
+                          color: c.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : unreadCount.toString(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ]),
+                ],
+              ),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
 
 // ── ChatTile ───────────────────────────────────────────────────────────────────
-// Mirrors PrivateChatListItem from PrivateChatList.jsx
 class _ChatTile extends StatelessWidget {
   final ChatConversation conv;
   final bool isGroup;
-  final bool isChannel;
   final bool isOnline;
   final bool isMuted;
   final String currentUserId;
@@ -685,7 +1045,6 @@ class _ChatTile extends StatelessWidget {
     required this.isOnline,
     required this.isMuted,
     required this.currentUserId,
-    this.isChannel = false,
     this.onLongPress,
   });
 
@@ -697,7 +1056,6 @@ class _ChatTile extends StatelessWidget {
     final otherUser = conv.otherUser;
     final iBlockedThem = conv.iBlockedThem;
 
-    // Reaction vs message display
     DateTime? lastMsgTime = conv.lastMessageTime != null
         ? DateTime.tryParse(conv.lastMessageTime!)
         : null;
@@ -708,8 +1066,7 @@ class _ChatTile extends StatelessWidget {
         lastMsgTime != null &&
         lastReactionTime.isAfter(lastMsgTime) &&
         conv.lastReactionEmoji != null;
-    final isMyReaction =
-        conv.lastReactionUserId == currentUserId;
+    final isMyReaction = conv.lastReactionUserId == currentUserId;
     final displayTime =
         isLastActivityReaction ? lastReactionTime : lastMsgTime;
 
@@ -759,36 +1116,31 @@ class _ChatTile extends StatelessWidget {
       }
     }
 
-    final timeStr = displayTime != null
-        ? _formatChatListTime(displayTime)
-        : '';
+    final timeStr =
+        displayTime != null ? _formatChatListTime(displayTime) : '';
 
     return Material(
       color: c.background,
       child: InkWell(
         onTap: () {
-          if (isChannel) {
-            context.push('/channel/${conv.id}');
-          } else if (isGroup) {
+          if (isGroup) {
             context.push('/chat/group/${conv.id}');
           } else {
-            context.push('/chat/conversation/${conv.id}',
-                extra: {
-                  'otherUser': otherUser,
-                  'status': conv.status,
-                  'initiatorId': conv.initiatorId,
-                });
+            context.push('/chat/conversation/${conv.id}', extra: {
+              'otherUser': otherUser,
+              'status': conv.status,
+              'initiatorId': conv.initiatorId,
+            });
           }
         },
         onLongPress: onLongPress,
-        splashColor: c.border.withOpacity(0.3),
+        splashColor: c.border.withValues(alpha: 0.3),
         child: Container(
-          height: 88,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                  color: c.border.withOpacity(0.15), width: 0.5),
+                  color: c.border.withValues(alpha: 0.15), width: 0.5),
             ),
           ),
           child: Row(children: [
@@ -796,19 +1148,22 @@ class _ChatTile extends StatelessWidget {
             Stack(children: [
               CircleAvatar(
                 radius: 28,
-                backgroundColor: c.surface,
+                backgroundColor: isGroup ? c.primary : c.surface,
                 backgroundImage: conv.profilePic != null
                     ? CachedNetworkImageProvider(conv.profilePic!)
                     : null,
                 child: conv.profilePic == null
-                    ? Text(
-                        (conv.name.isNotEmpty ? conv.name[0] : '?')
-                            .toUpperCase(),
-                        style: TextStyle(
-                            color: c.text,
-                            fontFamily: 'Outfit',
-                            fontWeight: FontWeight.w600,
-                            fontSize: 18))
+                    ? isGroup
+                        ? const Icon(Icons.group,
+                            size: 32, color: Colors.white)
+                        : Text(
+                            (conv.name.isNotEmpty ? conv.name[0] : '?')
+                                .toUpperCase(),
+                            style: TextStyle(
+                                color: c.text,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w600,
+                                fontSize: 18))
                     : null,
               ),
               if (isOnline)
@@ -825,18 +1180,6 @@ class _ChatTile extends StatelessWidget {
                     ),
                   ),
                 ),
-              if (isGroup)
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(
-                        color: c.background, shape: BoxShape.circle),
-                    child: Icon(Icons.group,
-                        size: 14, color: c.primary),
-                  ),
-                ),
             ]),
             const SizedBox(width: 12),
             // Content
@@ -844,55 +1187,53 @@ class _ChatTile extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Row(children: [
-                          Flexible(
-                            child: Text(
-                              conv.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontFamily: 'Outfit',
-                                fontWeight: hasUnread
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                                color: c.text,
-                              ),
+                  Row(children: [
+                    Expanded(
+                      child: Row(children: [
+                        Flexible(
+                          child: Text(
+                            conv.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontFamily: 'Outfit',
+                              fontWeight: hasUnread
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                              color: c.text,
                             ),
                           ),
-                          if (otherUser?['is_verified'] == true)
-                            Padding(
-                              padding: const EdgeInsets.only(left: 4),
-                              child: VerificationBadge(
-                                isVerified: true,
-                                badge: otherUser?['verification_badge'],
-                                size: 15,
-                              ),
-                            ),
-                        ]),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        timeStr,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontFamily: 'Outfit',
-                          color: hasUnread
-                              ? c.primary
-                              : c.textSecondary,
-                          fontWeight: hasUnread
-                              ? FontWeight.w500
-                              : FontWeight.normal,
                         ),
+                        if (!isGroup && otherUser?['is_verified'] == true)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: VerificationBadge(
+                              isVerified: true,
+                              badge: otherUser?['verification_badge'],
+                              size: 16,
+                            ),
+                          ),
+                      ]),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      timeStr,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontFamily: 'Outfit',
+                        color: hasUnread ? c.primary : c.textSecondary,
+                        fontWeight: hasUnread
+                            ? FontWeight.w500
+                            : FontWeight.normal,
                       ),
-                    ],
-                  ),
+                    ),
+                  ]),
                   const SizedBox(height: 4),
                   Row(children: [
-                    if (isMyMessage && !iBlockedThem && !isLastActivityReaction)
+                    if (isMyMessage &&
+                        !iBlockedThem &&
+                        !isLastActivityReaction)
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: Icon(
@@ -911,8 +1252,7 @@ class _ChatTile extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: Icon(Icons.block,
-                            size: 14,
-                            color: const Color(0xFFFF5252)),
+                            size: 14, color: const Color(0xFFFF5252)),
                       ),
                     Expanded(
                       child: Text(
@@ -920,7 +1260,7 @@ class _ChatTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: 14,
                           fontFamily: 'Outfit',
                           fontWeight: hasUnread
                               ? FontWeight.w500
@@ -947,6 +1287,8 @@ class _ChatTile extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
+                        constraints: const BoxConstraints(
+                            minWidth: 24, minHeight: 24),
                         decoration: BoxDecoration(
                           color: c.primary,
                           borderRadius: BorderRadius.circular(12),
@@ -955,9 +1297,10 @@ class _ChatTile extends StatelessWidget {
                           conv.unreadCount > 99
                               ? '99+'
                               : conv.unreadCount.toString(),
+                          textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 11,
+                            fontSize: 12,
                             fontFamily: 'Outfit',
                             fontWeight: FontWeight.w700,
                           ),
@@ -972,31 +1315,6 @@ class _ChatTile extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatChatListTime(DateTime dt) {
-    final now = DateTime.now();
-    final diff = now.difference(dt);
-    if (diff.inSeconds < 60) return 'now';
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24 &&
-        dt.day == now.day &&
-        dt.month == now.month &&
-        dt.year == now.year) {
-      final h = dt.hour;
-      final m = dt.minute.toString().padLeft(2, '0');
-      final period = h >= 12 ? 'PM' : 'AM';
-      final displayH = h > 12 ? h - 12 : (h == 0 ? 12 : h);
-      return '$displayH:$m $period';
-    }
-    if (diff.inDays < 7) {
-      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      return days[dt.weekday - 1];
-    }
-    if (dt.year == now.year) {
-      return '${dt.day}/${dt.month}';
-    }
-    return '${dt.day}/${dt.month}/${dt.year % 100}';
   }
 }
 
@@ -1013,191 +1331,660 @@ class _MessageRequestsBanner extends StatelessWidget {
       child: InkWell(
         onTap: () => context.push('/chat/requests'),
         child: Container(
-          height: 88,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                  color: c.border.withOpacity(0.15), width: 0.5),
+                  color: const Color(0xFF808080).withValues(alpha: 0.15),
+                  width: 0.5),
             ),
           ),
-          child: Row(
-            children: [
-              Container(
-                width: 56,
-                height: 56,
-                decoration: BoxDecoration(
-                  color: c.primary.withOpacity(0.12),
-                  shape: BoxShape.circle,
+          child: Row(children: [
+            Icon(Icons.mail, color: c.primary, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Message Requests',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w500,
+                  color: c.text,
                 ),
-                child: Icon(Icons.mail_outline,
-                    color: c.primary, size: 24),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Message Requests',
-                  style: TextStyle(
-                    fontSize: 15,
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              constraints:
+                  const BoxConstraints(minWidth: 20, minHeight: 20),
+              decoration: BoxDecoration(
+                  color: c.primary,
+                  borderRadius: BorderRadius.circular(10)),
+              child: Text(
+                count > 99 ? '99+' : count.toString(),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
                     fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w500,
-                    color: c.text,
-                  ),
-                ),
+                    fontWeight: FontWeight.w700),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                    color: c.primary,
-                    borderRadius: BorderRadius.circular(12)),
-                child: Text(
-                  count > 99 ? '99+' : count.toString(),
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w700),
-                ),
-              ),
-              const SizedBox(width: 4),
-              Icon(Icons.chevron_right, size: 22, color: c.textSecondary),
-            ],
-          ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.chevron_right, size: 22, color: c.textSecondary),
+          ]),
         ),
       ),
     );
   }
 }
 
+// ── Time formatter ─────────────────────────────────────────────────────────────
+String _formatChatListTime(DateTime dt) {
+  final now = DateTime.now();
+  final diff = now.difference(dt);
+  if (diff.inSeconds < 60) return 'now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+  if (diff.inHours < 24 &&
+      dt.day == now.day &&
+      dt.month == now.month &&
+      dt.year == now.year) {
+    final h = dt.hour;
+    final m = dt.minute.toString().padLeft(2, '0');
+    final period = h >= 12 ? 'PM' : 'AM';
+    final displayH = h > 12 ? h - 12 : (h == 0 ? 12 : h);
+    return '$displayH:$m $period';
+  }
+  if (diff.inDays < 7) {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    return days[dt.weekday - 1];
+  }
+  if (dt.year == now.year) {
+    return '${dt.day}/${dt.month}';
+  }
+  return '${dt.day}/${dt.month}/${dt.year % 100}';
+}
+
 // ── Quick actions bottom sheet ─────────────────────────────────────────────────
+// Mirrors ChatQuickActionsSheet.jsx: View Profile, Clear Chat, Mute/Unmute,
+// Unmatch (if matched), Block/Unblock, Report
 void _showQuickActionsSheet(BuildContext context, ChatConversation conv,
     bool isMuted, String currentUserId) {
-  final c = context.colors;
-  final otherUser = conv.otherUser;
-  final otherUserId = conv.otherUserId ?? '';
-  final otherUserName =
-      otherUser?['name'] ?? otherUser?['username'] ?? conv.name;
-
   showModalBottomSheet(
     context: context,
-    backgroundColor: c.surface,
-    shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-    builder: (ctx) => SafeArea(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 8),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-              color: c.border,
-              borderRadius: BorderRadius.circular(2)),
-        ),
-        const SizedBox(height: 16),
-        // Header with avatar
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(children: [
-            CircleAvatar(
-              radius: 22,
-              backgroundColor: c.surface,
-              backgroundImage: conv.profilePic != null
-                  ? CachedNetworkImageProvider(conv.profilePic!)
-                  : null,
-              child: conv.profilePic == null
-                  ? Text(
-                      (conv.name.isNotEmpty ? conv.name[0] : '?')
-                          .toUpperCase(),
-                      style: TextStyle(
-                          color: c.text,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600))
-                  : null,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              otherUserName,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (ctx) => _QuickActionsSheet(
+      conv: conv,
+      isMuted: isMuted,
+      currentUserId: currentUserId,
+    ),
+  );
+}
+
+class _QuickActionsSheet extends ConsumerStatefulWidget {
+  final ChatConversation conv;
+  final bool isMuted;
+  final String currentUserId;
+
+  const _QuickActionsSheet({
+    required this.conv,
+    required this.isMuted,
+    required this.currentUserId,
+  });
+
+  @override
+  ConsumerState<_QuickActionsSheet> createState() => _QuickActionsSheetState();
+}
+
+class _QuickActionsSheetState extends ConsumerState<_QuickActionsSheet> {
+  bool _isBlocked = false;
+  bool _isMatched = false;
+  bool _isUnmatching = false;
+  bool _loadingStatuses = true;
+  late bool _isMuted;
+
+  @override
+  void initState() {
+    super.initState();
+    _isMuted = widget.isMuted;
+    _fetchStatuses();
+  }
+
+  Future<void> _fetchStatuses() async {
+    final otherUserId = widget.conv.otherUserId;
+    if (otherUserId == null || widget.currentUserId.isEmpty) {
+      if (mounted) setState(() => _loadingStatuses = false);
+      return;
+    }
+    bool blocked = false;
+    bool matched = false;
+
+    await Future.wait([
+      () async {
+        try {
+          final res = await dioClient.get(AppEndpoints.checkBlock,
+              queryParameters: {
+                'blocker_id': widget.currentUserId,
+                'blocked_id': otherUserId,
+              });
+          if (res.data['data'] != null) {
+            blocked = res.data['data']['i_blocked_them'] == true;
+          }
+        } catch (_) {}
+      }(),
+      () async {
+        try {
+          final res = await dioClient
+              .get(AppEndpoints.profileInteraction(otherUserId));
+          if (res.data['data'] != null) {
+            matched = res.data['data']['status'] == 'matched';
+          }
+        } catch (_) {}
+      }(),
+    ]);
+
+    if (mounted) {
+      setState(() {
+        _isBlocked = blocked;
+        _isMatched = matched;
+        _loadingStatuses = false;
+      });
+    }
+  }
+
+  void _showToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message,
+          style: const TextStyle(fontFamily: 'Outfit')),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
+  Future<void> _handleBlock() async {
+    if (!mounted) return;
+    Navigator.pop(context);
+    try {
+      await dioClient.post(AppEndpoints.blockUser, data: {
+        'blocker_id': widget.currentUserId,
+        'blocked_id': widget.conv.otherUserId,
+      });
+      _showToast('User has been blocked');
+    } catch (_) {
+      _showToast('Failed to block user. Please try again.');
+    }
+  }
+
+  Future<void> _handleUnblock() async {
+    if (!mounted) return;
+    Navigator.pop(context);
+    try {
+      await dioClient.post(AppEndpoints.unblockUser, data: {
+        'blocker_id': widget.currentUserId,
+        'blocked_id': widget.conv.otherUserId,
+      });
+      _showToast('User has been unblocked');
+    } catch (_) {
+      _showToast('Failed to unblock user. Please try again.');
+    }
+  }
+
+  Future<void> _handleMute(String duration) async {
+    Navigator.pop(context);
+    try {
+      await mutedChatsService.muteChat(
+        userId: widget.currentUserId,
+        mutedUserId: widget.conv.otherUserId!,
+        conversationId: widget.conv.id,
+        muteDuration: duration,
+      );
+      // Update muted state in provider
+      final current = Set<String>.from(
+          ref.read(chatProvider).mutedChats);
+      current.add(widget.conv.otherUserId!);
+      ref.read(chatProvider.notifier).setMutedChats(current);
+      _showToast('Notifications muted');
+    } catch (_) {
+      _showToast('Failed to mute chat. Please try again.');
+    }
+  }
+
+  Future<void> _handleUnmute() async {
+    Navigator.pop(context);
+    try {
+      await mutedChatsService.unmuteChat(
+        userId: widget.currentUserId,
+        mutedUserId: widget.conv.otherUserId!,
+      );
+      final current = Set<String>.from(
+          ref.read(chatProvider).mutedChats);
+      current.remove(widget.conv.otherUserId!);
+      ref.read(chatProvider.notifier).setMutedChats(current);
+      _showToast('Notifications unmuted');
+    } catch (_) {
+      _showToast('Failed to unmute chat. Please try again.');
+    }
+  }
+
+  Future<void> _handleUnmatch() async {
+    setState(() => _isUnmatching = true);
+    try {
+      await dioClient.post(AppEndpoints.unmatch,
+          data: {'targetUserId': widget.conv.otherUserId});
+      ref
+          .read(chatProvider.notifier)
+          .deleteConversation(widget.conv.id, deleteType: 'for_everyone');
+      if (mounted) Navigator.pop(context);
+    } catch (_) {
+      _showToast('Failed to unmatch. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isUnmatching = false);
+    }
+  }
+
+  void _showMuteDurationPicker() {
+    final c = context.colors;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: c.surface,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+                color: c.border, borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(height: 16),
+          Text('Mute notifications for',
               style: TextStyle(
                   fontSize: 16,
                   fontFamily: 'Outfit',
                   fontWeight: FontWeight.w600,
-                  color: c.text),
-            ),
-          ]),
-        ),
-        const SizedBox(height: 12),
-        Divider(height: 1, color: c.border),
-        ListTile(
-          leading: Icon(
-              isMuted ? Icons.notifications_active : Icons.notifications_off,
-              color: c.text),
-          title: Text(
-            isMuted ? 'Unmute Notifications' : 'Mute Notifications',
+                  color: c.text)),
+          const SizedBox(height: 8),
+          _MuteDurationTile(
+            label: '8 hours',
+            onTap: () {
+              Navigator.pop(ctx);
+              _handleMute('8_hours');
+            },
+          ),
+          _MuteDurationTile(
+            label: '1 week',
+            onTap: () {
+              Navigator.pop(ctx);
+              _handleMute('1_week');
+            },
+          ),
+          _MuteDurationTile(
+            label: 'Always',
+            onTap: () {
+              Navigator.pop(ctx);
+              _handleMute('always');
+            },
+          ),
+          SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
+        ]),
+      ),
+    );
+  }
+
+  void _showClearChatDialog() {
+    final c = context.colors;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Clear Chat',
             style: TextStyle(
                 color: c.text,
                 fontFamily: 'Outfit',
-                fontWeight: FontWeight.w500),
+                fontWeight: FontWeight.w600)),
+        content: Text(
+            'Are you sure you want to clear all messages in this chat?',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(
+                    color: const Color(0xFF3B82F6),
+                    fontFamily: 'Outfit')),
           ),
-          onTap: () {
-            Navigator.pop(ctx);
-            // TODO: show mute duration picker
-          },
-        ),
-        ListTile(
-          leading: Icon(Icons.delete_outline, color: c.error),
-          title: Text('Delete Chat',
-              style: TextStyle(
-                  color: c.error,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w500)),
-          onTap: () {
-            Navigator.pop(ctx);
-            _confirmDeleteChat(context, conv, currentUserId);
-          },
-        ),
-        SizedBox(height: MediaQuery.of(ctx).padding.bottom + 8),
-      ]),
-    ),
-  );
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+              ref.read(chatProvider.notifier).deleteConversation(
+                  widget.conv.id,
+                  deleteType: 'for_me');
+            },
+            child: const Text('Delete for Me',
+                style: TextStyle(
+                    color: Color(0xFFF59E0B),
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context);
+              ref.read(chatProvider.notifier).deleteConversation(
+                  widget.conv.id,
+                  deleteType: 'for_everyone');
+            },
+            child: const Text('Delete for Everyone',
+                style: TextStyle(
+                    color: Color(0xFFEF4444),
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUnmatchDialog() {
+    final c = context.colors;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Unmatch',
+            style: TextStyle(
+                color: c.text,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w600)),
+        content: Text(
+            'If you unmatch, the chat conversation will be deleted and you can no longer message each other.',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(
+                    color: const Color(0xFF3B82F6),
+                    fontFamily: 'Outfit')),
+          ),
+          TextButton(
+            onPressed: _isUnmatching
+                ? null
+                : () {
+                    Navigator.pop(ctx);
+                    _handleUnmatch();
+                  },
+            child: _isUnmatching
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Text('Unmatch',
+                    style: TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final otherUser = widget.conv.otherUser;
+    final otherUserName =
+        otherUser?['name'] ?? otherUser?['username'] ?? widget.conv.name;
+    final otherUserUsername = otherUser?['username']?.toString();
+    final isVerified = otherUser?['is_verified'] == true;
+    final verificationBadge = otherUser?['verification_badge'];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius:
+            const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const SizedBox(height: 4),
+          // Drag handle
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(top: 8, bottom: 4),
+            decoration: BoxDecoration(
+                color: c.textTertiary,
+                borderRadius: BorderRadius.circular(2)),
+          ),
+          // Header with avatar + name
+          if (otherUser != null)
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              child: Row(children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: c.surface,
+                  backgroundImage: widget.conv.profilePic != null
+                      ? CachedNetworkImageProvider(widget.conv.profilePic!)
+                      : null,
+                  child: widget.conv.profilePic == null
+                      ? Text(
+                          (widget.conv.name.isNotEmpty
+                                  ? widget.conv.name[0]
+                                  : '?')
+                              .toUpperCase(),
+                          style: TextStyle(
+                              color: c.text,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w600))
+                      : null,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Flexible(
+                            child: Text(
+                              otherUserName.toString(),
+                              style: TextStyle(
+                                  fontSize: 17,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w600,
+                                  color: c.text),
+                            ),
+                          ),
+                          if (isVerified)
+                            Padding(
+                              padding: const EdgeInsets.only(left: 4),
+                              child: VerificationBadge(
+                                isVerified: true,
+                                badge: verificationBadge,
+                                size: 18,
+                              ),
+                            ),
+                        ]),
+                        if (otherUserUsername != null)
+                          Text(
+                            '@$otherUserUsername',
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontFamily: 'Outfit',
+                                color: c.textSecondary),
+                          ),
+                      ]),
+                ),
+              ]),
+            ),
+          Divider(height: 1, color: c.border),
+          // Options
+          _SheetOption(
+            icon: Icons.person,
+            label: 'View Profile',
+            onTap: () {
+              final otherId = widget.conv.otherUserId;
+              Navigator.pop(context);
+              if (otherId != null) {
+                Future.delayed(const Duration(milliseconds: 300), () {
+                  if (context.mounted) context.push('/profile/$otherId');
+                });
+              }
+            },
+          ),
+          _SheetOption(
+            icon: Icons.delete_sweep,
+            label: 'Clear Chat',
+            onTap: () {
+              Navigator.pop(context);
+              Future.delayed(const Duration(milliseconds: 300),
+                  _showClearChatDialog);
+            },
+          ),
+          _SheetOption(
+            icon: _isMuted
+                ? Icons.notifications_active
+                : Icons.notifications_off,
+            label: _isMuted ? 'Unmute' : 'Mute',
+            onTap: () {
+              Navigator.pop(context);
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (_isMuted) {
+                  _handleUnmute();
+                } else {
+                  _showMuteDurationPicker();
+                }
+              });
+            },
+          ),
+          if (!_loadingStatuses && _isMatched)
+            _SheetOption(
+              icon: Icons.heart_broken,
+              label: 'Unmatch',
+              onTap: () {
+                Navigator.pop(context);
+                Future.delayed(
+                    const Duration(milliseconds: 300), _showUnmatchDialog);
+              },
+            ),
+          _SheetOption(
+            icon: _isBlocked ? Icons.check_circle : Icons.block,
+            label: _isBlocked ? 'Unblock' : 'Block',
+            onTap: _isBlocked ? _handleUnblock : _handleBlock,
+          ),
+          _SheetOption(
+            icon: Icons.flag,
+            label: 'Report',
+            isDanger: true,
+            isLast: true,
+            onTap: () {
+              final reportExtra = {
+                'entityType': 'user',
+                'entityId': widget.conv.otherUserId,
+                'entityDetails': {
+                  'username': otherUser?['username'],
+                  'name': otherUser?['name'],
+                },
+                'reportSource': 'chat_quick_actions',
+                'reportSourceId': 5,
+              };
+              Navigator.pop(context);
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (context.mounted) context.push('/report', extra: reportExtra);
+              });
+            },
+          ),
+          const SizedBox(height: 8),
+        ]),
+      ),
+    );
+  }
 }
 
-void _confirmDeleteChat(
-    BuildContext context, ChatConversation conv, String currentUserId) {
-  final c = context.colors;
-  showDialog(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      backgroundColor: c.surface,
-      title: Text('Delete Chat?',
+class _SheetOption extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final bool isDanger;
+  final bool isLast;
+
+  const _SheetOption({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isDanger = false,
+    this.isLast = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final iconBgColor = isDanger
+        ? const Color(0xFFFF3B30).withValues(alpha: 0.12)
+        : c.background;
+    final iconColor = isDanger ? const Color(0xFFFF3B30) : c.text;
+    final textColor = isDanger ? const Color(0xFFFF3B30) : c.text;
+
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        decoration: BoxDecoration(
+          border: isLast
+              ? null
+              : Border(
+                  bottom: BorderSide(
+                      color: c.border.withValues(alpha: 0.5),
+                      width: 0.5)),
+        ),
+        child: Row(children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: iconBgColor,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, size: 20, color: iconColor),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 15,
+                    fontFamily: 'Outfit',
+                    color: textColor)),
+          ),
+          Icon(Icons.chevron_right, size: 20, color: c.textSecondary),
+        ]),
+      ),
+    );
+  }
+}
+
+class _MuteDurationTile extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  const _MuteDurationTile({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return ListTile(
+      title: Text(label,
           style: TextStyle(
-              color: c.text,
               fontFamily: 'Outfit',
-              fontWeight: FontWeight.w600)),
-      content: Text(
-          'This will delete the conversation for you only.',
-          style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: Text('Cancel',
-              style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
-        ),
-        TextButton(
-          onPressed: () {
-            Navigator.pop(ctx);
-            // Will be wired to chatProvider.notifier.deleteConversation in ChatConversationScreen
-          },
-          child: Text('Delete',
-              style: TextStyle(
-                  color: c.error,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600)),
-        ),
-      ],
-    ),
-  );
+              fontSize: 15,
+              color: c.text)),
+      onTap: onTap,
+    );
+  }
 }
-
-// chatApiService is imported from '../../services/chat_api_service.dart'

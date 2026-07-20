@@ -382,7 +382,7 @@ class ChatConversation {
           otherUser?['username'] ??
           json['name'] ??
           '',
-      profilePic: otherUser?['profile_pic'] ?? json['profile_pic'],
+      profilePic: otherUser?['profile_pic'] ?? json['picture'] ?? json['profile_pic'],
       lastMessage: json['last_message_content'] ?? json['last_message'],
       lastMessageType: json['last_message_type'],
       lastMessageSenderId: json['last_message_sender_id']?.toString(),
@@ -1080,7 +1080,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? replyToId,
     Map<String, dynamic>? replyTo,
   }) async {
-    if (_socket == null || _currentUserId == null) return;
+    if (_currentUserId == null) return;
 
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}_${conversationId.hashCode}';
     final now = DateTime.now();
@@ -1108,7 +1108,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _updateConversationFromMessage(optimistic);
     _saveMessageToDb(optimistic);
 
-    if (_socket!.connected) {
+    if (_socket != null && _socket!.connected) {
       _socket!.emit('send_message', {
         'conversation_id': conversationId,
         'sender_id': _currentUserId,
@@ -1147,7 +1147,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? replyToId,
     Map<String, dynamic>? replyTo,
   }) async {
-    if (_socket == null || _currentUserId == null) return;
+    if (_currentUserId == null) return;
 
     final prefs = await SharedPreferences.getInstance();
     final senderName = prefs.getString('name') ?? '';
@@ -1178,7 +1178,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _addMessage(groupId, optimistic);
     _updateGroupFromMessage(optimistic);
 
-    if (_socket!.connected) {
+    if (_socket != null && _socket!.connected) {
       _socket!.emit('send_group_message', {
         'group_id': groupId,
         'sender_id': _currentUserId,

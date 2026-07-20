@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/theme_colors.dart';
@@ -56,7 +57,7 @@ class MessageBubble extends StatelessWidget {
   Widget _buildBubble(BuildContext context, ThemeColors c) {
     final hasReactions = (message.reactions?.isNotEmpty ?? false);
 
-    return Padding(
+    Widget bubble = Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Column(
         crossAxisAlignment:
@@ -123,7 +124,7 @@ class MessageBubble extends StatelessWidget {
               child: _ReactionsRow(
                 reactions: message.reactions!,
                 isMyMessage: isMyMessage,
-                currentUserId: null, // passed from parent in real use
+                currentUserId: null,
                 onTap: onReactionTap,
                 c: c,
               ),
@@ -131,6 +132,16 @@ class MessageBubble extends StatelessWidget {
         ],
       ),
     );
+
+    if (onReplySwipe != null) {
+      return _SwipeToReply(
+        isMyMessage: isMyMessage,
+        onReply: () => onReplySwipe!(message),
+        c: c,
+        child: bubble,
+      );
+    }
+    return bubble;
   }
 }
 
@@ -227,16 +238,19 @@ class _TextBubble extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.72),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          maxWidth: MediaQuery.of(context).size.width * 0.75),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: bubbleColor,
         borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(18),
-          topRight: const Radius.circular(18),
-          bottomLeft: Radius.circular(isMyMessage ? 18 : 4),
-          bottomRight: Radius.circular(isMyMessage ? 4 : 18),
+          topLeft: const Radius.circular(16),
+          topRight: const Radius.circular(16),
+          bottomLeft: Radius.circular(isMyMessage ? 16 : 4),
+          bottomRight: Radius.circular(isMyMessage ? 4 : 16),
         ),
+        border: isMyMessage
+            ? null
+            : Border.all(color: c.border, width: 1),
       ),
       child: Column(
         crossAxisAlignment:
@@ -416,39 +430,54 @@ class _ReplyPreview extends StatelessWidget {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
       decoration: BoxDecoration(
-        color: (isMyMessage ? Colors.white : c.background)
-            .withOpacity(0.15),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(
-          left: BorderSide(
-              color: isMyMessage ? Colors.white70 : c.primary,
-              width: 3),
-        ),
+        color: isMyMessage
+            ? const Color(0x33000000)
+            : const Color(0x0F000000),
+        borderRadius: BorderRadius.circular(6),
       ),
-      child: Column(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            (data['sender_name'] as String?) ?? 'Unknown',
-            style: TextStyle(
-              fontSize: 11,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w600,
+          Container(
+            width: 3,
+            decoration: BoxDecoration(
               color: isMyMessage ? Colors.white : c.primary,
+              borderRadius: BorderRadius.circular(2),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            preview,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 12,
-              fontFamily: 'Outfit',
-              color: (isMyMessage ? Colors.white : c.textSecondary)
-                  .withOpacity(0.8),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (data['sender_name'] as String?) ?? 'Unknown',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    color: isMyMessage ? Colors.white : c.primary,
+                    height: 1.14,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Outfit',
+                    color: isMyMessage
+                        ? Colors.white.withValues(alpha: 0.9)
+                        : c.text.withValues(alpha: 0.75),
+                    height: 1.28,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -556,14 +585,14 @@ class _TimeStatus extends StatelessWidget {
             padding: const EdgeInsets.only(right: 4),
             child: Text('edited',
                 style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 11,
                     fontFamily: 'Outfit',
                     fontStyle: FontStyle.italic,
                     color: color)),
           ),
         Text(timeStr,
             style: TextStyle(
-                fontSize: 10, fontFamily: 'Outfit', color: color)),
+                fontSize: 11, fontFamily: 'Outfit', color: color)),
         if (isMyMessage) ...[
           const SizedBox(width: 4),
           _statusIcon(color),
@@ -1250,5 +1279,91 @@ class DateDivider extends StatelessWidget {
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
     ];
     return months[month - 1];
+  }
+}
+
+// ── Swipe-to-reply wrapper ─────────────────────────────────────────────────────
+// Mirrors SwipeableMessage from ChatConversation.jsx.
+// All messages swipe right to reveal the reply icon (threshold: 30px, cap: 60px).
+class _SwipeToReply extends StatefulWidget {
+  final bool isMyMessage;
+  final VoidCallback onReply;
+  final ThemeColors c;
+  final Widget child;
+
+  const _SwipeToReply({
+    required this.isMyMessage,
+    required this.onReply,
+    required this.c,
+    required this.child,
+  });
+
+  @override
+  State<_SwipeToReply> createState() => _SwipeToReplyState();
+}
+
+class _SwipeToReplyState extends State<_SwipeToReply> {
+  double _drag = 0;
+  bool _triggered = false;
+
+  static const _threshold = 30.0;
+  static const _maxDrag = 60.0;
+
+  void _onHorizontalUpdate(DragUpdateDetails d) {
+    final delta = d.delta.dx;
+    if (delta < 0 && _drag == 0) return; // only swipe right
+
+    setState(() {
+      _drag = math.max(0.0, math.min(_maxDrag, _drag + delta));
+    });
+
+    if (!_triggered && _drag >= _threshold) {
+      _triggered = true;
+    }
+  }
+
+  void _onHorizontalEnd(DragEndDetails _) {
+    if (_triggered) widget.onReply();
+    setState(() {
+      _drag = 0;
+      _triggered = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final iconOpacity = (_drag / _threshold).clamp(0.0, 1.0);
+    return GestureDetector(
+      onHorizontalDragUpdate: _onHorizontalUpdate,
+      onHorizontalDragEnd: _onHorizontalEnd,
+      child: Stack(
+        children: [
+          // Reply icon fades in on the left as user drags right
+          if (_drag > 4)
+            Positioned(
+              left: math.max(4, _drag - 32),
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: Opacity(
+                  opacity: iconOpacity,
+                  child: Transform.scale(
+                    scale: 0.5 + 0.5 * iconOpacity,
+                    child: Icon(
+                      Icons.reply,
+                      size: 24,
+                      color: widget.c.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          Transform.translate(
+            offset: Offset(_drag, 0),
+            child: widget.child,
+          ),
+        ],
+      ),
+    );
   }
 }
