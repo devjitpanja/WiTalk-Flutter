@@ -593,6 +593,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('new_message', (data) => _handleNewMessage(data));
     s.on('message_sent', (data) => _handleMessageSent(data));
     s.on('message_deleted', (data) => _handleMessageDeleted(data));
+    // Server sends these two separate events per delete_type
+    s.on('message_deleted_for_everyone', (data) => _handleMessageDeleted(data, forEveryone: true));
+    s.on('message_deleted_for_me', (data) => _handleMessageDeleted(data, forEveryone: false));
     s.on('message_edited', (data) => _handleMessageEdited(data));
     s.on('message_read', (data) => _handleMessageRead(data));
     s.on('messages_read', (data) => _handleMessagesRead(data));
@@ -639,9 +642,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
       _processedMessageIds.clear();
     }
 
+    // Auto-mark-as-read when the message arrives in the currently active conversation
+    final isActive = state.activeConversationId == msg.conversationId;
+    final isIncoming = msg.senderId != _currentUserId;
+
     _addMessage(msg.conversationId, msg);
-    _updateConversationFromMessage(msg, isIncoming: true);
+    _updateConversationFromMessage(msg, isIncoming: !isActive && isIncoming);
     _saveMessageToDb(msg);
+
+    if (isActive && isIncoming) {
+      markAsRead(msg.conversationId);
+    }
   }
 
   void _handleMessageSent(dynamic data) {
@@ -678,17 +689,35 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
-  void _handleMessageDeleted(dynamic data) {
+  void _handleMessageDeleted(dynamic data, {bool? forEveryone}) {
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
     final msgId = d['message_id']?.toString() ?? d['id']?.toString();
     if (msgId == null) return;
 
+    // Resolve delete type: explicit param > payload field > default show-deleted
+    final deleteType = d['delete_type']?.toString();
+    final isForEveryone = forEveryone ??
+        (deleteType == 'for_everyone' ? true : deleteType == 'for_me' ? false : null);
+
     final convId = _messageOwnerMap[msgId];
     if (convId != null) {
-      _patchMessage(convId, msgId, (m) => m.copyWith(isDeleted: true));
+      if (isForEveryone == false) {
+        // "Delete for me" — remove completely from in-memory list (same as RN)
+        _removeMessage(convId, msgId);
+      } else {
+        // "Delete for everyone" (or unknown) — show deleted placeholder bubble
+        _patchMessage(convId, msgId, (m) => m.copyWith(isDeleted: true));
+      }
       _messageOwnerMap.remove(msgId);
     }
+  }
+
+  void _removeMessage(String convId, String msgId) {
+    final msgs = state.messages[convId];
+    if (msgs == null) return;
+    final updated = msgs.where((m) => m.id != msgId && m.tempId != msgId).toList();
+    state = state.copyWith(messages: {...state.messages, convId: updated});
   }
 
   void _handleMessageEdited(dynamic data) {
@@ -1330,10 +1359,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
       {String deleteType = 'for_me', String? conversationId}) async {
     if (_currentUserId == null) return;
 
-    // Look up owner map first; fall back to the passed-in conversationId
     final convId = _messageOwnerMap[messageId] ?? conversationId;
     if (convId != null) {
-      _patchMessage(convId, messageId, (m) => m.copyWith(isDeleted: true));
+      if (deleteType == 'for_me') {
+        // Remove completely — only this user's view is affected
+        _removeMessage(convId, messageId);
+      } else {
+        // Replace with deleted placeholder visible to all
+        _patchMessage(convId, messageId, (m) => m.copyWith(isDeleted: true));
+      }
       _messageOwnerMap.remove(messageId);
     }
 

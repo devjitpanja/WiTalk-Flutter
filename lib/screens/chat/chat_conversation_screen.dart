@@ -143,6 +143,9 @@ class _ChatConversationScreenState
     _dot0Ctrl.dispose();
     _dot1Ctrl.dispose();
     _dot2Ctrl.dispose();
+    // Leave conversation room and clear active tracking (mirrors RN useFocusEffect cleanup)
+    ref.read(chatProvider.notifier).leaveConversation(widget.chatId);
+    ref.read(chatProvider.notifier).setActiveConversation(null);
     super.dispose();
   }
 
