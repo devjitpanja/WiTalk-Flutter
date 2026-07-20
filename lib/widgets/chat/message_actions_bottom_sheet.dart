@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
 
-// Mirrors MessageActionsBottomSheet.jsx
-// Shows a bottom sheet with actions for a selected message
+// Mirrors private-chat action menu in ChatConversation.jsx (RN).
+// Vertical list: Reply / Edit / Copy / Forward / Translate / Delete for me / Delete for everyone
 
 enum MessageAction {
   reply,
@@ -23,7 +23,7 @@ enum MessageAction {
 class MessageActionsBottomSheet extends StatelessWidget {
   final ChatMessage message;
   final bool isMyMessage;
-  final bool isAdmin; // for group chats
+  final bool isAdmin;
   final bool isPinned;
   final bool canDeleteForEveryone;
   final void Function(MessageAction) onAction;
@@ -41,76 +41,12 @@ class MessageActionsBottomSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final isText = message.messageType == 'text' ||
-        message.messageType.isEmpty;
-
-    final actions = <_ActionItem>[
-      _ActionItem(
-        action: MessageAction.reply,
-        icon: Icons.reply,
-        label: 'Reply',
-      ),
-      if (isText && isMyMessage)
-        _ActionItem(
-          action: MessageAction.edit,
-          icon: Icons.edit_outlined,
-          label: 'Edit',
-        ),
-      if (isText)
-        _ActionItem(
-          action: MessageAction.copy,
-          icon: Icons.copy,
-          label: 'Copy',
-        ),
-      if (isPinned)
-        _ActionItem(
-          action: MessageAction.unpin,
-          icon: Icons.push_pin_outlined,
-          label: 'Unpin',
-        )
-      else
-        _ActionItem(
-          action: MessageAction.pin,
-          icon: Icons.push_pin,
-          label: 'Pin',
-        ),
-      _ActionItem(
-        action: MessageAction.forward,
-        icon: Icons.forward,
-        label: 'Forward',
-      ),
-      _ActionItem(
-        action: MessageAction.translate,
-        icon: Icons.translate,
-        label: 'Translate',
-      ),
-      if (isMyMessage)
-        _ActionItem(
-          action: MessageAction.delete,
-          icon: Icons.delete_outline,
-          label: 'Delete for me',
-          isDestructive: true,
-        ),
-      if (isMyMessage && canDeleteForEveryone)
-        _ActionItem(
-          action: MessageAction.deleteForEveryone,
-          icon: Icons.delete_forever,
-          label: 'Delete for everyone',
-          isDestructive: true,
-        ),
-      if (!isMyMessage && isAdmin)
-        _ActionItem(
-          action: MessageAction.deleteForEveryone,
-          icon: Icons.delete_forever,
-          label: 'Delete for everyone',
-          isDestructive: true,
-        ),
-    ];
+    final isText =
+        message.messageType == 'text' || message.messageType.isEmpty;
 
     return Container(
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 8,
-      ),
+          bottom: MediaQuery.of(context).padding.bottom + 8),
       decoration: BoxDecoration(
         color: c.surface,
         borderRadius:
@@ -120,6 +56,7 @@ class MessageActionsBottomSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 8),
+          // Drag handle
           Container(
             width: 40,
             height: 4,
@@ -127,58 +64,159 @@ class MessageActionsBottomSheet extends StatelessWidget {
                 color: c.border,
                 borderRadius: BorderRadius.circular(2)),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
           // Message preview
           _MessagePreview(message: message, c: c),
           Divider(height: 1, color: c.border),
-          // Actions grid
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 4,
-            childAspectRatio: 1,
-            padding: const EdgeInsets.all(8),
-            children: actions.map((item) {
-              return _ActionButton(
-                item: item,
-                c: c,
-                onTap: () {
-                  Navigator.pop(context);
-                  if (item.action == MessageAction.copy) {
-                    Clipboard.setData(
-                        ClipboardData(text: message.content));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Copied to clipboard'),
-                          duration: Duration(seconds: 1)),
-                    );
-                    return;
-                  }
-                  onAction(item.action);
-                },
-              );
-            }).toList(),
+
+          // ── Actions — vertical list matching RN ─────────────────────
+          _ActionRow(
+            icon: Icons.reply,
+            label: 'Reply',
+            c: c,
+            onTap: () {
+              Navigator.pop(context);
+              onAction(MessageAction.reply);
+            },
           ),
+          if (isText && isMyMessage)
+            _ActionRow(
+              icon: Icons.edit_outlined,
+              label: 'Edit',
+              c: c,
+              onTap: () {
+                Navigator.pop(context);
+                onAction(MessageAction.edit);
+              },
+            ),
+          if (isText)
+            _ActionRow(
+              icon: Icons.copy_outlined,
+              label: 'Copy',
+              c: c,
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(
+                    ClipboardData(text: message.content));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                      content: Text('Copied to clipboard'),
+                      duration: Duration(seconds: 1)),
+                );
+              },
+            ),
+          _ActionRow(
+            icon: Icons.forward,
+            label: 'Forward',
+            c: c,
+            onTap: () {
+              Navigator.pop(context);
+              onAction(MessageAction.forward);
+            },
+          ),
+          _ActionRow(
+            icon: Icons.translate_outlined,
+            label: 'Translate',
+            c: c,
+            onTap: () {
+              Navigator.pop(context);
+              onAction(MessageAction.translate);
+            },
+          ),
+          if (isPinned)
+            _ActionRow(
+              icon: Icons.push_pin_outlined,
+              label: 'Unpin',
+              c: c,
+              onTap: () {
+                Navigator.pop(context);
+                onAction(MessageAction.unpin);
+              },
+            )
+          else
+            _ActionRow(
+              icon: Icons.push_pin_outlined,
+              label: 'Pin',
+              c: c,
+              onTap: () {
+                Navigator.pop(context);
+                onAction(MessageAction.pin);
+              },
+            ),
+          if (isMyMessage)
+            _ActionRow(
+              icon: Icons.delete_outline,
+              label: 'Delete for me',
+              c: c,
+              isDestructive: true,
+              onTap: () {
+                Navigator.pop(context);
+                onAction(MessageAction.delete);
+              },
+            ),
+          if (canDeleteForEveryone || (!isMyMessage && isAdmin))
+            _ActionRow(
+              icon: Icons.delete_forever_outlined,
+              label: 'Delete for everyone',
+              c: c,
+              isDestructive: true,
+              onTap: () {
+                Navigator.pop(context);
+                onAction(MessageAction.deleteForEveryone);
+              },
+            ),
+          const SizedBox(height: 4),
         ],
       ),
     );
   }
 }
 
-class _ActionItem {
-  final MessageAction action;
+// ── Single action row ─────────────────────────────────────────────────────────
+class _ActionRow extends StatelessWidget {
   final IconData icon;
   final String label;
+  final ThemeColors c;
+  final VoidCallback onTap;
   final bool isDestructive;
 
-  const _ActionItem({
-    required this.action,
+  const _ActionRow({
     required this.icon,
     required this.label,
+    required this.c,
+    required this.onTap,
     this.isDestructive = false,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final color = isDestructive ? c.error : c.text;
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+        child: Row(children: [
+          Icon(icon, size: 22, color: color),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 15,
+                fontFamily: 'Outfit',
+                color: color,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
+// ── Message preview header ────────────────────────────────────────────────────
 class _MessagePreview extends StatelessWidget {
   final ChatMessage message;
   final ThemeColors c;
@@ -209,63 +247,16 @@ class _MessagePreview extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(children: [
-        Expanded(
-          child: Text(
-            preview,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                fontSize: 14,
-                fontFamily: 'Outfit',
-                color: c.textSecondary),
-          ),
-        ),
-      ]),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final _ActionItem item;
-  final ThemeColors c;
-  final VoidCallback onTap;
-
-  const _ActionButton(
-      {required this.item, required this.c, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        item.isDestructive ? c.error : c.text;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              color: item.isDestructive
-                  ? c.error.withOpacity(0.1)
-                  : c.background,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(item.icon, color: color, size: 22),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            item.label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 11, fontFamily: 'Outfit', color: color),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ],
+      padding:
+          const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Text(
+        preview,
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            fontSize: 14,
+            fontFamily: 'Outfit',
+            color: c.textSecondary),
       ),
     );
   }

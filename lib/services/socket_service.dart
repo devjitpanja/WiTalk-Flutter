@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
@@ -26,10 +27,15 @@ class SocketService {
 
   // ── Connect ────────────────────────────────────────────────────────────────
   Future<io.Socket> connect() async {
-    if (_socket != null && _isConnected) return _socket!;
+    debugPrint('[SOCKET] connect() called — already connected: $_isConnected, connecting: $_isConnecting');
+    if (_socket != null && _isConnected) {
+      debugPrint('[SOCKET] Reusing existing connected socket');
+      return _socket!;
+    }
 
     // Coalesce concurrent connect() calls
     if (_isConnecting) {
+      debugPrint('[SOCKET] Already connecting, waiting...');
       final c = Completer<void>();
       _connectCompleter.add(c);
       await c.future;
@@ -40,15 +46,20 @@ class SocketService {
     try {
       final token = await _storage.read(key: 'accessToken');
       final uid = await _storage.read(key: 'uid');
+      final url = '${AppConfig.apiBaseUrl}/chat';
+
+      debugPrint('[SOCKET] Connecting to: $url');
+      debugPrint('[SOCKET] uid from storage: $uid');
+      debugPrint('[SOCKET] token present: ${token != null && token.isNotEmpty}');
 
       _socket?.dispose();
       _socket = io.io(
-        AppConfig.apiBaseUrl,
+        url,
         io.OptionBuilder()
             .setTransports(['websocket'])
             .setAuth({'token': token, 'userId': uid})
             .enableReconnection()
-            .setReconnectionAttempts(double.infinity.toInt())
+            .setReconnectionAttempts(99999)
             .setReconnectionDelay(1000)
             .setReconnectionDelayMax(10000)
             .setRandomizationFactor(0.5)
@@ -57,12 +68,13 @@ class SocketService {
             .build(),
       );
 
-      _setupLifecycleListeners();
+      _setupLifecycleListeners(uid);
       _socket!.connect();
 
       // Wait up to 10s for the connection
       final timer = Timer(const Duration(seconds: 10), () {
         if (!_isConnected) {
+          debugPrint('[SOCKET] ⚠️ Connect timeout after 10s — _isConnected=$_isConnected');
           _completeWaiters();
         }
       });
@@ -72,9 +84,11 @@ class SocketService {
         Future.delayed(const Duration(seconds: 10)),
       ]).then((_) {
         timer.cancel();
+        debugPrint('[SOCKET] connect() future resolved — _isConnected=$_isConnected');
         _completeWaiters();
-      }).catchError((_) {
+      }).catchError((e) {
         timer.cancel();
+        debugPrint('[SOCKET] connect() future error: $e');
         _completeWaiters();
       });
 
@@ -84,26 +98,54 @@ class SocketService {
     }
   }
 
-  void _setupLifecycleListeners() {
+  void _setupLifecycleListeners(String? uid) {
     _socket?.on('connect', (_) {
       _isConnected = true;
+      debugPrint('[SOCKET] ✅ Connected! socket.id=${_socket?.id}  namespace=${_socket?.nsp}');
+      // Emit join with userId so the backend adds this socket to user:${uid}
+      // and all conversation rooms — required for message_sent/new_message routing.
+      if (uid != null) {
+        debugPrint('[SOCKET] Emitting join with uid=$uid');
+        _socket?.emit('join', uid);
+      } else {
+        debugPrint('[SOCKET] ⚠️ uid is null — skipping join emit!');
+      }
       _completeWaiters();
+    });
+
+    _socket?.on('join_success', (data) {
+      debugPrint('[SOCKET] ✅ join_success received: $data');
     });
 
     _socket?.on('disconnect', (reason) {
       _isConnected = false;
+      debugPrint('[SOCKET] ❌ Disconnected, reason: $reason');
     });
 
     _socket?.on('connect_error', (error) {
       _isConnected = false;
+      debugPrint('[SOCKET] ❌ connect_error: $error');
+    });
+
+    _socket?.on('error', (error) {
+      debugPrint('[SOCKET] ❌ Server error event: $error');
+    });
+
+    _socket?.on('message_error', (data) {
+      debugPrint('[SOCKET] ❌ message_error: $data');
     });
 
     _socket?.on('reconnect', (_) {
       _isConnected = true;
+      debugPrint('[SOCKET] 🔄 Reconnected — re-emitting join uid=$uid');
+      if (uid != null) {
+        _socket?.emit('join', uid);
+      }
     });
 
     _socket?.on('reconnect_failed', (_) {
       _isConnected = false;
+      debugPrint('[SOCKET] ❌ Reconnect failed');
     });
   }
 

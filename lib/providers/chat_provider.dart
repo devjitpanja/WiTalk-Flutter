@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -191,8 +192,8 @@ class ChatMessage {
 
     DateTime parseDate(dynamic val) {
       if (val == null) return DateTime.now();
-      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
-      if (val is int) return DateTime.fromMillisecondsSinceEpoch(val);
+      if (val is String) return (DateTime.tryParse(val) ?? DateTime.now()).toLocal();
+      if (val is int) return DateTime.fromMillisecondsSinceEpoch(val).toLocal();
       return DateTime.now();
     }
 
@@ -546,14 +547,47 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     s.on('connect', (_) {
       state = state.copyWith(isConnected: true);
+      debugPrint('[CHAT NOTIFIER] connect event — currentUserId=$_currentUserId  activeConv=${state.activeConversationId}');
+      // Re-join the chat namespace (adds socket to user:${uid} and all
+      // conversation rooms) — required for message_sent routing.
+      if (_currentUserId != null) {
+        debugPrint('[CHAT NOTIFIER] Emitting join uid=$_currentUserId');
+        s.emit('join', _currentUserId);
+      } else {
+        debugPrint('[CHAT NOTIFIER] ⚠️ connect: _currentUserId is null — join NOT emitted!');
+      }
+      // Also re-join the active conversation room explicitly.
+      final activeConvId = state.activeConversationId;
+      if (activeConvId != null) {
+        debugPrint('[CHAT NOTIFIER] Re-joining conversation room: $activeConvId');
+        s.emit('join_conversation', activeConvId);
+      }
     });
 
     s.on('disconnect', (_) {
+      debugPrint('[CHAT NOTIFIER] disconnect event');
       state = state.copyWith(isConnected: false);
     });
 
     s.on('join_success', (data) {
-      // Trigger pending action sync when socket is ready
+      debugPrint('[CHAT NOTIFIER] ✅ join_success: $data');
+    });
+
+    s.on('message_error', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final tempId = d['temp_id']?.toString() ?? d['tempId']?.toString();
+      if (tempId != null) {
+        final convId = _messageOwnerMap[tempId];
+        if (convId != null) {
+          _patchMessage(convId, tempId, (m) => m.copyWith(status: 'failed'));
+        }
+      }
+      debugPrint('[Socket] message_error: $d');
+    });
+
+    s.on('error', (data) {
+      debugPrint('[Socket] error event: $data');
     });
 
     s.on('new_message', (data) => _handleNewMessage(data));
@@ -563,6 +597,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('message_read', (data) => _handleMessageRead(data));
     s.on('messages_read', (data) => _handleMessagesRead(data));
     s.on('reaction_updated', (data) => _handleReactionUpdated(data));
+    // Backend emits 'user_typing' with is_typing bool (not separate start/stop events)
+    s.on('user_typing', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final isTyping = d['is_typing'] == true;
+      _handleTyping(d, isTyping);
+    });
+    // Keep legacy event names for compatibility
     s.on('typing_start', (data) => _handleTyping(data, true));
     s.on('typing_stop', (data) => _handleTyping(data, false));
     s.on('user_online', (data) => _handlePresence(data, true));
@@ -603,14 +645,37 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void _handleMessageSent(dynamic data) {
+    debugPrint('[CHAT] ✅ message_sent received: $data');
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
-    final tempId = d['temp_id']?.toString() ?? d['tempId']?.toString();
-    final serverId = d['id']?.toString() ?? d['message_id']?.toString();
-    final convId = d['conversation_id']?.toString();
-    if (tempId == null || serverId == null || convId == null) return;
+    final tempId = d['temp_id']?.toString() ??
+        d['tempId']?.toString() ??
+        d['temp_message_id']?.toString();
+    final serverId = d['id']?.toString() ??
+        d['message_id']?.toString() ??
+        d['messageId']?.toString();
+    // conversation_id may be missing; fall back to owner map
+    final convId = d['conversation_id']?.toString() ??
+        d['conversationId']?.toString() ??
+        (tempId != null ? _messageOwnerMap[tempId] : null);
 
-    _swapTempMessage(convId, tempId, serverId, d);
+    debugPrint('[CHAT] message_sent — tempId=$tempId  serverId=$serverId  convId=$convId');
+
+    if (serverId == null) {
+      debugPrint('[CHAT] ⚠️ message_sent: serverId is null, ignoring');
+      return;
+    }
+    if (convId == null) {
+      debugPrint('[CHAT] ⚠️ message_sent: convId is null (tempId not in ownerMap?), ignoring');
+      return;
+    }
+
+    if (tempId != null) {
+      _swapTempMessage(convId, tempId, serverId, d);
+    } else {
+      // No temp_id — just ensure the confirmed message is in the list
+      _addMessage(convId, ChatMessage.fromJson({...d, 'status': 'sent'}));
+    }
   }
 
   void _handleMessageDeleted(dynamic data) {
@@ -784,10 +849,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
     final tempId = d['temp_id']?.toString() ?? d['tempId']?.toString();
-    final serverId = d['id']?.toString();
-    final groupId = d['group_id']?.toString();
-    if (tempId == null || serverId == null || groupId == null) return;
-    _swapTempMessage(groupId, tempId, serverId, d);
+    final serverId = d['id']?.toString() ?? d['message_id']?.toString();
+    final groupId = d['group_id']?.toString() ??
+        d['conversation_id']?.toString() ??
+        (tempId != null ? _messageOwnerMap[tempId] : null);
+    if (serverId == null || groupId == null) return;
+    if (tempId != null) {
+      _swapTempMessage(groupId, tempId, serverId, d);
+    } else {
+      _addMessage(groupId, ChatMessage.fromJson({...d, 'status': 'sent'}));
+    }
   }
 
   void _handleGroupMessageDeleted(dynamic data) => _handleMessageDeleted(data);
@@ -1080,7 +1151,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? replyToId,
     Map<String, dynamic>? replyTo,
   }) async {
-    if (_currentUserId == null) return;
+    final uid = _currentUserId ?? _ref.read(authProvider).uid;
+    if (uid == null) return;
+    if (_currentUserId == null) _currentUserId = uid;
 
     final tempId = 'temp_${DateTime.now().millisecondsSinceEpoch}_${conversationId.hashCode}';
     final now = DateTime.now();
@@ -1088,7 +1161,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final optimistic = ChatMessage(
       id: tempId,
       conversationId: conversationId,
-      senderId: _currentUserId!,
+      senderId: uid,
       receiverId: receiverId,
       content: content,
       messageType: messageType,
@@ -1108,10 +1181,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _updateConversationFromMessage(optimistic);
     _saveMessageToDb(optimistic);
 
-    if (_socket != null && _socket!.connected) {
+    if (_socket != null) {
+      debugPrint('[CHAT] sendMessage — socket.connected=${_socket!.connected}  tempId=$tempId  convId=$conversationId');
       _socket!.emit('send_message', {
         'conversation_id': conversationId,
-        'sender_id': _currentUserId,
+        'sender_id': uid,
         'receiver_id': receiverId,
         'content': content,
         'message_type': messageType,
@@ -1123,10 +1197,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
         'replyTo': replyTo,
         'temp_id': tempId,
       });
+      debugPrint('[CHAT] send_message emitted');
     } else {
+      debugPrint('[CHAT] ⚠️ sendMessage — socket is NULL, queuing offline action');
       await _db.chatDao.insertPendingAction('send_message', jsonEncode({
         'conversation_id': conversationId,
-        'sender_id': _currentUserId,
+        'sender_id': uid,
         'receiver_id': receiverId,
         'content': content,
         'message_type': messageType,
@@ -1147,7 +1223,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? replyToId,
     Map<String, dynamic>? replyTo,
   }) async {
-    if (_currentUserId == null) return;
+    final uid = _currentUserId ?? _ref.read(authProvider).uid;
+    if (uid == null) return;
+    if (_currentUserId == null) _currentUserId = uid;
 
     final prefs = await SharedPreferences.getInstance();
     final senderName = prefs.getString('name') ?? '';
@@ -1158,7 +1236,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final optimistic = ChatMessage(
       id: tempId,
       conversationId: groupId,
-      senderId: _currentUserId!,
+      senderId: uid,
       senderName: senderName,
       senderPic: senderPic,
       content: content,
@@ -1178,10 +1256,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _addMessage(groupId, optimistic);
     _updateGroupFromMessage(optimistic);
 
-    if (_socket != null && _socket!.connected) {
+    if (_socket != null) {
       _socket!.emit('send_group_message', {
         'group_id': groupId,
-        'sender_id': _currentUserId,
+        'sender_id': uid,
         'content': content,
         'message_type': messageType,
         'media_url': mediaUrl,
@@ -1249,10 +1327,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   // ── Delete message ──────────────────────────────────────────────────────────
   Future<void> deleteMessage(String messageId,
-      {String deleteType = 'for_me'}) async {
-    if (_socket == null || _currentUserId == null) return;
+      {String deleteType = 'for_me', String? conversationId}) async {
+    if (_currentUserId == null) return;
 
-    final convId = _messageOwnerMap[messageId];
+    // Look up owner map first; fall back to the passed-in conversationId
+    final convId = _messageOwnerMap[messageId] ?? conversationId;
     if (convId != null) {
       _patchMessage(convId, messageId, (m) => m.copyWith(isDeleted: true));
       _messageOwnerMap.remove(messageId);
@@ -1260,7 +1339,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     await _db.chatDao.softDeleteMessage(messageId);
 
-    if (_socket!.connected) {
+    if (_socket != null && _socket!.connected) {
       _socket!.emit('delete_message', {
         'message_id': messageId,
         'user_id': _currentUserId,
@@ -1342,6 +1421,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   // ── Join/leave conversation rooms ────────────────────────────────────────────
   void joinConversation(String conversationId) {
+    // Track the active conv so we can re-join after reconnect
+    state = state.copyWith(activeConversationId: conversationId);
     _socket?.emit('join_conversation', conversationId);
   }
 

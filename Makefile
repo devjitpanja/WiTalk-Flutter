@@ -1,4 +1,4 @@
-.PHONY: android16 android15 dev web mac phone clean build-apk build-aab
+.PHONY: android16 android15 dev both web mac phone clean build-apk build-aab
 
 # --- Launch Emulators (run one of these first, then run 'make dev') ---
 
@@ -13,6 +13,10 @@ android15:
 # Run on whatever device/emulator is available (prompts if multiple)
 dev:
 	flutter run
+
+# Run on both emulators simultaneously
+both:
+	flutter run -d emulator-5554 & flutter run -d emulator-5556 & wait
 
 # Run on physical wireless Android phone
 phone:

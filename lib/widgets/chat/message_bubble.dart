@@ -17,6 +17,7 @@ class MessageBubble extends StatelessWidget {
   final bool isMyMessage;
   final bool showAvatar; // for group chats
   final String? senderName; // for group chats
+  final String? currentUserId; // needed for reaction highlight
   final ChatMessage? replyToMessage;
   final VoidCallback? onLongPress;
   final void Function(ChatMessage)? onReplySwipe;
@@ -30,6 +31,7 @@ class MessageBubble extends StatelessWidget {
     required this.isMyMessage,
     this.showAvatar = false,
     this.senderName,
+    this.currentUserId,
     this.replyToMessage,
     this.onLongPress,
     this.onReplySwipe,
@@ -124,7 +126,7 @@ class MessageBubble extends StatelessWidget {
               child: _ReactionsRow(
                 reactions: message.reactions!,
                 isMyMessage: isMyMessage,
-                currentUserId: null,
+                currentUserId: currentUserId,
                 onTap: onReactionTap,
                 c: c,
               ),
@@ -602,22 +604,23 @@ class _TimeStatus extends StatelessWidget {
   }
 
   Widget _statusIcon(Color color) {
-    switch (message.status) {
-      case 'pending':
-        return Icon(Icons.access_time, size: 13, color: color);
-      case 'sent':
-        return Icon(Icons.done, size: 13, color: color);
-      case 'delivered':
-        return Icon(Icons.done_all, size: 13, color: color);
-      case 'read':
-        return Icon(Icons.done_all,
-            size: 13, color: Colors.blue.shade300);
-      case 'failed':
-        return Icon(Icons.error_outline,
-            size: 13, color: c.error);
-      default:
-        return Icon(Icons.done_all, size: 13, color: color);
+    // Matches RN ChatConversation.jsx tick logic exactly:
+    // failed → red error icon
+    // pending_sync / pending → grey clock
+    // is_read → done-all blue
+    // otherwise (sent/delivered) → done-all grey
+    if (message.status == 'failed') {
+      return Icon(Icons.error_outline, size: 14, color: c.error);
     }
+    if (message.syncStatus == 'pending_sync' || message.status == 'pending') {
+      return Icon(Icons.schedule, size: 14, color: color);
+    }
+    if (message.isRead || message.status == 'read') {
+      return Icon(Icons.done_all, size: 14,
+          color: isMyMessage ? const Color(0xFF90CAF9) : c.primary);
+    }
+    // sent or delivered — grey double tick
+    return Icon(Icons.done_all, size: 14, color: color);
   }
 
   static String _formatTime(DateTime dt) {

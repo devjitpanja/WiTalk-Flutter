@@ -535,7 +535,7 @@ class _ChatConversationScreenState
     if (text.isEmpty) return;
 
     final uid = _currentUserId;
-    final partner = _chatPartner;
+    final partner = _chatPartner ?? widget.otherUser;
     if (uid == null || partner == null) return;
 
     if (editing != null) {
@@ -751,8 +751,11 @@ class _ChatConversationScreenState
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              ref.read(chatProvider.notifier).deleteMessage(message.id,
-                  deleteType: forEveryone ? 'for_everyone' : 'for_me');
+              ref.read(chatProvider.notifier).deleteMessage(
+                    message.id,
+                    deleteType: forEveryone ? 'for_everyone' : 'for_me',
+                    conversationId: widget.chatId,
+                  );
             },
             child: Text('Delete',
                 style: TextStyle(
@@ -985,6 +988,7 @@ class _ChatConversationScreenState
                             key: ValueKey(msg.id),
                             message: msg,
                             isMyMessage: msg.senderId == uid,
+                            currentUserId: uid,
                             onLongPress: () =>
                                 _onMessageLongPress(msg),
                             onReplySwipe: (m) {
