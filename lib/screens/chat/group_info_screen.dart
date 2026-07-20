@@ -84,6 +84,14 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   String? _myUid;
   String _myRole = 'member'; // 'super_admin' | 'admin' | 'member'
 
+  // Group permissions (member-level toggles from server)
+  Map<String, dynamic> _groupPermissions = {
+    'edit_group_settings': 0,
+    'send_new_messages': 1,
+    'add_other_members': 0,
+    'approve_new_members': 1,
+  };
+
   // Notification pref
   _NotifPref _notifPref = _NotifPref.all;
 
@@ -116,15 +124,32 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Future<void> _load({bool showLoader = true}) async {
     if (showLoader) setState(() { _loading = true; _error = null; });
     try {
-      final detail = await chatApiService.getGroupDetail(widget.groupId);
+      // Must pass userId so the backend can return user_role for this caller
+      final detail = await chatApiService.getGroupDetail(widget.groupId, userId: _myUid);
       if (detail == null) throw Exception('Not found');
 
-      final membersList = (detail['members'] as List? ?? [])
-          .map((m) => Map<String, dynamic>.from(m as Map))
-          .toList();
+      // Normalize member role values to canonical RN strings
+      final membersList = (detail['members'] as List? ?? []).map((m) {
+        final member = Map<String, dynamic>.from(m as Map);
+        final r = member['role'] as String?;
+        if (r == 'owner') member['role'] = 'super_admin';
+        if (r == 'moderator') member['role'] = 'admin';
+        return member;
+      }).toList();
 
-      // Determine current user's role from the response directly
-      final role = detail['user_role'] as String? ?? 'member';
+      // Prefer user_role from the response (set when userId is passed).
+      // Fallback: search the members list for this user's role.
+      String role = detail['user_role'] as String? ?? '';
+      if (role.isEmpty) {
+        final me = membersList.firstWhere(
+          (m) => m['user_id']?.toString() == _myUid || m['id']?.toString() == _myUid,
+          orElse: () => {},
+        );
+        role = me['role'] as String? ?? 'member';
+      }
+      // Normalize role variants to the canonical RN values
+      if (role == 'owner') role = 'super_admin';
+      if (role == 'moderator') role = 'admin';
 
       // Fetch notification preference
       _NotifPref notif = _NotifPref.all;
@@ -133,6 +158,15 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           _myUid!, widget.groupId);
         final pref = (muteStatus?['data'] as Map?)?['notificationPreference'] as String?;
         notif = _notifPrefFrom(pref);
+      } catch (_) {}
+
+      // Fetch group permissions (needed to check member-level edit/add perms)
+      Map<String, dynamic> fetchedPerms = _groupPermissions;
+      try {
+        final permData = await chatApiService.getGroupPermissions(widget.groupId, userId: _myUid);
+        if (permData != null && permData['permissions'] is Map) {
+          fetchedPerms = Map<String, dynamic>.from(permData['permissions'] as Map);
+        }
       } catch (_) {}
 
       // Fetch group rules
@@ -147,6 +181,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           _group = detail;
           _members = membersList;
           _myRole = role;
+          _groupPermissions = fetchedPerms;
           _notifPref = notif;
           _groupRules = rules;
           _disappearTimer = detail['disappearing_messages_timer'] as int?;
@@ -160,12 +195,28 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     }
   }
 
-  bool get _canEdit => _myRole == 'super_admin' || _myRole == 'admin' || _myRole == 'owner';
+  // super_admin | admin — controls the full admin section (permissions, banned, tools, etc.)
+  bool get _isAdminLevel => _myRole == 'super_admin' || _myRole == 'admin';
+
+  // Mirrors RN canEditGroup(): admins always, members only when edit_group_settings=1
+  bool get _canEditGroup =>
+      _isAdminLevel ||
+      (_groupPermissions['edit_group_settings'] == 1 ||
+          _groupPermissions['edit_group_settings'] == true);
+
+  // Mirrors RN canManageMembers(): admins always, members only when add_other_members=1
+  bool get _canManageMembers =>
+      _isAdminLevel ||
+      (_groupPermissions['add_other_members'] == 1 ||
+          _groupPermissions['add_other_members'] == true);
+
   bool get _isOwner => _myRole == 'super_admin';
+
   bool get _isPublic =>
       _group?['entity_type'] == 'community' ||
       _group?['group_type'] == 'public' ||
       _group?['is_public'] == true;
+
   String get _label => _isPublic ? 'Community' : 'Group';
 
   bool _canPromoteDemote() {
@@ -698,9 +749,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 },
               ),
 
-            // Mute / Unmute
+            // Mute / Unmute — super_admin can act on anyone; admin only on members (not other admins)
             if (_myRole == 'super_admin' ||
-                (_myRole == 'admin' && (isMember || isMuted)))
+                (_myRole == 'admin' && isMember))
               _SheetTile(
                 icon: isMuted ? Icons.volume_up_outlined : Icons.volume_off_outlined,
                 label: isMuted ? 'Unmute Member' : 'Mute Member',
@@ -715,29 +766,30 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                 },
               ),
 
-            // Remove
-            _SheetTile(
-              icon: Icons.person_remove_outlined,
-              label: 'Remove from $_label',
-              c: c,
-              color: const Color(0xFFEF4444),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _confirmRemoveMember(member, memberId);
-              },
-            ),
+            // Remove & Ban — only admins/owner
+            if (_isAdminLevel) ...[
+              _SheetTile(
+                icon: Icons.person_remove_outlined,
+                label: 'Remove from $_label',
+                c: c,
+                color: const Color(0xFFEF4444),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _confirmRemoveMember(member, memberId);
+                },
+              ),
 
-            // Ban
-            _SheetTile(
-              icon: Icons.block,
-              label: 'Ban User',
-              c: c,
-              color: const Color(0xFFEF4444),
-              onTap: () async {
-                Navigator.pop(ctx);
-                await _showBanDialog(member, memberId);
-              },
-            ),
+              _SheetTile(
+                icon: Icons.block,
+                label: 'Ban User',
+                c: c,
+                color: const Color(0xFFEF4444),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  await _showBanDialog(member, memberId);
+                },
+              ),
+            ],
 
             const SizedBox(height: 8),
           ],
@@ -1398,18 +1450,18 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             child: Column(
               children: [
                 GestureDetector(
-                  onTap: _canEdit ? _showPhotoOptions : null,
+                  onTap: _canEditGroup ? _showPhotoOptions : null,
                   child: Stack(
                     children: [
                       CircleAvatar(
                         radius: 60,
-                        backgroundColor: _canEdit ? c.primary : c.border,
+                        backgroundColor: _canEditGroup ? c.primary : c.border,
                         backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
                         child: pic == null
                             ? Icon(Icons.group, size: 48, color: Colors.white)
                             : null,
                       ),
-                      if (_canEdit)
+                      if (_canEditGroup)
                         Positioned(
                           bottom: 0,
                           right: 0,
@@ -1467,7 +1519,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Row(
               children: [
-                if (_canEdit)
+                // Edit button — admins always, members only if edit_group_settings=1
+                if (_canEditGroup)
                   Expanded(
                     child: _ActionBtn(
                       icon: Icons.edit_outlined,
@@ -1478,7 +1531,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                       onTap: _showEditSheet,
                     ),
                   ),
-                if (_canEdit) const SizedBox(width: 12),
+                if (_canEditGroup) const SizedBox(width: 12),
+                // Notification button — always visible to all members
                 Expanded(
                   child: _ActionBtn(
                     icon: _notifPref.icon,
@@ -1489,7 +1543,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                     onTap: _showNotifSheet,
                   ),
                 ),
-                if (_canEdit) ...[
+                // Add Members — admins always, members only if add_other_members=1
+                if (_canManageMembers) ...[
                   const SizedBox(width: 12),
                   Expanded(
                     child: _ActionBtn(
@@ -1509,8 +1564,9 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
             ),
           ),
 
-          // ── Admin section: permissions, banned users, action log, tools, topics, disappearing ──
-          if (_canEdit) ...[
+          // ── Admin section: permissions, banned, action log, tools, topics, disappearing ──
+          // Only shown to super_admin and admin — never to regular members
+          if (_isAdminLevel) ...[
             Container(
               color: c.surface,
               margin: const EdgeInsets.only(top: 12),
@@ -1632,7 +1688,8 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           ],
 
           // ── Group rules ──────────────────────────────────────────────────
-          if (_groupRules != null || _canEdit)
+          // Rules section — visible to all members if rules exist; edit button only for canEditGroup
+          if (_groupRules != null || _canEditGroup)
             Container(
               color: c.surface,
               margin: const EdgeInsets.only(top: 12),
@@ -1648,7 +1705,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                         style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontWeight: FontWeight.w600,
                             fontSize: 14, letterSpacing: 0.5),
                       ),
-                      if (_canEdit)
+                      if (_canEditGroup)
                         GestureDetector(
                           onTap: _showRulesSheet,
                           child: Container(
@@ -1687,7 +1744,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
                         ],
                       ),
                     )
-                  else if (_canEdit)
+                  else if (_canEditGroup)
                     GestureDetector(
                       onTap: _showRulesSheet,
                       child: Container(

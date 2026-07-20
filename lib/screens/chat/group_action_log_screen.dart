@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/theme_colors.dart';
+import '../../providers/auth_provider.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
 
@@ -12,7 +13,8 @@ class GroupActionLogScreen extends ConsumerStatefulWidget {
   const GroupActionLogScreen({super.key, required this.groupId, this.groupName});
 
   @override
-  ConsumerState<GroupActionLogScreen> createState() => _GroupActionLogScreenState();
+  ConsumerState<GroupActionLogScreen> createState() =>
+      _GroupActionLogScreenState();
 }
 
 class _GroupActionLogScreenState extends ConsumerState<GroupActionLogScreen> {
@@ -55,9 +57,14 @@ class _GroupActionLogScreenState extends ConsumerState<GroupActionLogScreen> {
 
     try {
       final currentOffset = reset ? 0 : _offset;
+      final myUid = ref.read(authProvider).uid;
       final res = await dioClient.get(
         AppEndpoints.groupActionLog(widget.groupId),
-        queryParameters: {'limit': _pageSize, 'offset': currentOffset},
+        queryParameters: {
+          'user_id': myUid,
+          'limit': _pageSize,
+          'offset': currentOffset,
+        },
       );
 
       final rawData = res.data['data'];

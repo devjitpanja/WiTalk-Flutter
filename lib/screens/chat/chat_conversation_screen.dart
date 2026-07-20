@@ -195,9 +195,19 @@ class _ChatConversationScreenState
       await _loadConversationDetail();
     } else {
       _chatPartner = widget.otherUser;
+      // Initialize request state from route params (passed by MessageRequestsScreen)
+      if (widget.conversationStatus == 'request_pending' && widget.initiatorId != null) {
+        setState(() {
+          _isIncomingRequest = widget.initiatorId != uid;
+          _isOutgoingRequest = widget.initiatorId == uid;
+        });
+      }
     }
 
-    ref.read(chatProvider.notifier).markAsRead(widget.chatId);
+    // Don't mark as read if this is an incoming request (must accept first)
+    if (!_isIncomingRequest) {
+      ref.read(chatProvider.notifier).markAsRead(widget.chatId);
+    }
 
     final otherUserId =
         (_chatPartner?['id'] ?? widget.otherUser?['id'])?.toString();
@@ -627,19 +637,35 @@ class _ChatConversationScreenState
   }
 
   void _acceptRequest() async {
+    final uid = _currentUserId;
+    if (uid == null) return;
     try {
-      await chatApiService.acceptConversation(widget.chatId);
-      if (mounted) setState(() {
-        _isIncomingRequest = false;
-        _isOutgoingRequest = false;
-      });
+      await chatApiService.acceptConversation(widget.chatId, uid);
+      if (mounted) {
+        // Update provider so MessageRequestsScreen list reflects the change
+        ref.read(chatProvider.notifier).acceptConversation(widget.chatId);
+        setState(() {
+          _isIncomingRequest = false;
+          _isOutgoingRequest = false;
+        });
+        ref.read(chatProvider.notifier).markAsRead(widget.chatId);
+      }
     } catch (_) {}
   }
 
   void _deleteRequest() async {
+    final uid = _currentUserId;
+    if (uid == null) return;
     try {
-      await chatApiService.deleteConversation(widget.chatId);
-      if (mounted) context.pop();
+      await chatApiService.deleteConversation(
+        widget.chatId,
+        deleteType: 'for_everyone',
+      );
+      if (mounted) {
+        // Remove from provider so list updates immediately
+        ref.read(chatProvider.notifier).removeConversation(widget.chatId);
+        context.pop();
+      }
     } catch (_) {}
   }
 
@@ -647,14 +673,87 @@ class _ChatConversationScreenState
     final uid = _currentUserId;
     final partner = _chatPartner;
     if (uid == null || partner == null) return;
+    final partnerId = partner['id']?.toString() ?? '';
+    if (partnerId.isEmpty) return;
+
+    if (_isIncomingRequest) {
+      // From request context: show Block / Block+Delete dialog (matches RN blockRequestDialog)
+      final c = context.colors;
+      showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: c.surface,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          title: Text('Block ${partner['name'] ?? 'this user'}?',
+              style: TextStyle(
+                  color: c.text,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600)),
+          content: Text(
+              'They will not be able to message you.',
+              style: TextStyle(
+                  color: c.textSecondary,
+                  fontFamily: 'Outfit',
+                  height: 1.4)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Cancel',
+                  style: TextStyle(
+                      color: c.textSecondary, fontFamily: 'Outfit')),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await dioClient.post(AppEndpoints.blockUser,
+                      data: {'blocker_id': uid, 'blocked_id': partnerId});
+                  if (mounted) setState(() => _isBlocked = true);
+                } catch (_) {}
+              },
+              child: Text('Block only',
+                  style: TextStyle(
+                      color: c.error,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600)),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await dioClient.post(AppEndpoints.blockUser,
+                      data: {'blocker_id': uid, 'blocked_id': partnerId});
+                  await chatApiService.deleteConversation(
+                    widget.chatId,
+                    deleteType: 'for_everyone',
+                  );
+                  if (mounted) {
+                    ref.read(chatProvider.notifier).removeConversation(widget.chatId);
+                    context.pop();
+                  }
+                } catch (_) {}
+              },
+              child: Text('Block & Delete',
+                  style: TextStyle(
+                      color: c.error,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     try {
       if (_isBlocked) {
         await dioClient.post(AppEndpoints.unblockUser,
-            data: {'userId': uid, 'blockedUserId': partner['id']});
+            data: {'blocker_id': uid, 'blocked_id': partnerId});
         if (mounted) setState(() => _isBlocked = false);
       } else {
         await dioClient.post(AppEndpoints.blockUser,
-            data: {'userId': uid, 'blockedUserId': partner['id']});
+            data: {'blocker_id': uid, 'blocked_id': partnerId});
         if (mounted) setState(() => _isBlocked = true);
       }
     } catch (_) {}
@@ -955,7 +1054,14 @@ class _ChatConversationScreenState
                     child:
                         CircularProgressIndicator(color: c.primary))
                 : _listItems.isEmpty
-                    ? _EmptyConversation(c: c)
+                    ? (_isOutgoingRequest
+                        ? _OutgoingRequestEmptyState(
+                            c: c,
+                            isDarkMode: isDarkMode,
+                            partnerName: (_chatPartner?['name'] ?? _chatPartner?['username'] ?? widget.otherUser?['name'] ?? 'User') as String,
+                            partnerPic: (_chatPartner?['profile_pic'] ?? widget.otherUser?['profile_pic']) as String?,
+                          )
+                        : _EmptyConversation(c: c))
                     : ListView.builder(
                         controller: _scrollCtrl,
                         padding: const EdgeInsets.symmetric(
@@ -1007,6 +1113,19 @@ class _ChatConversationScreenState
                           );
                         },
                       ),
+
+            // Outgoing request dots progress row
+            if (_isOutgoingRequest)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 8,
+                child: _OutgoingDotsRow(
+                  c: c,
+                  isDarkMode: isDarkMode,
+                  sentCount: _sentMessageCount,
+                ),
+              ),
 
             // Typing indicator (3-dot bounce)
             if (isTyping)
@@ -1405,5 +1524,158 @@ class _EmptyConversation extends StatelessWidget {
                 fontFamily: 'Outfit')),
       ]),
     );
+  }
+}
+
+// ── Outgoing request empty state (profile card) ───────────────────────────────
+class _OutgoingRequestEmptyState extends StatelessWidget {
+  final ThemeColors c;
+  final bool isDarkMode;
+  final String partnerName;
+  final String? partnerPic;
+
+  const _OutgoingRequestEmptyState({
+    required this.c,
+    required this.isDarkMode,
+    required this.partnerName,
+    this.partnerPic,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final firstName = partnerName.split(' ').first;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 320),
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+          decoration: BoxDecoration(
+            color: isDarkMode ? const Color(0xFF1C1C1E) : Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: isDarkMode
+                  ? Colors.white.withValues(alpha: 0.10)
+                  : Colors.black.withValues(alpha: 0.08),
+            ),
+          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            CircleAvatar(
+              radius: 55,
+              backgroundColor: c.border,
+              backgroundImage: partnerPic != null && partnerPic!.isNotEmpty
+                  ? CachedNetworkImageProvider(partnerPic!)
+                  : null,
+              child: (partnerPic == null || partnerPic!.isEmpty)
+                  ? Text(
+                      partnerName.isNotEmpty ? partnerName[0].toUpperCase() : '?',
+                      style: TextStyle(
+                          color: c.text,
+                          fontSize: 32,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              partnerName,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 22,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700,
+                  color: c.text),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Send the first message, it might\nstart the conversation',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 15,
+                  fontFamily: 'Outfit',
+                  color: c.textSecondary,
+                  height: 1.5),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: isDarkMode
+                    ? Colors.white.withValues(alpha: 0.06)
+                    : Colors.black.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.info_outline, size: 20, color: c.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontFamily: 'Outfit',
+                          color: c.text,
+                          height: 1.5),
+                      children: [
+                        const TextSpan(text: 'You can send up to '),
+                        TextSpan(
+                            text: '2 messages',
+                            style: const TextStyle(fontWeight: FontWeight.w700)),
+                        TextSpan(
+                            text:
+                                '\nbefore $firstName accepts. After\nthat, wait for a reply to continue.'),
+                      ],
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Outgoing request dots progress row ───────────────────────────────────────
+class _OutgoingDotsRow extends StatelessWidget {
+  final ThemeColors c;
+  final bool isDarkMode;
+  final int sentCount;
+
+  const _OutgoingDotsRow({
+    required this.c,
+    required this.isDarkMode,
+    required this.sentCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+      for (int i = 0; i < 2; i++) ...[
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: i < sentCount
+                ? c.primary
+                : (isDarkMode
+                    ? Colors.white.withValues(alpha: 0.25)
+                    : Colors.black.withValues(alpha: 0.18)),
+          ),
+        ),
+        const SizedBox(width: 6),
+      ],
+      Text(
+        '$sentCount of 2 messages',
+        style: TextStyle(
+            fontSize: 13,
+            fontFamily: 'Outfit',
+            color: c.textSecondary),
+      ),
+    ]);
   }
 }

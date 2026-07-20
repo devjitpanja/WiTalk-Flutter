@@ -1245,6 +1245,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(mutedGroups: muted);
   }
 
+  void acceptConversation(String conversationId) {
+    final idx = state.conversations.indexWhere((c) => c.id == conversationId);
+    if (idx == -1) return;
+    final updated = List<ChatConversation>.from(state.conversations);
+    updated[idx] = updated[idx].copyWith(status: 'active', initiatorId: '');
+    state = state.copyWith(conversations: updated);
+  }
+
+  void removeConversation(String conversationId) {
+    final updated = state.conversations
+        .where((c) => c.id != conversationId)
+        .toList();
+    state = state.copyWith(conversations: updated);
+  }
+
   // ── Send message ────────────────────────────────────────────────────────────
   Future<void> sendMessage({
     required String conversationId,

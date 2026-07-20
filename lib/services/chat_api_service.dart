@@ -31,8 +31,11 @@ class ChatApiService {
     return res.data as Map<String, dynamic>;
   }
 
-  Future<void> acceptConversation(String conversationId) async {
-    await dioClient.post(AppEndpoints.acceptConversation(conversationId));
+  Future<void> acceptConversation(String conversationId, String userId) async {
+    await dioClient.put(
+      AppEndpoints.acceptConversation(conversationId),
+      data: {'userId': userId},
+    );
   }
 
   Future<void> deleteConversation(String conversationId,

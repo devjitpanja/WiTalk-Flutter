@@ -727,39 +727,48 @@ class _RequestActions extends StatelessWidget {
               color: c.textSecondary),
         ),
         const SizedBox(height: 12),
-        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-          TextButton(
-            onPressed: onBlock,
-            child: Text(isBlocked ? 'Unblock' : 'Block',
-                style: TextStyle(
-                    color: c.error,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w500)),
+        Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                onPressed: onBlock,
+                child: Text(isBlocked ? 'Unblock' : 'Block',
+                    style: TextStyle(
+                        color: c.error,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w500)),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                onPressed: onDelete,
+                child: Text('Delete',
+                    style: TextStyle(
+                        color: c.error,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w500)),
+              ),
+              const SizedBox(width: 8),
+              TextButton(
+                style: TextButton.styleFrom(
+                  backgroundColor:
+                      const Color(0xFFE5E5EA),
+                  foregroundColor: const Color(0xFF000000),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 20, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: onAccept,
+                child: const Text('Accept',
+                    style: TextStyle(
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF000000))),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          TextButton(
-            onPressed: onDelete,
-            child: Text('Delete',
-                style: TextStyle(
-                    color: c.textSecondary,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w500)),
-          ),
-          const SizedBox(width: 8),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: c.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-            ),
-            onPressed: onAccept,
-            child: const Text('Accept',
-                style: TextStyle(
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600)),
-          ),
-        ]),
+        ),
       ]),
     );
   }
