@@ -9,6 +9,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
+import '../../services/post_view_tracking_service.dart';
+import '../../services/post_feedback_service.dart';
 import 'verification_badge.dart';
 
 // ─── Content parsing ────────────────────────────────────────────────────────
@@ -198,6 +200,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     _singleTapTimer?.cancel();
     _viewTimer?.cancel();
     _disposeVideo();
+    if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
+      postViewTrackingService.stopAndSend(_postId, widget.currentUserId!);
+      postFeedbackService.endViewTracking(widget.currentUserId!, _postId);
+    }
     super.dispose();
   }
 
@@ -260,6 +266,14 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   // ── View tracking ──────────────────────────────────────────────────────────
   void _startViewTimer() {
+    if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
+      postViewTrackingService.startTracking(
+        postId: _postId,
+        userId: widget.currentUserId!,
+        screenType: 'feed',
+      );
+      postFeedbackService.startViewTracking(_postId);
+    }
     _viewTimer = Timer(const Duration(seconds: 3), () {
       if (!_viewTracked && mounted) {
         _viewTracked = true;
@@ -269,9 +283,9 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   }
 
   Future<void> _trackView() async {
-    try {
-      await dioClient.post('/v1/engagement/track-view', data: {'postId': _postId});
-    } catch (_) {}
+    if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
+      postViewTrackingService.stopAndSend(_postId, widget.currentUserId!);
+    }
   }
 
   // ── Like ───────────────────────────────────────────────────────────────────
@@ -291,6 +305,9 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           : (res.statusCode == 200) ? false
           : newLiked;
       if (mounted) setState(() => _isLiked = finalLiked);
+      if (finalLiked && widget.currentUserId != null && widget.currentUserId!.isNotEmpty) {
+        postFeedbackService.sendLikeFeedback(userId: widget.currentUserId!, postId: _postId);
+      }
       widget.onLikeUpdate?.call(_postId, finalLiked, newCount);
     } catch (_) {
       if (mounted) setState(() { _isLiked = prev; _likes = prevCount; });

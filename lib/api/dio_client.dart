@@ -1,7 +1,23 @@
 import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../config/app_config.dart';
+
+String? _cachedBuildNumber;
+
+Future<String> _getAppBuildNumber() async {
+  if (_cachedBuildNumber != null && _cachedBuildNumber!.isNotEmpty) {
+    return _cachedBuildNumber!;
+  }
+  try {
+    final info = await PackageInfo.fromPlatform();
+    _cachedBuildNumber = info.buildNumber.isNotEmpty ? info.buildNumber : '62';
+  } catch (_) {
+    _cachedBuildNumber = '62';
+  }
+  return _cachedBuildNumber!;
+}
 
 String _uuid() {
   final r = Random.secure();
@@ -29,11 +45,15 @@ class DioClient {
       baseUrl: AppConfig.apiBaseUrl,
       connectTimeout: const Duration(seconds: 15),
       receiveTimeout: const Duration(seconds: 30),
-      headers: {'Content-Type': 'application/json'},
+      headers: {
+        'Content-Type': 'application/json',
+      },
     ));
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        final version = await _getAppBuildNumber();
+        options.headers['x-app-version'] = version;
         final skipAuth = ['/v1/auth/refresh', '/v1/auth/generate-tokens', '/v1/user/create'];
         if (!skipAuth.any((p) => options.path.startsWith(p))) {
           final token = await _storage.read(key: 'accessToken');

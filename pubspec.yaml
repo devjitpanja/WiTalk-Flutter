@@ -2,7 +2,7 @@ name: witalk
 description: "WiTalk - Connect. Talk. Belong."
 publish_to: 'none'
 
-version: 1.0.0+200
+version: 1.0.0+62
 
 environment:
   sdk: ^3.12.2

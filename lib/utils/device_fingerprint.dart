@@ -1,9 +1,11 @@
 import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'logger.dart';
 
 final _deviceInfoPlugin = DeviceInfoPlugin();
+const _referrerChannel = MethodChannel('com.witalk/install_referrer');
 
 Future<Map<String, dynamic>> getDeviceInfo() async {
   try {
@@ -41,26 +43,27 @@ Future<Map<String, dynamic>> getDeviceInfo() async {
   }
 }
 
-/// On Android, the install referrer is read via a platform channel bridge.
-/// On iOS this is not available — returns null.
-///
-/// To implement the Android side, wire up a MethodChannel in MainActivity.kt
-/// that calls the Play Install Referrer library.
+/// Returns Google Play Install Referrer data (Android only).
+/// On iOS returns an empty payload — referral codes come via deep link instead.
 Future<Map<String, dynamic>?> getInstallReferrer() async {
-  if (!Platform.isAndroid) {
-    AppLogger.log('Install Referrer API only available on Android');
+  try {
+    final result = await _referrerChannel.invokeMapMethod<String, dynamic>(
+      'getInstallReferrerInfo',
+    );
+    return result != null ? Map<String, dynamic>.from(result) : null;
+  } on PlatformException catch (e) {
+    AppLogger.warn('Install Referrer not available: ${e.code}');
+    return {
+      'installReferrer': '',
+      'referrerClickTimestampSeconds': 0.0,
+      'installBeginTimestampSeconds': 0.0,
+      'installVersion': '',
+      'googlePlayInstant': false,
+    };
+  } catch (e) {
+    AppLogger.error('Error getting install referrer', e);
     return null;
   }
-  // Native bridge not yet implemented — return empty referrer.
-  // Wire up MethodChannel('com.witalk/install_referrer') in MainActivity.kt
-  // to call InstallReferrerClient when the bridge is ready.
-  return {
-    'installReferrer': '',
-    'referrerClickTimestamp': 0,
-    'installBeginTimestamp': 0,
-    'installVersion': '',
-    'googlePlayInstant': false,
-  };
 }
 
 Future<Map<String, dynamic>> getDeviceFingerprint() async {
@@ -75,8 +78,8 @@ Future<Map<String, dynamic>> getDeviceFingerprint() async {
       'osVersion': deviceInfo['osVersion'],
       'appVersion': deviceInfo['appVersion'],
       'installReferrer': installReferrer?['installReferrer'] ?? '',
-      'referrerClickTimestamp': installReferrer?['referrerClickTimestamp'] ?? 0,
-      'installBeginTimestamp': installReferrer?['installBeginTimestamp'] ?? 0,
+      'referrerClickTimestampSeconds': installReferrer?['referrerClickTimestampSeconds'] ?? 0.0,
+      'installBeginTimestampSeconds': installReferrer?['installBeginTimestampSeconds'] ?? 0.0,
       'installVersion': installReferrer?['installVersion'] ?? deviceInfo['appVersion'],
       'googlePlayInstant': installReferrer?['googlePlayInstant'] ?? false,
     };

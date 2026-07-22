@@ -3,64 +3,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../theme/theme_colors.dart';
-import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/feed_provider.dart';
+import '../../services/post_view_tracking_service.dart';
+import '../../services/post_feedback_service.dart';
 import '../../widgets/common/post_card.dart';
 import '../../widgets/common/witalk_header.dart';
-
-const _homeFeedQuery = r'''
-  query GetHomeFeed($userId: ID!, $page: Int!, $limit: Int!) {
-    homeFeed(
-      userId: $userId
-      pagination: { page: $page, limit: $limit }
-      filter: {}
-    ) {
-      posts {
-        id
-        user_id
-        content
-        media { type url width height thumbnail duration aspectRatio }
-        media_type
-        stats { likes comments shares views }
-        interactions { isLiked isFollowing isSaved }
-        user { id name username profile_pic is_verified verification_badge { id name icon_url color } }
-        suffix
-        created_on
-        updated_on
-        status
-      }
-      pageInfo { currentPage totalPages hasNextPage totalCount }
-    }
-  }
-''';
-
-final _feedProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final uid = ref.watch(authProvider).uid ?? '';
-  if (uid.isEmpty) return [];
-  final res = await dioClient.post(
-    '/graphql',
-    data: {
-      'query': _homeFeedQuery,
-      'variables': {'userId': uid, 'page': 1, 'limit': 20},
-    },
-  );
-  if (res.data['errors'] != null) throw Exception(res.data['errors'].toString());
-  final posts = (res.data['data']['homeFeed']['posts'] ?? []) as List;
-  return posts.map<Map<String, dynamic>>((p) {
-    final stats = (p['stats'] as Map<String, dynamic>?) ?? {};
-    final interactions = (p['interactions'] as Map<String, dynamic>?) ?? {};
-    return {
-      ...Map<String, dynamic>.from(p as Map),
-      'likes': stats['likes'] ?? 0,
-      'comments': stats['comments'] ?? 0,
-      'shares': stats['shares'] ?? 0,
-      'views': stats['views'] ?? 0,
-      'isLiked': interactions['isLiked'] == true,
-      'isSaved': interactions['isSaved'] == true,
-      'isFollowing': interactions['isFollowing'] == true,
-    };
-  }).toList();
-});
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -73,8 +21,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _scrollCtrl = ScrollController();
   bool _headerVisible = true;
   double _lastScrollY = 0;
-
-  List<Map<String, dynamic>>? _posts;
 
   @override
   void initState() {
@@ -92,30 +38,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final y = _scrollCtrl.offset;
     final diff = y - _lastScrollY;
     _lastScrollY = y;
+
+    // Toggle header visibility on scroll
     if (diff > 5 && _headerVisible) setState(() => _headerVisible = false);
     if (diff < -5 && !_headerVisible) setState(() => _headerVisible = true);
+
+    // Infinite scroll pagination threshold (400px before end)
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 400) {
+      ref.read(feedNotifierProvider.notifier).loadMore();
+    }
   }
 
   void _onLikeUpdate(String postId, bool isLiked, int count) {
-    if (_posts == null) return;
-    final idx = _posts!.indexWhere((p) => p['id'].toString() == postId);
-    if (idx == -1) return;
-    setState(() {
-      _posts![idx] = {..._posts![idx], 'isLiked': isLiked, 'likes': count};
-    });
+    ref.read(feedNotifierProvider.notifier).updateLike(postId, isLiked, count);
   }
 
   void _onCommentUpdate(String postId, int count) {
-    if (_posts == null) return;
-    final idx = _posts!.indexWhere((p) => p['id'].toString() == postId);
-    if (idx == -1) return;
-    setState(() {
-      _posts![idx] = {..._posts![idx], 'comments': count};
-    });
+    ref.read(feedNotifierProvider.notifier).updateComments(postId, count);
   }
 
   void _onShowMoreMenu(String postId, String userId, Map<String, dynamic> extra) {
     final c = context.colors;
+    final currentUserId = ref.read(authProvider).uid ?? '';
+
     showModalBottomSheet(
       context: context,
       backgroundColor: c.surface,
@@ -127,17 +72,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ListTile(
           leading: Icon(Icons.bookmark_border, color: c.text),
           title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () { Navigator.pop(context); },
+          onTap: () {
+            Navigator.pop(context);
+            if (currentUserId.isNotEmpty) {
+              postFeedbackService.sendSaveFeedback(userId: currentUserId, postId: postId);
+            }
+          },
+        ),
+        ListTile(
+          leading: Icon(Icons.remove_circle_outline, color: c.text),
+          title: Text('Not interested', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+          onTap: () {
+            Navigator.pop(context);
+            if (currentUserId.isNotEmpty) {
+              postFeedbackService.sendNotInterestedFeedback(userId: currentUserId, postId: postId);
+            }
+          },
+        ),
+        ListTile(
+          leading: Icon(Icons.visibility_off_outlined, color: c.text),
+          title: Text('Hide post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+          onTap: () {
+            Navigator.pop(context);
+            if (currentUserId.isNotEmpty) {
+              postFeedbackService.sendHidePostFeedback(userId: currentUserId, postId: postId);
+            }
+          },
         ),
         ListTile(
           leading: Icon(Icons.flag_outlined, color: c.text),
           title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () { Navigator.pop(context); context.push('/report/post/$postId'); },
+          onTap: () {
+            Navigator.pop(context);
+            context.push('/report/post/$postId');
+          },
         ),
         ListTile(
           leading: Icon(Icons.block, color: c.text),
           title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () { Navigator.pop(context); },
+          onTap: () {
+            Navigator.pop(context);
+          },
         ),
         const SizedBox(height: 16),
       ]),
@@ -147,16 +122,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final feedAsync = ref.watch(_feedProvider);
+    final feedState = ref.watch(feedNotifierProvider);
     final currentUserId = ref.watch(authProvider).uid;
-
-    feedAsync.whenData((posts) {
-      if (_posts == null) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) setState(() => _posts = List.from(posts));
-        });
-      }
-    });
 
     return Scaffold(
       backgroundColor: c.background,
@@ -168,92 +135,132 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: _buildHeader(),
           ),
           Expanded(
-            child: feedAsync.when(
-              loading: () => _buildSkeleton(c),
-              error: (e, _) => _buildError(e, c),
-              data: (_) {
-                final posts = _posts;
-                if (posts == null) return _buildSkeleton(c);
-                return RefreshIndicator(
-                  color: c.primaryButton,
-                  backgroundColor: c.surface,
-                  onRefresh: () async {
-                    setState(() => _posts = null);
-                    await ref.refresh(_feedProvider.future);  // ignore: unused_result
-                  },
-                  child: posts.isEmpty
-                      ? _buildEmpty(c)
-                      : ListView.builder(
-                          controller: _scrollCtrl,
-                          itemCount: posts.length,
-                          itemBuilder: (_, i) => PostCard(
-                            post: posts[i],
-                            currentUserId: currentUserId,
-                            onLikeUpdate: _onLikeUpdate,
-                            onCommentUpdate: _onCommentUpdate,
-                            onShowMoreMenu: _onShowMoreMenu,
-                          ),
-                        ),
-                );
-              },
-            ),
+            child: _buildBody(feedState, currentUserId, c),
           ),
         ]),
       ),
     );
   }
 
+  Widget _buildBody(FeedState state, String? currentUserId, ThemeColors c) {
+    if (state.isLoading && state.posts.isEmpty) {
+      return _buildSkeleton(c);
+    }
+
+    if (state.error != null && state.posts.isEmpty) {
+      return _buildError(state.error!, c);
+    }
+
+    if (state.posts.isEmpty) {
+      return _buildEmpty(c);
+    }
+
+    return RefreshIndicator(
+      color: c.primaryButton,
+      backgroundColor: c.surface,
+      onRefresh: () async {
+        await ref.read(feedNotifierProvider.notifier).refresh();
+      },
+      child: ListView.builder(
+        controller: _scrollCtrl,
+        itemCount: state.posts.length + (state.isFetchingMore ? 1 : 0),
+        itemBuilder: (_, i) {
+          if (i == state.posts.length) {
+            return Container(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              alignment: Alignment.center,
+              child: SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2, color: c.primaryButton),
+              ),
+            );
+          }
+
+          final post = state.posts[i];
+          final postId = post['id'].toString();
+
+          // Start tracking view duration & metrics
+          if (currentUserId != null && currentUserId.isNotEmpty) {
+            postViewTrackingService.startTracking(
+              postId: postId,
+              userId: currentUserId,
+              screenType: 'feed',
+            );
+            postFeedbackService.startViewTracking(postId);
+          }
+
+          return PostCard(
+            post: post,
+            currentUserId: currentUserId,
+            onLikeUpdate: _onLikeUpdate,
+            onCommentUpdate: _onCommentUpdate,
+            onShowMoreMenu: _onShowMoreMenu,
+          );
+        },
+      ),
+    );
+  }
+
   Widget _buildHeader() => const WiTalkHeader(
-    title: 'WiTalk',
-    showBorder: true,
-    showNotifications: true,
-  );
+        title: 'WiTalk',
+        showBorder: true,
+        showNotifications: true,
+      );
 
   Widget _buildSkeleton(ThemeColors c) => ListView.builder(
-    itemCount: 4,
-    itemBuilder: (context2, idx) => Shimmer.fromColors(
-      baseColor: c.surface,
-      highlightColor: c.border,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-        height: 300,
-        decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
-      ),
-    ),
-  );
+        itemCount: 4,
+        itemBuilder: (context2, idx) => Shimmer.fromColors(
+          baseColor: c.surface,
+          highlightColor: c.border,
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            height: 300,
+            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
+          ),
+        ),
+      );
 
-  Widget _buildError(Object e, ThemeColors c) => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.wifi_off, color: c.textTertiary, size: 48),
-      const SizedBox(height: 12),
-      Text('Could not load feed', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit')),
-      const SizedBox(height: 8),
-      TextButton(
-        onPressed: () {
-          setState(() => _posts = null);
-          ref.refresh(_feedProvider.future);  // ignore: unused_result
-        },
-        child: Text('Retry', style: TextStyle(color: c.primaryButton, fontFamily: 'Outfit')),
-      ),
-    ]),
-  );
+  Widget _buildError(String errorMsg, ThemeColors c) => Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.wifi_off, color: c.textTertiary, size: 48),
+          const SizedBox(height: 12),
+          Text('Could not load feed', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit')),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              errorMsg,
+              style: TextStyle(color: c.textTertiary, fontSize: 12, fontFamily: 'Outfit'),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextButton(
+            onPressed: () {
+              ref.read(feedNotifierProvider.notifier).fetchInitialFeed();
+            },
+            child: Text('Retry', style: TextStyle(color: c.primaryButton, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      );
 
   Widget _buildEmpty(ThemeColors c) => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      const Text('👋', style: TextStyle(fontSize: 56)),
-      const SizedBox(height: 16),
-      Text('Your feed is empty', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-      const SizedBox(height: 8),
-      Text('Follow people to see their posts here', style: TextStyle(color: c.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
-      const SizedBox(height: 20),
-      ElevatedButton(
-        onPressed: () => context.push('/discover-people'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: c.primaryButton,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        child: const Text('Discover People', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-      ),
-    ]),
-  );
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('👋', style: TextStyle(fontSize: 56)),
+          const SizedBox(height: 16),
+          Text('Your feed is empty', style: TextStyle(color: c.text, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+          const SizedBox(height: 8),
+          Text('Follow people to see their posts here', style: TextStyle(color: c.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => context.push('/discover-people'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.primaryButton,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Discover People', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+          ),
+        ]),
+      );
 }

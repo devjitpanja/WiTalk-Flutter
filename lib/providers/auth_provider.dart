@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../api/graphql_service.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -39,8 +40,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final prefs = await SharedPreferences.getInstance();
     final uid = prefs.getString('uid');
     final token = await _storage.read(key: 'accessToken');
+
     if (uid != null && token != null) {
       state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
+    } else if (uid != null) {
+      // Try generating fresh tokens for the logged-in user if token is missing
+      final refreshed = await graphQLService.refreshToken();
+      if (refreshed) {
+        state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
+      } else {
+        state = state.copyWith(status: AuthStatus.unauthenticated);
+      }
     } else {
       await prefs.clear();
       await _storage.deleteAll();
@@ -51,7 +61,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> signIn({required String uid}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('uid', uid);
-    state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
+    await _storage.write(key: 'uid', value: uid);
+    final refreshed = await graphQLService.refreshToken();
+    state = state.copyWith(
+      status: AuthStatus.authenticated,
+      uid: uid,
+    );
   }
 
   Future<void> signOut() async {

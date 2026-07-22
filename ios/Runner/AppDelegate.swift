@@ -12,5 +12,19 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    // VPN / emulator / Frida detection
+    let vpnChannel = FlutterMethodChannel(
+      name: VpnDetectorPlugin.channel,
+      binaryMessenger: engineBridge.binaryMessenger
+    )
+    vpnChannel.setMethodCallHandler(VpnDetectorPlugin().handle(_:result:))
+
+    // Install Referrer (iOS returns empty — referral via deep link instead)
+    let referrerChannel = FlutterMethodChannel(
+      name: InstallReferrerPlugin.channel,
+      binaryMessenger: engineBridge.binaryMessenger
+    )
+    referrerChannel.setMethodCallHandler(InstallReferrerPlugin().handle(_:result:))
   }
 }
