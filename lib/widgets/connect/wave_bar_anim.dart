@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Animated vertical sound wave bar for Adda room cards
+/// Animated vertical sound wave bar matching RN `WaveBar`.
 class WaveBar extends StatefulWidget {
   final int index;
   final Color color;
@@ -10,7 +10,7 @@ class WaveBar extends StatefulWidget {
     super.key,
     required this.index,
     this.color = const Color(0xFF007AFF),
-    this.height = 14.0,
+    this.height = 22.0,
   });
 
   @override

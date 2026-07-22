@@ -88,7 +88,7 @@ class AddaNotifier extends StateNotifier<AddaState> {
       final res = await audioRoomService.getActiveRooms(limit: 50, offset: 0);
       if (res['success'] == true || res['data'] != null) {
         final rawRooms = (res['data'] as List?)?.cast<Map<String, dynamic>>() ?? [];
-        
+
         // Filter out host's own room if logged in
         final filteredRooms = uid.isNotEmpty
             ? rawRooms.where((r) => r['host_uid']?.toString() != uid).toList()
@@ -174,6 +174,30 @@ class AddaNotifier extends StateNotifier<AddaState> {
       currentMap[roomId] = currentlyFollowing;
       state = state.copyWith(followingMap: currentMap);
     }
+  }
+
+  Future<bool> deleteScheduledRoom(String roomId) async {
+    try {
+      final res = await audioRoomService.deleteScheduledRoom(roomId);
+      if (res['success'] == true) {
+        final filtered = state.upcomingRooms.where((r) => r['room_id']?.toString() != roomId).toList();
+        state = state.copyWith(upcomingRooms: filtered);
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  Future<bool> startScheduledRoom(String roomId) async {
+    try {
+      final res = await audioRoomService.startScheduledRoom(roomId);
+      if (res['success'] == true) {
+        final filtered = state.upcomingRooms.where((r) => r['room_id']?.toString() != roomId).toList();
+        state = state.copyWith(upcomingRooms: filtered);
+        return true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   /// Groups community addas by group_id; personal addas pass through as individual items.

@@ -89,6 +89,28 @@ class AudioRoomService {
     }
   }
 
+  /// Delete a scheduled room
+  Future<Map<String, dynamic>> deleteScheduledRoom(String roomId) async {
+    try {
+      final res = await dioClient.delete('$baseUrl/scheduled/$roomId');
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] Error deleting scheduled room: $e');
+      return {'success': false};
+    }
+  }
+
+  /// Start a scheduled room now
+  Future<Map<String, dynamic>> startScheduledRoom(String roomId) async {
+    try {
+      final res = await dioClient.post('$baseUrl/scheduled/$roomId/start');
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] Error starting scheduled room: $e');
+      return {'success': false};
+    }
+  }
+
   /// Get room details by room ID
   Future<Map<String, dynamic>?> getRoomById(String roomId) async {
     try {
