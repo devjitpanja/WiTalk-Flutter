@@ -93,7 +93,7 @@ dependencies:
   mobile_scanner: ^7.3.0
   giphy_get: ^3.6.1+1
   emoji_picker_flutter: ^4.4.0  # TODO: upgrade if newer version removes KGP usage
-  # record: add back when targeting Android/iOS only build config
+  record: ^7.0.0
   audioplayers: ^6.4.0
   geolocator: ^13.0.2
   # geocoding: removed due to SDK incompatibility — use geolocator coordinates directly
@@ -108,6 +108,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.4.14
   drift_dev: ^2.34.0
+
 
 flutter:
   uses-material-design: true

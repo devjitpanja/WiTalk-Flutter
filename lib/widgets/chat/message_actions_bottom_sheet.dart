@@ -3,8 +3,9 @@ import 'package:flutter/services.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
 
-// Mirrors private-chat action menu in ChatConversation.jsx (RN).
-// Vertical list: Reply / Edit / Copy / Forward / Translate / Delete for me / Delete for everyone
+// Mirrors group/private-chat action menu in RN.
+// Vertical list: Reply / Edit / Copy / Pin / Delete for me / Delete for everyone
+// Admin-only: Mute / Ban / Kick (group only)
 
 enum MessageAction {
   reply,
@@ -14,10 +15,12 @@ enum MessageAction {
   deleteForEveryone,
   pin,
   unpin,
-  forward,
-  translate,
   react,
   info,
+  ban,
+  kick,
+  mute,
+  unmute,
 }
 
 class MessageActionsBottomSheet extends StatelessWidget {
@@ -26,6 +29,12 @@ class MessageActionsBottomSheet extends StatelessWidget {
   final bool isAdmin;
   final bool isPinned;
   final bool canDeleteForEveryone;
+  final bool isCommunity;
+  // Admin moderation — pass non-null callbacks to show the option
+  final VoidCallback? onBan;
+  final VoidCallback? onKick;
+  final bool isSenderMuted;
+  final VoidCallback? onMute;
   final void Function(MessageAction) onAction;
 
   const MessageActionsBottomSheet({
@@ -35,6 +44,11 @@ class MessageActionsBottomSheet extends StatelessWidget {
     this.isAdmin = false,
     this.isPinned = false,
     this.canDeleteForEveryone = false,
+    this.isCommunity = false,
+    this.onBan,
+    this.onKick,
+    this.isSenderMuted = false,
+    this.onMute,
     required this.onAction,
   });
 
@@ -56,7 +70,6 @@ class MessageActionsBottomSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 8),
-          // Drag handle
           Container(
             width: 40,
             height: 4,
@@ -65,11 +78,9 @@ class MessageActionsBottomSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(2)),
           ),
           const SizedBox(height: 4),
-          // Message preview
           _MessagePreview(message: message, c: c),
           Divider(height: 1, color: c.border),
 
-          // ── Actions — vertical list matching RN ─────────────────────
           _ActionRow(
             icon: Icons.reply,
             label: 'Reply',
@@ -105,42 +116,50 @@ class MessageActionsBottomSheet extends StatelessWidget {
                 );
               },
             ),
-          _ActionRow(
-            icon: Icons.forward,
-            label: 'Forward',
-            c: c,
-            onTap: () {
-              Navigator.pop(context);
-              onAction(MessageAction.forward);
-            },
-          ),
-          _ActionRow(
-            icon: Icons.translate_outlined,
-            label: 'Translate',
-            c: c,
-            onTap: () {
-              Navigator.pop(context);
-              onAction(MessageAction.translate);
-            },
-          ),
-          if (isPinned)
+          if (isAdmin)
             _ActionRow(
               icon: Icons.push_pin_outlined,
-              label: 'Unpin',
+              label: isPinned ? 'Unpin' : 'Pin',
               c: c,
               onTap: () {
                 Navigator.pop(context);
-                onAction(MessageAction.unpin);
+                onAction(isPinned ? MessageAction.unpin : MessageAction.pin);
               },
-            )
-          else
+            ),
+          // Mute/Unmute sender (admin, not own message)
+          if (isAdmin && !isMyMessage && onMute != null)
             _ActionRow(
-              icon: Icons.push_pin_outlined,
-              label: 'Pin',
+              icon: isSenderMuted ? Icons.volume_up : Icons.volume_off,
+              label: isSenderMuted ? 'Unmute User' : 'Mute User',
               c: c,
               onTap: () {
                 Navigator.pop(context);
-                onAction(MessageAction.pin);
+                onMute!();
+              },
+            ),
+          // Ban sender (admin, not own message)
+          if (isAdmin && !isMyMessage && onBan != null)
+            _ActionRow(
+              icon: Icons.block,
+              label: isCommunity ? 'Ban from Community' : 'Ban from Group',
+              c: c,
+              isDestructive: true,
+              onTap: () {
+                Navigator.pop(context);
+                onBan!();
+              },
+            ),
+          // Kick/Remove sender (admin, not own message)
+          if (isAdmin && !isMyMessage && onKick != null)
+            _ActionRow(
+              icon: Icons.person_remove,
+              label: isCommunity ? 'Remove from Community' : 'Remove from Group',
+              c: c,
+              isDestructive: true,
+              color: const Color(0xFFF97316),
+              onTap: () {
+                Navigator.pop(context);
+                onKick!();
               },
             ),
           if (isMyMessage)
@@ -172,13 +191,13 @@ class MessageActionsBottomSheet extends StatelessWidget {
   }
 }
 
-// ── Single action row ─────────────────────────────────────────────────────────
 class _ActionRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final ThemeColors c;
   final VoidCallback onTap;
   final bool isDestructive;
+  final Color? color;
 
   const _ActionRow({
     required this.icon,
@@ -186,18 +205,19 @@ class _ActionRow extends StatelessWidget {
     required this.c,
     required this.onTap,
     this.isDestructive = false,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = isDestructive ? c.error : c.text;
+    final col = color ?? (isDestructive ? c.error : c.text);
     return InkWell(
       onTap: onTap,
       child: Padding(
         padding:
             const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         child: Row(children: [
-          Icon(icon, size: 22, color: color),
+          Icon(icon, size: 22, color: col),
           const SizedBox(width: 16),
           Expanded(
             child: Text(
@@ -205,7 +225,7 @@ class _ActionRow extends StatelessWidget {
               style: TextStyle(
                 fontSize: 15,
                 fontFamily: 'Outfit',
-                color: color,
+                color: col,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -216,7 +236,6 @@ class _ActionRow extends StatelessWidget {
   }
 }
 
-// ── Message preview header ────────────────────────────────────────────────────
 class _MessagePreview extends StatelessWidget {
   final ChatMessage message;
   final ThemeColors c;

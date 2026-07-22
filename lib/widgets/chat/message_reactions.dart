@@ -62,16 +62,18 @@ class QuickEmojiPicker extends StatelessWidget {
   }
 }
 
-// Full reaction details sheet — shows who reacted with what emoji
-// Mirrors MessageReactionSheet.jsx
+// Full reaction details sheet — shows who reacted with what emoji.
+// Tapping your own entry removes the reaction (mirrors MessageReactionSheet.jsx).
 class MessageReactionSheet extends StatefulWidget {
   final List<Map<String, dynamic>> reactions;
   final String? currentUserId;
+  final void Function(String emoji)? onRemoveReaction;
 
   const MessageReactionSheet({
     super.key,
     required this.reactions,
     this.currentUserId,
+    this.onRemoveReaction,
   });
 
   @override
@@ -159,6 +161,9 @@ class _MessageReactionSheetState extends State<MessageReactionSheet>
                   final name = (r['username'] as String?) ?? 'User';
                   final avatar = r['avatar'] as String?;
                   final emoji = (r['emoji'] as String?) ?? '';
+                  final isMe = widget.currentUserId != null &&
+                      (r['user_id']?.toString() == widget.currentUserId ||
+                          r['userId']?.toString() == widget.currentUserId);
                   return ListTile(
                     leading: CircleAvatar(
                       radius: 20,
@@ -175,13 +180,39 @@ class _MessageReactionSheetState extends State<MessageReactionSheet>
                                   fontFamily: 'Outfit'))
                           : null,
                     ),
-                    title: Text(name,
+                    title: Text(isMe ? 'You' : name,
                         style: TextStyle(
                             color: c.text,
                             fontFamily: 'Outfit',
                             fontWeight: FontWeight.w500)),
-                    trailing: Text(emoji,
-                        style: const TextStyle(fontSize: 20)),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(emoji, style: const TextStyle(fontSize: 20)),
+                        if (isMe && widget.onRemoveReaction != null) ...[
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.pop(context);
+                              widget.onRemoveReaction!(emoji);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: c.error.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text('Remove',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontFamily: 'Outfit',
+                                      color: c.error,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   );
                 },
               );

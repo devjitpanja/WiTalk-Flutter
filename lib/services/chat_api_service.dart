@@ -309,6 +309,11 @@ class ChatApiService {
         data: {'user_id': userId});
   }
 
+  Future<void> kickGroupMember(String groupId, String userId) async {
+    await dioClient.post(AppEndpoints.removeGroupMember(groupId),
+        data: {'user_id': userId});
+  }
+
   Future<Map<String, dynamic>?> getGroupPermissions(String groupId, {String? userId}) async {
     final res = await dioClient.get(
       AppEndpoints.groupPermissions(groupId),

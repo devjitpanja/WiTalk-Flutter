@@ -1,10 +1,13 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
+import '../../api/dio_client.dart';
 import 'voice_message_player.dart';
 import 'poll_message.dart';
+import 'message_reactions.dart';
 
 // ── Message bubble — renders all message types from ChatConversation ──────────
 // Mirrors the message rendering logic in ChatConversation.jsx and
@@ -17,13 +20,17 @@ class MessageBubble extends StatelessWidget {
   final bool isMyMessage;
   final bool showAvatar; // for group chats
   final String? senderName; // for group chats
+  final String? senderRole; // 'super_admin' | 'admin' | null
+  final String? senderAdminTitle; // custom admin title
   final String? currentUserId; // needed for reaction highlight
   final ChatMessage? replyToMessage;
+  final bool isHighlighted; // scroll-to target highlight
   final VoidCallback? onLongPress;
   final void Function(ChatMessage)? onReplySwipe;
   final void Function(String emoji)? onReactionTap;
   final VoidCallback? onTapAvatar;
   final VoidCallback? onTapImage;
+  final VoidCallback? onReplyTap; // tap reply preview → scroll to original
 
   const MessageBubble({
     super.key,
@@ -31,13 +38,17 @@ class MessageBubble extends StatelessWidget {
     required this.isMyMessage,
     this.showAvatar = false,
     this.senderName,
+    this.senderRole,
+    this.senderAdminTitle,
     this.currentUserId,
     this.replyToMessage,
+    this.isHighlighted = false,
     this.onLongPress,
     this.onReplySwipe,
     this.onReactionTap,
     this.onTapAvatar,
     this.onTapImage,
+    this.onReplyTap,
   });
 
   @override
@@ -59,7 +70,9 @@ class MessageBubble extends StatelessWidget {
   Widget _buildBubble(BuildContext context, ThemeColors c) {
     final hasReactions = (message.reactions?.isNotEmpty ?? false);
 
-    Widget bubble = Padding(
+    Widget bubble = AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      color: isHighlighted ? c.primary.withOpacity(0.15) : Colors.transparent,
       padding: const EdgeInsets.only(bottom: 2),
       child: Column(
         crossAxisAlignment:
@@ -106,8 +119,11 @@ class MessageBubble extends StatelessWidget {
                     message: message,
                     isMyMessage: isMyMessage,
                     senderName: showAvatar ? senderName : null,
+                    senderRole: senderRole,
+                    senderAdminTitle: senderAdminTitle,
                     replyToMessage: replyToMessage,
                     onTapImage: onTapImage,
+                    onReplyTap: onReplyTap,
                     c: c,
                   ),
                 ),
@@ -127,7 +143,7 @@ class MessageBubble extends StatelessWidget {
                 reactions: message.reactions!,
                 isMyMessage: isMyMessage,
                 currentUserId: currentUserId,
-                onTap: onReactionTap,
+                onRemoveReaction: onReactionTap,
                 c: c,
               ),
             ),
@@ -152,16 +168,22 @@ class _BubbleContent extends StatelessWidget {
   final ChatMessage message;
   final bool isMyMessage;
   final String? senderName;
+  final String? senderRole;
+  final String? senderAdminTitle;
   final ChatMessage? replyToMessage;
   final VoidCallback? onTapImage;
+  final VoidCallback? onReplyTap;
   final ThemeColors c;
 
   const _BubbleContent({
     required this.message,
     required this.isMyMessage,
     this.senderName,
+    this.senderRole,
+    this.senderAdminTitle,
     this.replyToMessage,
     this.onTapImage,
+    this.onReplyTap,
     required this.c,
   });
 
@@ -171,6 +193,12 @@ class _BubbleContent extends StatelessWidget {
 
   Color get _textColor =>
       isMyMessage ? Colors.white : c.text;
+
+  static final _addaRegex =
+      RegExp(r'https?://witalk\.in/adda/([a-zA-Z0-9_-]+)', caseSensitive: false);
+  static final _witalkRegex =
+      RegExp(r'https?://witalk\.in(/[^\s]*)', caseSensitive: false);
+  static const _witalkBubbleTypes = {'profile', 'userProfile', 'groupInvite', 'groupChat', 'group', 'community'};
 
   @override
   Widget build(BuildContext context) {
@@ -202,14 +230,49 @@ class _BubbleContent extends StatelessWidget {
       case 'shared_post':
         return _SharedPostBubble(
             message: message, isMyMessage: isMyMessage, c: c);
+      case 'shared_topic':
+        return _SharedTopicBubble(
+            message: message, isMyMessage: isMyMessage, c: c);
       default:
+        // Detect witalk.in adda links
+        final content = message.content;
+        if (content.isNotEmpty) {
+          final addaMatch = _addaRegex.firstMatch(content);
+          if (addaMatch != null) {
+            return _AddaChatBubble(
+              message: message,
+              isMyMessage: isMyMessage,
+              addaId: addaMatch.group(1) ?? '',
+              c: c,
+            );
+          }
+          // Detect witalk.in profile/group/community links
+          final witalkMatch = _witalkRegex.firstMatch(content);
+          if (witalkMatch != null) {
+            final path = witalkMatch.group(1) ?? '';
+            final segments = path.split('/').where((s) => s.isNotEmpty).toList();
+            final linkType = segments.isNotEmpty ? segments[0] : '';
+            if (_witalkBubbleTypes.contains(linkType)) {
+              return _WiTalkLinkBubble(
+                message: message,
+                isMyMessage: isMyMessage,
+                url: witalkMatch.group(0)!,
+                linkType: linkType,
+                c: c,
+              );
+            }
+          }
+        }
         return _TextBubble(
           message: message,
           isMyMessage: isMyMessage,
           senderName: senderName,
+          senderRole: senderRole,
+          senderAdminTitle: senderAdminTitle,
           replyToMessage: replyToMessage,
           bubbleColor: _bubbleColor,
           textColor: _textColor,
+          onReplyTap: onReplyTap,
           c: c,
         );
     }
@@ -221,20 +284,38 @@ class _TextBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMyMessage;
   final String? senderName;
+  final String? senderRole;
+  final String? senderAdminTitle;
   final ChatMessage? replyToMessage;
   final Color bubbleColor;
   final Color textColor;
+  final VoidCallback? onReplyTap;
   final ThemeColors c;
 
   const _TextBubble({
     required this.message,
     required this.isMyMessage,
     this.senderName,
+    this.senderRole,
+    this.senderAdminTitle,
     this.replyToMessage,
     required this.bubbleColor,
     required this.textColor,
+    this.onReplyTap,
     required this.c,
   });
+
+  bool get _isOwner => senderRole == 'super_admin';
+
+  String? get _adminBadgeLabel {
+    if (senderRole == 'super_admin') return 'Owner';
+    if (senderRole == 'admin') {
+      return (senderAdminTitle != null && senderAdminTitle!.trim().isNotEmpty)
+          ? senderAdminTitle!.trim()
+          : 'Admin';
+    }
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -258,27 +339,63 @@ class _TextBubble extends StatelessWidget {
         crossAxisAlignment:
             isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          // Group chat sender name
-          if (senderName != null)
+          // Group chat sender name + admin badge
+          if (senderName != null) ...[
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                senderName!,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600,
-                  color: c.primary,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    senderName!,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      color: c.primary,
+                    ),
+                  ),
+                  if (_adminBadgeLabel != null) ...[
+                    const SizedBox(width: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: _isOwner
+                            ? const Color(0xFFFFD700).withOpacity(0.2)
+                            : c.primary.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(
+                          color: _isOwner
+                              ? const Color(0xFFFFD700)
+                              : c.primary.withOpacity(0.4),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Text(
+                        _adminBadgeLabel!,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700,
+                          color: _isOwner ? const Color(0xFFB8860B) : c.primary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
-          // Reply preview
+          ],
+          // Reply preview (tappable — scrolls to original)
           if (replyToMessage != null || message.replyTo != null)
-            _ReplyPreview(
-              replyTo: replyToMessage,
-              replyToJson: message.replyTo,
-              isMyMessage: isMyMessage,
-              c: c,
+            GestureDetector(
+              onTap: onReplyTap,
+              child: _ReplyPreview(
+                replyTo: replyToMessage,
+                replyToJson: message.replyTo,
+                isMyMessage: isMyMessage,
+                c: c,
+              ),
             ),
           // Text content
           if (message.content.isNotEmpty)
@@ -632,6 +749,9 @@ class _TimeStatus extends StatelessWidget {
   }
 }
 
+// Expose _TimeStatus._formatTime for use in other private widgets in this file.
+String _fmtMsgTime(DateTime dt) => _TimeStatus._formatTime(dt);
+
 // ── Image Bubble ──────────────────────────────────────────────────────────────
 class _ImageBubble extends StatelessWidget {
   final ChatMessage message;
@@ -830,7 +950,9 @@ class _PollBubble extends StatelessWidget {
 }
 
 // ── Giphy / GIF Bubble ────────────────────────────────────────────────────────
-class _GiphyBubble extends StatelessWidget {
+// GIFs start paused (static frame). Tap to play; auto-stop after 3 loops (~9s).
+// Stickers play on tap and loop continuously until tapped again.
+class _GiphyBubble extends StatefulWidget {
   final ChatMessage message;
   final bool isMyMessage;
   final ThemeColors c;
@@ -841,11 +963,52 @@ class _GiphyBubble extends StatelessWidget {
       required this.c});
 
   @override
+  State<_GiphyBubble> createState() => _GiphyBubbleState();
+}
+
+class _GiphyBubbleState extends State<_GiphyBubble> {
+  bool _playing = false;
+  Timer? _autoStopTimer;
+
+  @override
+  void dispose() {
+    _autoStopTimer?.cancel();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_playing) {
+      _autoStopTimer?.cancel();
+      setState(() => _playing = false);
+    } else {
+      setState(() => _playing = true);
+      final isSticker = widget.message.messageType == 'giphy_sticker';
+      if (!isSticker) {
+        // Auto-stop after ~9 seconds (approx 3 loops)
+        _autoStopTimer = Timer(const Duration(seconds: 9), () {
+          if (mounted) setState(() => _playing = false);
+        });
+      }
+    }
+  }
+
+  String _staticUrl(String animatedUrl) {
+    // Giphy static URL: replace /giphy.gif with /giphy_s.gif
+    if (animatedUrl.contains('/giphy.gif')) {
+      return animatedUrl.replaceFirst('/giphy.gif', '/giphy_s.gif');
+    }
+    if (animatedUrl.contains('/200.gif')) {
+      return animatedUrl.replaceFirst('/200.gif', '/200_s.gif');
+    }
+    return animatedUrl;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final isSticker = message.messageType == 'giphy_sticker';
+    final isSticker = widget.message.messageType == 'giphy_sticker';
     final maxSize = isSticker ? 120.0 : 250.0;
     final aspectRatio =
-        (message.mediaData?['aspectRatio'] as num?)?.toDouble() ?? 1.0;
+        (widget.message.mediaData?['aspectRatio'] as num?)?.toDouble() ?? 1.0;
 
     double w = maxSize;
     double h = maxSize / aspectRatio;
@@ -854,13 +1017,42 @@ class _GiphyBubble extends StatelessWidget {
       h = maxSize;
     }
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(7),
-      child: CachedNetworkImage(
-        imageUrl: message.mediaUrl ?? '',
-        width: w.toDouble(),
-        height: h.toDouble(),
-        fit: BoxFit.cover,
+    final animatedUrl = widget.message.mediaUrl ?? '';
+    final staticUrl = _staticUrl(animatedUrl);
+
+    return GestureDetector(
+      onTap: _toggle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            CachedNetworkImage(
+              imageUrl: _playing ? animatedUrl : staticUrl,
+              width: w,
+              height: h,
+              fit: BoxFit.cover,
+              fadeInDuration: Duration.zero,
+            ),
+            if (!_playing)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'GIF',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -1066,6 +1258,933 @@ class _SharedPostBubble extends StatelessWidget {
   }
 }
 
+// ── Shared Topic Bubble ───────────────────────────────────────────────────────
+class _SharedTopicBubble extends StatelessWidget {
+  final ChatMessage message;
+  final bool isMyMessage;
+  final ThemeColors c;
+
+  const _SharedTopicBubble(
+      {required this.message,
+      required this.isMyMessage,
+      required this.c});
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = message.metadata;
+    final title = meta?['title'] ?? meta?['name'] ?? 'Shared Topic';
+    final image = meta?['image'] ?? meta?['thumbnail'];
+    final authorName = meta?['author_name'] ?? meta?['group_name'];
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 280),
+      decoration: BoxDecoration(
+        color: isMyMessage ? c.primary : c.surface,
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(18),
+          topRight: const Radius.circular(18),
+          bottomLeft: Radius.circular(isMyMessage ? 18 : 4),
+          bottomRight: Radius.circular(isMyMessage ? 4 : 18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (image != null)
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(18)),
+              child: CachedNetworkImage(
+                  imageUrl: image as String,
+                  height: 120,
+                  width: double.infinity,
+                  fit: BoxFit.cover),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.topic,
+                      size: 14,
+                      color: isMyMessage ? Colors.white70 : c.textTertiary),
+                  const SizedBox(width: 4),
+                  Text('Shared Topic',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'Outfit',
+                          color: isMyMessage ? Colors.white70 : c.textSecondary)),
+                ]),
+                const SizedBox(height: 4),
+                Text(title as String,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        color: isMyMessage ? Colors.white : c.text)),
+                if (authorName != null) ...[
+                  const SizedBox(height: 2),
+                  Text(authorName as String,
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'Outfit',
+                          color: isMyMessage ? Colors.white70 : c.textSecondary)),
+                ],
+                const SizedBox(height: 6),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _TimeStatus(message: message, isMyMessage: isMyMessage, c: c),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Adda Chat Bubble (witalk.in/adda/...) ─────────────────────────────────────
+// Mirrors AddaChatBubble.jsx exactly: fetches live status, shows wave bars,
+// AUDIO/ENDED pill, Join/Ended button, footer.
+class _AddaChatBubble extends StatefulWidget {
+  final ChatMessage message;
+  final bool isMyMessage;
+  final String addaId;
+  final ThemeColors c;
+
+  const _AddaChatBubble({
+    required this.message,
+    required this.isMyMessage,
+    required this.addaId,
+    required this.c,
+  });
+
+  @override
+  State<_AddaChatBubble> createState() => _AddaChatBubbleState();
+}
+
+class _AddaChatBubbleState extends State<_AddaChatBubble>
+    with TickerProviderStateMixin {
+  // 'checking' | 'live' | 'ended'
+  String _liveStatus = 'checking';
+  late final List<AnimationController> _waveCtrl;
+  late final List<Animation<double>> _waveAnim;
+
+  static const _endedAccent = Color(0xFF8B83B8);
+
+  @override
+  void initState() {
+    super.initState();
+
+    // 5 animated wave bars
+    _waveCtrl = List.generate(5, (i) {
+      return AnimationController(
+        vsync: this,
+        duration: Duration(milliseconds: 350 + i * 60),
+      );
+    });
+    _waveAnim = List.generate(5, (i) {
+      return Tween<double>(begin: 0.3, end: 1.0).animate(
+        CurvedAnimation(parent: _waveCtrl[i], curve: Curves.easeInOut),
+      );
+    });
+
+    _fetchStatus();
+  }
+
+  void _startWaveAnimation() {
+    for (int i = 0; i < 5; i++) {
+      Future.delayed(Duration(milliseconds: i * 90), () {
+        if (mounted) _waveCtrl[i].repeat(reverse: true);
+      });
+    }
+  }
+
+  Future<void> _fetchStatus() async {
+    if (widget.addaId.isEmpty) {
+      if (mounted) setState(() => _liveStatus = 'ended');
+      return;
+    }
+    try {
+      final res = await dioClient.get('/v1/audio-rooms/${widget.addaId}');
+      final room = res.data?['data'] ?? res.data;
+      if (mounted) {
+        final isLive = room != null && room['status'] == 'active';
+        setState(() => _liveStatus = isLive ? 'live' : 'ended');
+        if (isLive) _startWaveAnimation();
+      }
+    } catch (_) {
+      if (mounted) setState(() => _liveStatus = 'ended');
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final c in _waveCtrl) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isLive = _liveStatus == 'live';
+    final isChecking = _liveStatus == 'checking';
+    final isEnded = _liveStatus == 'ended';
+
+    final accent = widget.c.primaryButton; // #5B51F4
+    final cardBg = isEnded ? widget.c.surface : accent;
+    final topStripBg = isEnded
+        ? _endedAccent.withValues(alpha: 0.12)
+        : Colors.black.withValues(alpha: 0.2);
+
+    final textColor = isEnded ? widget.c.text : Colors.white;
+    final subtitleColor = isEnded
+        ? _endedAccent
+        : Colors.white.withValues(alpha: 0.78);
+    final timeColor = isEnded
+        ? _endedAccent.withValues(alpha: 0.67)
+        : Colors.white.withValues(alpha: 0.65);
+
+    return GestureDetector(
+      onLongPress: null,
+      child: Container(
+        width: 240,
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: isEnded
+              ? Border.all(color: _endedAccent.withValues(alpha: 0.25), width: 1)
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: isEnded ? 0.08 : 0.18),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        clipBehavior: Clip.hardEdge,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Top strip: wave bars + badge ──
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              color: topStripBg,
+              child: Row(
+                children: [
+                  // Wave bars
+                  SizedBox(
+                    height: 20,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: List.generate(5, (i) {
+                        final barColor = isEnded
+                            ? _endedAccent.withValues(alpha: 0.38)
+                            : Colors.white.withValues(alpha: 0.85);
+                        return Padding(
+                          padding: EdgeInsets.only(right: i < 4 ? 3 : 0),
+                          child: isLive
+                              ? AnimatedBuilder(
+                                  animation: _waveAnim[i],
+                                  builder: (_, __) => Container(
+                                    width: 3,
+                                    height: 20 * _waveAnim[i].value,
+                                    decoration: BoxDecoration(
+                                      color: barColor,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
+                                )
+                              : Container(
+                                  width: 3,
+                                  height: 20 * 0.3,
+                                  decoration: BoxDecoration(
+                                    color: barColor,
+                                    borderRadius: BorderRadius.circular(2),
+                                  ),
+                                ),
+                        );
+                      }),
+                    ),
+                  ),
+                  const Spacer(),
+                  // Badge pill
+                  isEnded
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: _endedAccent.withValues(alpha: 0.094),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: _endedAccent.withValues(alpha: 0.25),
+                                width: 1),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.mic_off,
+                                  size: 11, color: _endedAccent),
+                              const SizedBox(width: 3),
+                              const Text('ENDED',
+                                  style: TextStyle(
+                                      color: _endedAccent,
+                                      fontSize: 10,
+                                      fontFamily: 'Outfit',
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5)),
+                            ],
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.25),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.mic,
+                                  size: 11, color: Colors.white),
+                              const SizedBox(width: 3),
+                              const Text('AUDIO',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 10,
+                                      fontFamily: 'Outfit',
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5)),
+                            ],
+                          ),
+                        ),
+                ],
+              ),
+            ),
+
+            // ── Body: icon circle + text ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isEnded
+                          ? _endedAccent.withValues(alpha: 0.125)
+                          : Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isEnded ? Icons.headset_off : Icons.headset_mic,
+                      size: 22,
+                      color: isEnded ? _endedAccent : accent,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isEnded
+                              ? 'Adda Room'
+                              : (widget.message.senderName.isNotEmpty
+                                  ? widget.message.senderName
+                                  : 'Adda Room'),
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 15,
+                            fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isEnded
+                              ? 'This adda has ended'
+                              : 'invited you to an Adda',
+                          style: TextStyle(
+                            color: subtitleColor,
+                            fontSize: 12,
+                            fontFamily: 'Outfit',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // ── Join / Ended button ──
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14),
+              child: isEnded
+                  ? Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: _endedAccent.withValues(alpha: 0.082),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: _endedAccent.withValues(alpha: 0.25),
+                            width: 1),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.block,
+                              size: 15, color: _endedAccent),
+                          const SizedBox(width: 5),
+                          const Text('Adda Ended',
+                              style: TextStyle(
+                                  color: _endedAccent,
+                                  fontSize: 13,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    )
+                  : Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 9),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.volume_up, size: 15, color: accent),
+                          const SizedBox(width: 5),
+                          Text(
+                            isChecking ? 'Loading...' : 'Join Adda',
+                            style: TextStyle(
+                              color: accent,
+                              fontSize: 13,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+
+            // ── Footer: time + read receipt ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    _fmtMsgTime(widget.message.createdAt),
+                    style: TextStyle(
+                        color: timeColor,
+                        fontSize: 11,
+                        fontFamily: 'Outfit'),
+                  ),
+                  if (widget.isMyMessage) ...[
+                    const SizedBox(width: 3),
+                    Icon(
+                      widget.message.isRead
+                          ? Icons.done_all
+                          : Icons.done_all,
+                      size: 14,
+                      color: isEnded
+                          ? (widget.message.isRead
+                              ? _endedAccent
+                              : _endedAccent.withValues(alpha: 0.5))
+                          : (widget.message.isRead
+                              ? Colors.white.withValues(alpha: 0.9)
+                              : Colors.white.withValues(alpha: 0.55)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── WiTalk Internal Link Bubble (profile, group, community invite links) ───────
+// Mirrors WiTalkInternalLinkBubble.jsx exactly: fetches entity data, shows
+// accent-color card with dots strip, type pill, avatar, name+meta, CTA, footer.
+class _WiTalkLinkBubble extends StatefulWidget {
+  final ChatMessage message;
+  final bool isMyMessage;
+  final String url;
+  final String linkType; // path segment: 'profile'|'group'|'groupchat'|username…
+  final ThemeColors c;
+
+  const _WiTalkLinkBubble({
+    required this.message,
+    required this.isMyMessage,
+    required this.url,
+    required this.linkType,
+    required this.c,
+  });
+
+  @override
+  State<_WiTalkLinkBubble> createState() => _WiTalkLinkBubbleState();
+}
+
+// Module-level cache so the same URL never fetches twice across list items.
+final _witalkLinkCache = <String, Map<String, dynamic>?>{};
+
+class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
+  bool _loading = true;
+  Map<String, dynamic>? _data; // resolved card data
+
+  @override
+  void initState() {
+    super.initState();
+    final cached = _witalkLinkCache[widget.url];
+    if (_witalkLinkCache.containsKey(widget.url)) {
+      _loading = false;
+      _data = cached;
+    } else {
+      _fetchData();
+    }
+  }
+
+  Future<void> _fetchData() async {
+    try {
+      final d = await _resolveWiTalkLink(widget.url, widget.linkType, widget.message.content);
+      _witalkLinkCache[widget.url] = d;
+      if (mounted) setState(() { _loading = false; _data = d; });
+    } catch (_) {
+      _witalkLinkCache[widget.url] = null;
+      if (mounted) setState(() { _loading = false; _data = null; });
+    }
+  }
+
+  // Resolve the URL to a card data map: {kind, name, avatarUrl, metaLine, ctaLabel, ctaIcon}
+  static Future<Map<String, dynamic>?> _resolveWiTalkLink(
+      String url, String linkType, String content) async {
+    // Parse the URL path to determine type and params
+    final uri = Uri.tryParse(url);
+    if (uri == null) return null;
+    final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+    if (segments.isEmpty) return null;
+
+    final first = segments[0];
+
+    // witalk.in/group/{inviteCode}
+    if (first == 'group' && segments.length >= 2) {
+      final inviteCode = segments[1];
+      try {
+        final res = await dioClient.get('/v1/groups/invite/$inviteCode');
+        final g = res.data?['data'] ?? res.data;
+        if (g == null || g['name'] == null) return null;
+        final memberCount = g['member_count'];
+        final isPrivate = g['is_private'] == true || g['group_type'] == 'private';
+        return {
+          'kind': 'group',
+          'name': g['name'] as String,
+          'avatarUrl': g['picture'] ?? g['image_url'] ?? g['avatar_url'],
+          'meta': [
+            if (memberCount != null) '${_fmtCount(memberCount)} members',
+            isPrivate ? 'Private' : 'Public',
+          ].join('  ·  '),
+          'bio': g['description'],
+          'isPrivate': isPrivate,
+          'ctaLabel': isPrivate ? 'Join Group' : 'Join Community',
+          'ctaIcon': Icons.group,
+          'badgeLabel': isPrivate ? 'GROUP' : 'COMMUNITY',
+          'badgeIcon': Icons.groups,
+        };
+      } catch (_) { return null; }
+    }
+
+    // witalk.in/groupchat/{groupId}
+    if (first == 'groupchat' && segments.length >= 2) {
+      final groupId = segments[1];
+      try {
+        final res = await dioClient.get('/v1/groups/$groupId');
+        final g = res.data?['data'] ?? res.data;
+        if (g == null || g['name'] == null) return null;
+        final memberCount = g['member_count'];
+        final isPrivate = g['is_private'] == true;
+        return {
+          'kind': 'group',
+          'name': g['name'] as String,
+          'avatarUrl': g['image_url'] ?? g['avatar_url'],
+          'meta': [
+            if (memberCount != null) '${_fmtCount(memberCount)} members',
+            isPrivate ? 'Private' : 'Public',
+          ].join('  ·  '),
+          'bio': g['description'],
+          'isPrivate': isPrivate,
+          'ctaLabel': 'Open Group',
+          'ctaIcon': Icons.group,
+          'badgeLabel': 'GROUP',
+          'badgeIcon': Icons.groups,
+        };
+      } catch (_) { return null; }
+    }
+
+    // witalk.in/{username} — try to resolve as user profile
+    if (segments.length == 1 && !['group', 'groupchat', 'adda', 'p', 'm', 'post', 'video', 'mini', 'user'].contains(first)) {
+      final username = first;
+      try {
+        final res = await dioClient.get('/v1/user/profile/$username');
+        final u = res.data?['data']?['user'] ?? res.data?['data'] ?? res.data;
+        if (u == null || u['name'] == null) return null;
+        final stats = res.data?['data']?['stats'] ?? {};
+        final followers = stats['followers_count'] ?? u['followers_count'];
+        return {
+          'kind': 'profile',
+          'name': u['name'] as String,
+          'avatarUrl': u['profile_pic'],
+          'meta': [
+            if (u['username'] != null) '@${u['username']}',
+            if (followers != null) '${_fmtCount(followers)} followers',
+          ].join('  ·  '),
+          'bio': u['bio'],
+          'isVerified': u['is_verified'] == true,
+          'ctaLabel': 'View Profile',
+          'ctaIcon': Icons.person,
+          'badgeLabel': 'PROFILE',
+          'badgeIcon': Icons.person,
+        };
+      } catch (_) { return null; }
+    }
+
+    return null;
+  }
+
+  static String _fmtCount(dynamic n) {
+    final v = (n is num) ? n.toDouble() : double.tryParse(n.toString()) ?? 0;
+    if (v >= 1000000) return '${(v / 1000000).toStringAsFixed(1)}M';
+    if (v >= 1000) return '${(v / 1000).toStringAsFixed(1)}K';
+    return v.toStringAsFixed(0);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.c.primaryButton; // #5B51F4
+
+    if (_loading) {
+      return _buildCard(
+        accent,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 18, 14, 18),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 18, height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text('Loading…',
+                      style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.6),
+                          fontSize: 13,
+                          fontFamily: 'Outfit')),
+                ],
+              ),
+            ),
+            _footer(accent),
+          ],
+        ),
+      );
+    }
+
+    if (_data == null) {
+      // Fallback: plain link bubble
+      return Container(
+        constraints: const BoxConstraints(maxWidth: 248),
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+        decoration: BoxDecoration(
+          color: widget.isMyMessage ? accent : widget.c.surface,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(widget.isMyMessage ? 16 : 4),
+            bottomRight: Radius.circular(widget.isMyMessage ? 4 : 16),
+          ),
+          border: widget.isMyMessage
+              ? null
+              : Border.all(color: widget.c.border, width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.url,
+              style: TextStyle(
+                fontSize: 14,
+                fontFamily: 'Outfit',
+                color: widget.isMyMessage
+                    ? Colors.white.withValues(alpha: 0.9)
+                    : accent,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _TimeStatus(
+                  message: widget.message,
+                  isMyMessage: widget.isMyMessage,
+                  c: widget.c),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final d = _data!;
+    final name = d['name'] as String;
+    final avatarUrl = d['avatarUrl'] as String?;
+    final meta = d['meta'] as String? ?? '';
+    final bio = d['bio'] as String?;
+    final ctaLabel = d['ctaLabel'] as String;
+    final ctaIcon = d['ctaIcon'] as IconData;
+    final badgeLabel = d['badgeLabel'] as String;
+    final badgeIcon = d['badgeIcon'] as IconData;
+    final isVerified = d['isVerified'] == true;
+
+    final initials = name.split(' ').map((w) => w.isEmpty ? '' : w[0]).join().substring(0, math.min(2, name.split(' ').map((w) => w.isEmpty ? '' : w[0]).join().length)).toUpperCase();
+
+    return _buildCard(
+      accent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top strip: dots + type pill
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            color: Colors.black.withValues(alpha: 0.18),
+            child: Row(
+              children: [
+                // Decorative dots (opacity gradient)
+                Row(
+                  children: List.generate(7, (i) => Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    width: 5, height: 5,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.15 + i * 0.1),
+                    ),
+                  )),
+                ),
+                const Spacer(),
+                // Type pill
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.22),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(badgeIcon, size: 11, color: Colors.white),
+                      const SizedBox(width: 3),
+                      Text(badgeLabel,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.5)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Body: avatar + text
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
+            child: Row(
+              children: [
+                // Avatar
+                Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.35), width: 2),
+                    color: Colors.white.withValues(alpha: 0.25),
+                  ),
+                  clipBehavior: Clip.hardEdge,
+                  child: avatarUrl != null
+                      ? CachedNetworkImage(
+                          imageUrl: avatarUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => Center(
+                            child: Text(initials,
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontFamily: 'Outfit',
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                        )
+                      : Center(
+                          child: Text(initials,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700)),
+                        ),
+                ),
+                const SizedBox(width: 10),
+                // Text block
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 15,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          if (isVerified) ...[
+                            const SizedBox(width: 4),
+                            const Icon(Icons.verified,
+                                size: 14, color: Colors.white),
+                          ],
+                        ],
+                      ),
+                      if (meta.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(meta,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.72),
+                                fontSize: 11,
+                                fontFamily: 'Outfit')),
+                      ],
+                      if (bio != null && bio.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(bio,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.6),
+                                fontSize: 11,
+                                fontFamily: 'Outfit')),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // CTA button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 9),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(ctaIcon, size: 14, color: accent),
+                  const SizedBox(width: 5),
+                  Text(ctaLabel,
+                      style: TextStyle(
+                          color: accent,
+                          fontSize: 13,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+          ),
+
+          // Footer
+          _footer(accent),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard(Color accent, {required Widget child}) {
+    return Container(
+      width: 248,
+      decoration: BoxDecoration(
+        color: accent,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: child,
+    );
+  }
+
+  Widget _footer(Color accent) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: [
+          Text(
+            _fmtMsgTime(widget.message.createdAt),
+            style: TextStyle(
+                color: Colors.white.withValues(alpha: 0.65),
+                fontSize: 11,
+                fontFamily: 'Outfit'),
+          ),
+          if (widget.isMyMessage) ...[
+            const SizedBox(width: 3),
+            Icon(Icons.done_all,
+                size: 14,
+                color: widget.message.isRead
+                    ? Colors.white.withValues(alpha: 0.9)
+                    : Colors.white.withValues(alpha: 0.55)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 // ── System Message ────────────────────────────────────────────────────────────
 class _SystemMessage extends StatelessWidget {
   final ChatMessage message;
@@ -1159,14 +2278,14 @@ class _ReactionsRow extends StatelessWidget {
   final List<Map<String, dynamic>> reactions;
   final bool isMyMessage;
   final String? currentUserId;
-  final void Function(String emoji)? onTap;
+  final void Function(String emoji)? onRemoveReaction;
   final ThemeColors c;
 
   const _ReactionsRow({
     required this.reactions,
     required this.isMyMessage,
     this.currentUserId,
-    this.onTap,
+    this.onRemoveReaction,
     required this.c,
   });
 
@@ -1190,7 +2309,18 @@ class _ReactionsRow extends StatelessWidget {
             e.value
                 .any((r) => r['user_id'].toString() == currentUserId);
         return GestureDetector(
-          onTap: () => onTap?.call(emoji),
+          onTap: () {
+            showModalBottomSheet(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              builder: (_) => MessageReactionSheet(
+                reactions: reactions,
+                currentUserId: currentUserId,
+                onRemoveReaction: onRemoveReaction,
+              ),
+            );
+          },
           child: Container(
             padding: const EdgeInsets.symmetric(
                 horizontal: 8, vertical: 4),

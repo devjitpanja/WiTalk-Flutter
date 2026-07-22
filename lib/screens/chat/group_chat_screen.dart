@@ -11,14 +11,13 @@ import '../../config/app_config.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
-import '../../api/dio_client.dart';
-import '../../api/app_endpoints.dart';
 import '../../services/chat_api_service.dart';
+import '../../services/upload_service.dart';
 import '../../widgets/chat/message_bubble.dart';
 import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/message_actions_bottom_sheet.dart';
 import '../../widgets/chat/message_reactions.dart';
-import '../../widgets/common/verification_badge.dart';
+import '../../widgets/chat/voice_recorder.dart';
 
 // Module-level group details cache — avoids "Updating..." flash on re-open
 final _groupDetailsCache = <String, Map<String, dynamic>>{};
@@ -58,6 +57,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
   List<_ListItem> _listItems = [];
   String? _currentUserId;
+  int _prevMessageCount = 0;
+  String? _highlightedMessageId;
+  List<Map<String, dynamic>> _pinnedMessages = [];
+  int _pinnedIndex = 0;
+  bool _isRecordingVoice = false;
 
   @override
   void initState() {
@@ -135,7 +139,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
     ref.read(chatProvider.notifier).markAsRead(widget.groupId);
 
-    if (mounted) setState(() => _loading = false);
+    if (mounted) {
+      setState(() => _loading = false);
+      // Wait two frames: first for setState rebuild, second for layout
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
+      });
+    }
     debugPrint('[GroupChat] _init complete, _loading=false');
   }
 
@@ -182,11 +192,18 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       final perms = await chatApiService.getGroupPermissions(widget.groupId, userId: uid);
       debugPrint('[GroupChat] Permissions: ${perms == null ? "NULL" : "OK"}');
 
+      List<Map<String, dynamic>> pinned = [];
+      try {
+        pinned = await chatApiService.getGroupPinnedMessages(widget.groupId);
+      } catch (_) {}
+
       if (mounted) {
         setState(() {
           _groupInfo = data;
           _permissions = perms;
           _topicsEnabled = data['topics_enabled'] == true;
+          _pinnedMessages = pinned;
+          _pinnedIndex = 0;
         });
       }
     } catch (e, st) {
@@ -311,6 +328,31 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     });
   }
 
+  void _scrollToMessage(String messageId) {
+    final idx = _listItems.indexWhere(
+        (item) => !item.isDivider && item.message?.id == messageId);
+    if (idx == -1) return;
+
+    // Estimate position (approx 72px per item)
+    final approxOffset = idx * 72.0;
+    final maxExtent = _scrollCtrl.hasClients
+        ? _scrollCtrl.position.maxScrollExtent
+        : 0.0;
+    final target = approxOffset.clamp(0.0, maxExtent);
+
+    _scrollCtrl.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+
+    // Highlight for 1.5s
+    setState(() => _highlightedMessageId = messageId);
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _highlightedMessageId = null);
+    });
+  }
+
   Future<void> _handleSend() async {
     final text = _inputCtrl.text.trim();
     final editing = _inputCtrl.editingMessage;
@@ -389,6 +431,36 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     _scrollToBottom();
   }
 
+  Future<void> _handleSendVoice(
+      {required String uri, required double duration}) async {
+    setState(() {
+      _isRecordingVoice = false;
+      _uploadingMedia = true;
+    });
+    try {
+      final uploadSvc = UploadService();
+      final result = await uploadSvc.uploadFile(File(uri), 'audio');
+      final url = result['url'] as String?;
+      if (url == null) return;
+
+      await ref.read(chatProvider.notifier).sendGroupMessage(
+            groupId: widget.groupId,
+            content: '',
+            messageType: 'voice',
+            mediaUrl: url,
+            mediaData: {'duration': duration},
+          );
+      _scrollToBottom();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Failed to send voice message')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingMedia = false);
+    }
+  }
+
   Future<String?> _pickAndSendImage() async {
     final uid = _currentUserId;
     if (uid == null) return null;
@@ -438,6 +510,19 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     final uid = _currentUserId;
     final isMyMessage = message.senderId == uid;
     final canDelete = isMyMessage || _isAdmin || _isOwner;
+    final isAdminOrOwner = _isAdmin || _isOwner;
+
+    // Sender mute status from members list
+    final senderMember = _members.firstWhere(
+        (m) => m['user_id']?.toString() == message.senderId || m['id']?.toString() == message.senderId,
+        orElse: () => {});
+    final isSenderMuted = senderMember['is_muted'] == true || senderMember['is_muted'] == 1;
+
+    final isCommunity = _groupInfo?['type'] == 'community';
+    final canBan = isAdminOrOwner && !isMyMessage &&
+        (_permissions?['can_ban'] != false);
+    final canKick = isAdminOrOwner && !isMyMessage &&
+        (_permissions?['can_kick'] != false);
 
     showModalBottomSheet(
       context: context,
@@ -461,9 +546,16 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           MessageActionsBottomSheet(
             message: message,
             isMyMessage: isMyMessage,
-            isAdmin: _isAdmin || _isOwner,
+            isAdmin: isAdminOrOwner,
             isPinned: message.isPinned,
             canDeleteForEveryone: canDelete,
+            isCommunity: isCommunity,
+            isSenderMuted: isSenderMuted,
+            onMute: isAdminOrOwner && !isMyMessage
+                ? () => _muteUser(message.senderId, !isSenderMuted)
+                : null,
+            onBan: canBan ? () => _banUser(message.senderId) : null,
+            onKick: canKick ? () => _kickUser(message.senderId) : null,
             onAction: (action) =>
                 _handleMessageAction(action, message),
           ),
@@ -561,6 +653,76 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     } catch (_) {}
   }
 
+  void _muteUser(String userId, bool mute) async {
+    try {
+      if (mute) {
+        await chatApiService.muteGroupMember(widget.groupId, userId, null);
+      } else {
+        await chatApiService.unmuteGroupMember(widget.groupId, userId);
+      }
+    } catch (_) {}
+  }
+
+  void _banUser(String userId) async {
+    final c = context.colors;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Ban User?',
+            style: TextStyle(
+                color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        content: Text('This will ban the user from the group.',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await chatApiService.banGroupMember(widget.groupId, userId, null);
+              } catch (_) {}
+            },
+            child: Text('Ban', style: TextStyle(color: c.error, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _kickUser(String userId) async {
+    final c = context.colors;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Remove User?',
+            style: TextStyle(
+                color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+        content: Text('This will remove the user from the group.',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              try {
+                await chatApiService.kickGroupMember(widget.groupId, userId);
+              } catch (_) {}
+            },
+            child: Text('Remove', style: TextStyle(color: const Color(0xFFF97316), fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -571,6 +733,16 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         ref.watch(conversationMessagesProvider(widget.groupId));
     _buildListItems(messages);
 
+    // Auto-scroll to bottom when new messages arrive and user is near bottom
+    if (messages.length > _prevMessageCount && _prevMessageCount > 0) {
+      final isNearBottom = _scrollCtrl.hasClients &&
+          _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels < 200;
+      if (isNearBottom) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      }
+    }
+    _prevMessageCount = messages.length;
+
     final typingUsers =
         ref.watch(conversationTypingProvider(widget.groupId));
 
@@ -579,6 +751,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     final memberCount =
         _groupInfo?['member_count'] ?? _members.length;
     final isLive = _groupInfo?['is_live'] == true;
+    final isGroupConnected = ref.watch(chatProvider).isGroupConnected;
 
     final typingNames = typingUsers
         .where((id) => id != uid)
@@ -663,7 +836,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                   Text(
                     isTyping
                         ? '$typingNames typing...'
-                        : '$memberCount members',
+                        : _groupInfo == null
+                            ? 'Updating...'
+                            : '$memberCount members • ${isGroupConnected ? 'Connected' : 'Connecting...'}',
                     style: TextStyle(
                       color: isTyping ? c.primary : c.textSecondary,
                       fontSize: 11,
@@ -681,54 +856,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         actions: [
           if (_topicsEnabled)
             IconButton(
-              icon: Icon(Icons.topic, color: c.text),
+              icon: Icon(Icons.sort, color: c.text),
               onPressed: () =>
                   context.push('/chat/group-topics/${widget.groupId}'),
             ),
-          IconButton(
-            icon: Icon(Icons.info_outline, color: c.text),
-            onPressed: () =>
-                context.push('/chat/group-info/${widget.groupId}'),
-          ),
-          PopupMenuButton<String>(
-            icon: Icon(Icons.more_vert, color: c.text),
-            color: c.surface,
-            onSelected: _onMenuAction,
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'search',
-                child: Text('Search',
-                    style: TextStyle(
-                        color: c.text, fontFamily: 'Outfit')),
-              ),
-              PopupMenuItem(
-                value: 'pinned',
-                child: Text('Pinned Messages',
-                    style: TextStyle(
-                        color: c.text, fontFamily: 'Outfit')),
-              ),
-              if (_isAdmin || _isOwner) ...[
-                PopupMenuItem(
-                  value: 'permissions',
-                  child: Text('Permissions',
-                      style: TextStyle(
-                          color: c.text, fontFamily: 'Outfit')),
-                ),
-                PopupMenuItem(
-                  value: 'action_log',
-                  child: Text('Action Log',
-                      style: TextStyle(
-                          color: c.text, fontFamily: 'Outfit')),
-                ),
-              ],
-              PopupMenuItem(
-                value: 'leave',
-                child: Text('Leave Group',
-                    style: TextStyle(
-                        color: c.error, fontFamily: 'Outfit')),
-              ),
-            ],
-          ),
         ],
         systemOverlayStyle: SystemUiOverlayStyle(
           statusBarColor: Colors.transparent,
@@ -739,6 +870,22 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         ),
       ),
       body: Column(children: [
+        // Pinned message banner (Telegram-style, cycles through all pins)
+        if (_pinnedMessages.isNotEmpty)
+          _PinnedBanner(
+            pinnedMessages: _pinnedMessages,
+            currentIndex: _pinnedIndex,
+            c: c,
+            onTap: () {
+              final pinned = _pinnedMessages[_pinnedIndex];
+              final msgId = pinned['message_id']?.toString() ?? pinned['id']?.toString();
+              if (msgId != null) _scrollToMessage(msgId);
+              // Cycle to next pin
+              setState(() {
+                _pinnedIndex = (_pinnedIndex + 1) % _pinnedMessages.length;
+              });
+            },
+          ),
         Expanded(
           child: Stack(children: [
             // Chat background image (matches RN: dark/light variant)
@@ -783,12 +930,26 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                             return DateDivider(date: item.date!);
                           }
                           final msg = item.message!;
+                          // Look up sender role from members list
+                          final senderMember = _members.firstWhere(
+                              (m) => m['user_id']?.toString() == msg.senderId ||
+                                  m['id']?.toString() == msg.senderId,
+                              orElse: () => {});
+                          final senderRole = senderMember['role']?.toString();
+                          final senderAdminTitle = senderMember['admin_title']?.toString();
+                          // Reply message (for onReplyTap)
+                          final replyToId = msg.replyTo?['id']?.toString() ??
+                              msg.replyToId;
                           return MessageBubble(
                             key: ValueKey(msg.id),
                             message: msg,
                             isMyMessage: msg.senderId == uid,
                             showAvatar: msg.senderId != uid,
                             senderName: msg.senderName,
+                            senderRole: senderRole,
+                            senderAdminTitle: senderAdminTitle,
+                            currentUserId: uid,
+                            isHighlighted: _highlightedMessageId == msg.id,
                             onLongPress: () =>
                                 _onMessageLongPress(msg),
                             onReactionTap: (emoji) {
@@ -796,27 +957,36 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                                   .read(chatProvider.notifier)
                                   .toggleReaction(msg.id, emoji, uid);
                             },
+                            onReplyTap: replyToId != null
+                                ? () => _scrollToMessage(replyToId)
+                                : null,
                           );
                         },
                       ),
           ]),
         ),
-        ChatInputBar(
-          controller: _inputCtrl,
-          conversationId: widget.groupId,
-          currentUserId: uid,
-          isGroup: true,
-          groupInfo: _groupInfo,
-          uploadingMedia: _uploadingMedia,
-          onSend: _handleSend,
-          startTyping: (id) =>
-              ref.read(chatProvider.notifier).startTyping(id, isGroup: true),
-          stopTyping: (id) =>
-              ref.read(chatProvider.notifier).stopTyping(id, isGroup: true),
-          onPickAndSendImage: _pickAndSendImage,
-          onStartVoiceRecording: () {},
-          onOpenGiphyPicker: _openGiphyPicker,
-        ),
+        if (_isRecordingVoice)
+          VoiceRecorder(
+            onSend: _handleSendVoice,
+            onCancel: () => setState(() => _isRecordingVoice = false),
+          )
+        else
+          ChatInputBar(
+            controller: _inputCtrl,
+            conversationId: widget.groupId,
+            currentUserId: uid,
+            isGroup: true,
+            groupInfo: _groupInfo,
+            uploadingMedia: _uploadingMedia,
+            onSend: _handleSend,
+            startTyping: (id) =>
+                ref.read(chatProvider.notifier).startTyping(id, isGroup: true),
+            stopTyping: (id) =>
+                ref.read(chatProvider.notifier).stopTyping(id, isGroup: true),
+            onPickAndSendImage: _pickAndSendImage,
+            onStartVoiceRecording: () => setState(() => _isRecordingVoice = true),
+            onOpenGiphyPicker: _openGiphyPicker,
+          ),
       ]),
     );
   }
@@ -928,12 +1098,96 @@ class _EmptyGroup extends StatelessWidget {
 // Expose service singleton
 final chatApiService = ChatApiService();
 
-class UploadService {
-  Future<Map<String, dynamic>> uploadFile(File file, String type) async {
-    final res = await dioClient.post(
-      AppEndpoints.filesUploadUrl,
-      data: {'type': type, 'file': file.path},
+// ── Pinned message banner (Telegram-style) ─────────────────────────────────────
+class _PinnedBanner extends StatelessWidget {
+  final List<Map<String, dynamic>> pinnedMessages;
+  final int currentIndex;
+  final ThemeColors c;
+  final VoidCallback onTap;
+
+  const _PinnedBanner({
+    required this.pinnedMessages,
+    required this.currentIndex,
+    required this.c,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pin = pinnedMessages[currentIndex];
+    final content = pin['content']?.toString() ?? '';
+    final type = pin['message_type']?.toString() ?? 'text';
+    String preview;
+    switch (type) {
+      case 'image': preview = '🌄 Photo'; break;
+      case 'voice': preview = '🎤 Voice Message'; break;
+      case 'video': preview = '🎥 Video'; break;
+      case 'giphy_gif': case 'giphy_sticker': preview = '🎬 GIF'; break;
+      default: preview = content.isNotEmpty ? content : 'Pinned message';
+    }
+
+    final total = pinnedMessages.length;
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border(bottom: BorderSide(color: c.border.withOpacity(0.4), width: 0.5)),
+        ),
+        child: Row(children: [
+          // Segmented indicator bar
+          if (total > 1)
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(total, (i) => Container(
+                width: 3,
+                height: 14.0 / total - 1,
+                margin: const EdgeInsets.symmetric(vertical: 0.5),
+                decoration: BoxDecoration(
+                  color: i == currentIndex ? c.primary : c.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              )),
+            )
+          else
+            Container(
+              width: 3,
+              height: 28,
+              decoration: BoxDecoration(
+                color: c.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  total > 1 ? 'Pinned Message ${currentIndex + 1} of $total' : 'Pinned Message',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    color: c.primary,
+                  ),
+                ),
+                const SizedBox(height: 1),
+                Text(
+                  preview,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.text),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.push_pin, size: 14, color: c.textTertiary),
+        ]),
+      ),
     );
-    return res.data as Map<String, dynamic>;
   }
 }

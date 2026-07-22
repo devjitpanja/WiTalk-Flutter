@@ -1,12 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
-import '../../services/upload_service.dart';
 
 // Mirrors ChatInputBar.jsx — imperative handle pattern
 // Parent calls methods on ChatInputBarController to get text, clear, set text
@@ -97,7 +94,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
   final _focusNode = FocusNode();
   ChatMessage? _replyingTo;
   ChatMessage? _editingMessage;
-  bool _showEmoji = false;
   Map<String, dynamic>? _composeLinkPreview;
   Timer? _typingTimer;
   Timer? _linkPreviewTimer;
@@ -214,15 +210,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
     _controller.clear();
   }
 
-  void _toggleEmoji() {
-    if (_showEmoji) {
-      _focusNode.requestFocus();
-    } else {
-      _focusNode.unfocus();
-    }
-    setState(() => _showEmoji = !_showEmoji);
-  }
-
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -307,17 +294,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     borderRadius: BorderRadius.circular(24),
                   ),
                   child: Row(children: [
-                    // Emoji / sticker
-                    IconButton(
-                      icon: Icon(
-                        _showEmoji
-                            ? Icons.keyboard
-                            : Icons.emoji_emotions_outlined,
-                        color: c.textSecondary,
-                        size: 22,
-                      ),
-                      onPressed: _toggleEmoji,
-                    ),
+                    const SizedBox(width: 12),
                     // Text field
                     Expanded(
                       child: TextField(
@@ -391,28 +368,6 @@ class _ChatInputBarState extends State<ChatInputBar> {
           ),
         ],
 
-        // Emoji picker
-        if (_showEmoji)
-          SizedBox(
-            height: 280,
-            child: EmojiPicker(
-              onEmojiSelected: (_, emoji) {
-                _controller.text += emoji.emoji;
-              },
-              config: Config(
-                emojiViewConfig: EmojiViewConfig(
-                  emojiSizeMax: 28,
-                  backgroundColor: c.surface,
-                ),
-                categoryViewConfig: CategoryViewConfig(
-                  indicatorColor: c.primary,
-                  iconColor: c.textSecondary,
-                  iconColorSelected: c.primary,
-                  dividerColor: c.border,
-                ),
-              ),
-            ),
-          ),
       ],
     );
   }

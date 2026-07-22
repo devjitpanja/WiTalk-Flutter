@@ -419,6 +419,7 @@ class ChatState {
   final Set<String> onlineUsers;
   final Map<String, Set<String>> typingUsers; // conversationId -> Set<userId>
   final bool isConnected;
+  final bool isGroupConnected;
   final String? activeConversationId;
   final Set<String> mutedChats; // other user IDs
   final Map<String, String> mutedGroups; // groupId -> mute type
@@ -432,6 +433,7 @@ class ChatState {
     this.onlineUsers = const {},
     this.typingUsers = const {},
     this.isConnected = false,
+    this.isGroupConnected = false,
     this.activeConversationId,
     this.mutedChats = const {},
     this.mutedGroups = const {},
@@ -446,6 +448,7 @@ class ChatState {
     Set<String>? onlineUsers,
     Map<String, Set<String>>? typingUsers,
     bool? isConnected,
+    bool? isGroupConnected,
     String? activeConversationId,
     bool clearActiveConversation = false,
     Set<String>? mutedChats,
@@ -460,6 +463,7 @@ class ChatState {
         onlineUsers: onlineUsers ?? this.onlineUsers,
         typingUsers: typingUsers ?? this.typingUsers,
         isConnected: isConnected ?? this.isConnected,
+        isGroupConnected: isGroupConnected ?? this.isGroupConnected,
         activeConversationId: clearActiveConversation
             ? null
             : activeConversationId ?? this.activeConversationId,
@@ -656,10 +660,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _setupGroupSocketListeners(io.Socket gs) {
     gs.on('connect', (_) {
       debugPrint('[GROUP-SOCKET] connected — re-joining active group if any');
+      state = state.copyWith(isGroupConnected: true);
       final active = state.activeConversationId;
       if (active != null && _currentUserId != null) {
         gs.emit('join_group', {'group_id': active, 'user_id': _currentUserId});
       }
+    });
+    gs.on('disconnect', (_) {
+      state = state.copyWith(isGroupConnected: false);
     });
 
     gs.on('new_group_message', (data) => _handleNewGroupMessage(data));

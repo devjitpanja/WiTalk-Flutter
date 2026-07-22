@@ -818,9 +818,6 @@ class _ChatConversationScreenState
       case MessageAction.unpin:
         _pinMessage(message, false);
         break;
-      case MessageAction.translate:
-        _translateMessage(message);
-        break;
       default:
         break;
     }

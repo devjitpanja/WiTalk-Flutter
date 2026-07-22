@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:timeago/timeago.dart' as timeago;
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/notification_provider.dart';
 
@@ -319,7 +319,6 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
         break;
 
       case 'system':
-        // No navigation unless action_url is handled separately
         break;
     }
     return null;
@@ -345,27 +344,28 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final state = ref.watch(notificationProvider);
     final grouped = _groupByTime(state.notifications);
     final flatItems = _flatten(grouped);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       body: SafeArea(
         child: Stack(
           children: [
             Column(
               children: [
-                _buildHeader(state.unreadCount),
+                _buildHeader(c, state.unreadCount),
                 Expanded(
                   child: state.refreshing && state.notifications.isEmpty
-                      ? const Center(
-                          child: CircularProgressIndicator(color: AppColors.primary))
+                      ? Center(
+                          child: CircularProgressIndicator(color: c.primary))
                       : flatItems.isEmpty && !state.loading
-                          ? _buildEmpty()
+                          ? _buildEmpty(c)
                           : RefreshIndicator(
-                              color: AppColors.primary,
-                              backgroundColor: AppColors.surface,
+                              color: c.primary,
+                              backgroundColor: c.surface,
                               onRefresh: () => ref
                                   .read(notificationProvider.notifier)
                                   .fetchNotifications(isRefresh: true),
@@ -375,11 +375,11 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                                 itemCount: flatItems.length + (state.loading && state.hasMore ? 1 : 0),
                                 itemBuilder: (context, index) {
                                   if (index == flatItems.length) {
-                                    return const Padding(
-                                      padding: EdgeInsets.symmetric(vertical: 20),
+                                    return Padding(
+                                      padding: const EdgeInsets.symmetric(vertical: 20),
                                       child: Center(
                                           child: CircularProgressIndicator(
-                                              color: AppColors.primary, strokeWidth: 2)),
+                                              color: c.primary, strokeWidth: 2)),
                                     );
                                   }
                                   final item = flatItems[index];
@@ -387,7 +387,6 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                                     return _SectionHeader(title: item.title!);
                                   }
                                   final notif = item.notification!;
-                                  // Auto-mark unread as read when scrolled into view
                                   if (!notif.isRead) _scheduleMarkAsRead(notif.id);
                                   return _SwipeableNotifTile(
                                     key: ValueKey(notif.id),
@@ -437,11 +436,11 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
     );
   }
 
-  Widget _buildHeader(int unreadCount) {
+  Widget _buildHeader(ThemeColors c, int unreadCount) {
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.background,
-        border: Border(bottom: BorderSide(color: Color(0x40E5E5EA), width: 0.5)),
+      decoration: BoxDecoration(
+        color: c.headerBackground,
+        border: Border(bottom: BorderSide(color: c.border.withValues(alpha: 0.5), width: 0.5)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Row(
@@ -453,7 +452,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
               height: 40,
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Icon(Icons.arrow_back, color: AppColors.text, size: 24),
+                child: Icon(Icons.arrow_back, color: c.text, size: 24),
               ),
             ),
           ),
@@ -461,8 +460,8 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
             child: Text(
               'Notifications',
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: AppColors.text,
+              style: TextStyle(
+                color: c.text,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
                 fontFamily: 'Outfit',
@@ -478,7 +477,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                         ref.read(notificationProvider.notifier).markAllAsRead(),
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: Icon(Icons.done_all, color: AppColors.primary, size: 22),
+                      child: Icon(Icons.done_all, color: c.primary, size: 22),
                     ),
                   )
                 : const SizedBox.shrink(),
@@ -488,12 +487,12 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
     );
   }
 
-  Widget _buildEmpty() {
+  Widget _buildEmpty(ThemeColors c) {
     return Center(
       child: Text(
         'No notifications yet',
-        style: const TextStyle(
-          color: AppColors.textTertiary,
+        style: TextStyle(
+          color: c.textTertiary,
           fontSize: 16,
           fontFamily: 'Outfit',
         ),
@@ -508,13 +507,14 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
-      color: AppColors.background,
+      color: c.background,
       padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 8),
       child: Text(
         title,
-        style: const TextStyle(
-          color: AppColors.text,
+        style: TextStyle(
+          color: c.text,
           fontSize: 18,
           fontWeight: FontWeight.w700,
           fontFamily: 'Outfit',
@@ -547,6 +547,10 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
   late AnimationController _animCtrl;
   double _dragOffset = 0;
   static const _deleteRevealWidth = 80.0;
+
+  // RN: dark unread=#161b27, light unread=#EBF5FF
+  static const _unreadBgDark = Color(0xFF161B27);
+  static const _unreadBgLight = Color(0xFFEBF5FF);
 
   @override
   void initState() {
@@ -582,17 +586,20 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final notif = widget.notif;
     final isUnread = !notif.isRead;
     final bg = isUnread
-        ? const Color(0xFF161B27)
-        : AppColors.background;
+        ? (isDark ? _unreadBgDark : _unreadBgLight)
+        : c.background;
 
-    return SizedBox(
-      height: 80,
+    // ClipRect + Stack mirrors RN's `overflow: 'hidden'` on swipeContainer.
+    // Container uses minHeight: 80 so tall text can expand (RN: minHeight: 80).
+    return ClipRect(
       child: Stack(
         children: [
-          // Delete background
+          // Delete background — positioned behind swipeable content
           Positioned(
             right: 0,
             top: 0,
@@ -617,12 +624,11 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
               child: GestureDetector(
                 onTap: widget.onPress,
                 child: Container(
-                  color: bg,
                   constraints: const BoxConstraints(minHeight: 80),
                   decoration: BoxDecoration(
                     color: bg,
-                    border: const Border(
-                      bottom: BorderSide(color: Color(0x30E5E5EA), width: 0.5),
+                    border: Border(
+                      bottom: BorderSide(color: c.border.withValues(alpha: 0.5), width: 0.5),
                     ),
                   ),
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -631,20 +637,23 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
                     children: [
                       GestureDetector(
                         onTap: widget.onProfilePress,
-                        child: _buildAvatar(notif),
+                        child: _buildAvatar(c, notif),
                       ),
                       const SizedBox(width: 12),
-                      Expanded(child: _buildDetails(notif, isUnread)),
+                      Expanded(child: _buildDetails(c, notif, isUnread)),
                       if (notif.thumbnailUrl != null) ...[
                         const SizedBox(width: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: CachedNetworkImage(
-                            imageUrl: notif.thumbnailUrl!,
-                            width: 40,
-                            height: 40,
-                            fit: BoxFit.cover,
-                            errorWidget: (ctx, e, w) => const SizedBox(width: 40, height: 40),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: CachedNetworkImage(
+                              imageUrl: notif.thumbnailUrl!,
+                              width: 40,
+                              height: 40,
+                              fit: BoxFit.cover,
+                              errorWidget: (ctx, e, w) => const SizedBox(width: 40, height: 40),
+                            ),
                           ),
                         ),
                       ],
@@ -655,8 +664,8 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
                           child: Container(
                             width: 8,
                             height: 8,
-                            decoration: const BoxDecoration(
-                              color: AppColors.primary,
+                            decoration: BoxDecoration(
+                              color: c.primary,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -673,32 +682,38 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
     );
   }
 
-  Widget _buildAvatar(NotificationItem notif) {
+  Widget _buildAvatar(ThemeColors c, NotificationItem notif) {
     final pic = notif.actorProfilePicMedium ?? notif.actorProfilePic;
     final isSystem =
         notif.actorName == 'WiTalk' || notif.actorName == 'WiTalk Team';
 
     if (pic != null && pic.isNotEmpty) {
-      return ClipOval(
-        child: CachedNetworkImage(
-          imageUrl: pic,
-          width: 40,
-          height: 40,
-          fit: BoxFit.cover,
-          errorWidget: (ctx, e, w) => _placeholderAvatar(notif, isSystem),
+      return Padding(
+        padding: const EdgeInsets.only(top: 2),
+        child: ClipOval(
+          child: CachedNetworkImage(
+            imageUrl: pic,
+            width: 40,
+            height: 40,
+            fit: BoxFit.cover,
+            errorWidget: (ctx, e, w) => _placeholderAvatar(c, notif, isSystem),
+          ),
         ),
       );
     }
-    return _placeholderAvatar(notif, isSystem);
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: _placeholderAvatar(c, notif, isSystem),
+    );
   }
 
-  Widget _placeholderAvatar(NotificationItem notif, bool isSystem) {
+  Widget _placeholderAvatar(ThemeColors c, NotificationItem notif, bool isSystem) {
     if (isSystem) {
       return Container(
         width: 40,
         height: 40,
-        decoration: const BoxDecoration(
-          color: AppColors.primary,
+        decoration: BoxDecoration(
+          color: c.primary,
           shape: BoxShape.circle,
         ),
         alignment: Alignment.center,
@@ -718,24 +733,24 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
     return Container(
       width: 40,
       height: 40,
-      decoration: const BoxDecoration(
-        color: AppColors.border,
+      decoration: BoxDecoration(
+        color: c.border,
         shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
       child: Text(
         initial,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 18,
           fontWeight: FontWeight.w600,
           fontFamily: 'Outfit',
-          color: AppColors.textTertiary,
+          color: c.textTertiary,
         ),
       ),
     );
   }
 
-  Widget _buildDetails(NotificationItem notif, bool isUnread) {
+  Widget _buildDetails(ThemeColors c, NotificationItem notif, bool isUnread) {
     final actorName = notif.actorName ?? 'Someone';
     final message = notif.message ?? '';
     final timeStr = notif.createdAt != null
@@ -754,7 +769,7 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
               TextSpan(
                 text: actorName,
                 style: TextStyle(
-                  color: AppColors.text,
+                  color: c.text,
                   fontSize: 14,
                   height: 1.43,
                   fontFamily: 'Outfit',
@@ -765,8 +780,8 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
                 const TextSpan(text: ' '),
                 TextSpan(
                   text: message,
-                  style: const TextStyle(
-                    color: AppColors.textTertiary,
+                  style: TextStyle(
+                    color: c.textTertiary,
                     fontSize: 14,
                     height: 1.43,
                     fontFamily: 'Outfit',
@@ -782,8 +797,8 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
         const SizedBox(height: 2),
         Text(
           timeStr,
-          style: const TextStyle(
-            color: AppColors.textTertiary,
+          style: TextStyle(
+            color: c.textTertiary,
             fontSize: 13,
             fontFamily: 'Outfit',
           ),
@@ -815,19 +830,15 @@ class _AlertOverlay extends StatelessWidget {
     required this.onCancel,
   });
 
-  Color get _accentColor {
-    switch (type) {
-      case 'danger':
-        return AppColors.danger;
-      case 'warning':
-        return AppColors.warning;
-      default:
-        return AppColors.primary;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final accentColor = switch (type) {
+      'danger' => c.danger,
+      'warning' => c.warning,
+      _ => c.primary,
+    };
+
     return GestureDetector(
       onTap: onCancel,
       child: Container(
@@ -838,7 +849,7 @@ class _AlertOverlay extends StatelessWidget {
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 32),
             decoration: BoxDecoration(
-              color: AppColors.cardBackground,
+              color: c.cardBackground,
               borderRadius: BorderRadius.circular(14),
             ),
             child: Column(
@@ -851,8 +862,8 @@ class _AlertOverlay extends StatelessWidget {
                       Text(
                         title,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.text,
+                        style: TextStyle(
+                          color: c.text,
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
                           fontFamily: 'Outfit',
@@ -862,8 +873,8 @@ class _AlertOverlay extends StatelessWidget {
                       Text(
                         message,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.textTertiary,
+                        style: TextStyle(
+                          color: c.textTertiary,
                           fontSize: 13,
                           fontFamily: 'Outfit',
                           height: 1.4,
@@ -873,7 +884,7 @@ class _AlertOverlay extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
-                const Divider(height: 0.5, color: AppColors.border),
+                Divider(height: 0.5, color: c.border),
                 if (showCancel)
                   Row(
                     children: [
@@ -885,16 +896,16 @@ class _AlertOverlay extends StatelessWidget {
                           ),
                           child: Text(
                             cancelText ?? 'Cancel',
-                            style: const TextStyle(
-                              color: AppColors.textTertiary,
+                            style: TextStyle(
+                              color: c.textTertiary,
                               fontSize: 17,
                               fontFamily: 'Outfit',
                             ),
                           ),
                         ),
                       ),
-                      const VerticalDivider(
-                          width: 0.5, thickness: 0.5, color: AppColors.border),
+                      VerticalDivider(
+                          width: 0.5, thickness: 0.5, color: c.border),
                       Expanded(
                         child: TextButton(
                           onPressed: onConfirm,
@@ -904,7 +915,7 @@ class _AlertOverlay extends StatelessWidget {
                           child: Text(
                             confirmText,
                             style: TextStyle(
-                              color: _accentColor,
+                              color: accentColor,
                               fontSize: 17,
                               fontWeight: FontWeight.w600,
                               fontFamily: 'Outfit',
@@ -925,7 +936,7 @@ class _AlertOverlay extends StatelessWidget {
                       child: Text(
                         confirmText,
                         style: TextStyle(
-                          color: _accentColor,
+                          color: accentColor,
                           fontSize: 17,
                           fontWeight: FontWeight.w600,
                           fontFamily: 'Outfit',
