@@ -62,11 +62,17 @@ class _ChatConversationScreenState
   bool _isMuted = false;
   bool _isBlocked = false;
   bool _theyBlockedMe = false;
+  bool _otherUserIsBanned = false;
   bool _privacyBlocked = false;
   String? _privacyMessage;
+  String? _privacySetting;
   bool _isIncomingRequest = false;
   bool _isOutgoingRequest = false;
   int _sentMessageCount = 0;
+
+  // Women safety / respect warning
+  final ValueNotifier<int> _respectCountdown = ValueNotifier(5);
+  Timer? _countdownTimer;
 
   String? _currentUserId;
 
@@ -143,6 +149,8 @@ class _ChatConversationScreenState
     _dot0Ctrl.dispose();
     _dot1Ctrl.dispose();
     _dot2Ctrl.dispose();
+    _countdownTimer?.cancel();
+    _respectCountdown.dispose();
     // Leave conversation room and clear active tracking (mirrors RN useFocusEffect cleanup)
     ref.read(chatProvider.notifier).leaveConversation(widget.chatId);
     ref.read(chatProvider.notifier).setActiveConversation(null);
@@ -212,10 +220,13 @@ class _ChatConversationScreenState
     final otherUserId =
         (_chatPartner?['id'] ?? widget.otherUser?['id'])?.toString();
 
-    // Run mute + block checks in parallel
+    // Run all status checks in parallel (mirrors RN InteractionManager.runAfterInteractions)
     await Future.wait([
       _loadMuteStatus(uid, otherUserId),
       _checkBlockStatus(uid, otherUserId),
+      _checkPrivacyStatus(otherUserId),
+      _checkReceiverBanStatus(otherUserId),
+      _checkMatchStatus(otherUserId),
     ]);
 
     if (mounted) {
@@ -257,16 +268,257 @@ class _ChatConversationScreenState
   Future<void> _checkBlockStatus(String uid, String? otherUserId) async {
     if (otherUserId == null) return;
     try {
-      final res =
-          await dioClient.get('${AppEndpoints.checkBlock}/$uid/$otherUserId');
-      final data = res.data['data'] as Map<String, dynamic>?;
+      final res = await dioClient.get(AppEndpoints.checkBlock, queryParameters: {
+        'blocker_id': uid,
+        'blocked_id': otherUserId,
+      });
+      final data = res.data['data'];
       if (mounted && data != null) {
         setState(() {
-          _isBlocked = data['i_blocked'] == true;
-          _theyBlockedMe = data['they_blocked'] == true;
+          _isBlocked = data['i_blocked_them'] == true;
+          _theyBlockedMe = data['they_blocked_me'] == true;
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _checkPrivacyStatus(String? otherUserId) async {
+    if (otherUserId == null) return;
+    try {
+      final res = await dioClient.get(AppEndpoints.canMessage(otherUserId));
+      final data = res.data['data'];
+      if (data != null && data['canMessage'] == false && mounted) {
+        setState(() {
+          _privacyBlocked = true;
+          _privacyMessage = (data['message'] as String?)?.isNotEmpty == true
+              ? data['message'] as String
+              : 'This user is not accepting messages.';
+          _privacySetting = data['privacySetting'] as String?;
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _checkReceiverBanStatus(String? otherUserId) async {
+    if (otherUserId == null) return;
+    try {
+      final res = await dioClient.get('/v1/user/$otherUserId');
+      final data = res.data['data'];
+      if (data != null && data['is_banned'] == true && mounted) {
+        setState(() => _otherUserIsBanned = true);
+      }
+    } catch (e) {
+      // Backend returns 403 when account is banned
+      if (e.toString().contains('403') && mounted) {
+        setState(() => _otherUserIsBanned = true);
+      }
+    }
+  }
+
+  // Mirrors RN checkMatchStatus — shows women safety sheet on first message to a female
+  Future<void> _checkMatchStatus(String? otherUserId) async {
+    if (otherUserId == null) return;
+    // Only trigger for NEW conversations (no existing chatId messages)
+    // and only when the conversation doesn't already have messages
+    final existingMessages = ref.read(conversationMessagesProvider(widget.chatId));
+    final isNewConversation = existingMessages.isEmpty;
+    if (!isNewConversation) return;
+
+    // Determine other user gender — from already-loaded partner or fetch from API
+    String? otherGender = (_chatPartner?['gender'] ?? widget.otherUser?['gender']) as String?;
+    if ((otherGender == null || otherGender.isEmpty) && otherUserId.isNotEmpty) {
+      try {
+        final res = await dioClient.get('/v1/user/$otherUserId');
+        otherGender = res.data['data']?['gender'] as String?;
+      } catch (_) {}
+    }
+
+    if (otherGender?.toLowerCase() != 'female') return;
+
+    // Check mutual match — if matched, skip warning
+    bool isMutualMatch = false;
+    try {
+      final res = await dioClient.get(AppEndpoints.profileInteraction(otherUserId));
+      isMutualMatch = res.data['data']?['isMutualLike'] == true;
+    } catch (_) {}
+
+    if (!isMutualMatch && mounted) {
+      _triggerRespectWarning();
+    }
+  }
+
+  void _triggerRespectWarning() {
+    if (!mounted) return;
+    _respectCountdown.value = 5;
+    // (no build-visible state needed — sheet is shown imperatively)
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      if (_respectCountdown.value <= 1) {
+        _respectCountdown.value = 0;
+        t.cancel();
+      } else {
+        _respectCountdown.value--;
+      }
+    });
+    // Show as bottom sheet modal after current frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showRespectWarningSheet();
+    });
+  }
+
+  void _showRespectWarningSheet() {
+    final partner = _chatPartner ?? widget.otherUser;
+    final partnerName = (partner?['name'] ?? partner?['username'] ?? 'this person') as String;
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: c.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Pink shield icon circle
+                  Container(
+                    width: 68,
+                    height: 68,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isDark
+                          ? const Color(0xFFE91E8C).withValues(alpha: 0.12)
+                          : const Color(0xFFE91E8C).withValues(alpha: 0.08),
+                    ),
+                    child: const Icon(Icons.shield, size: 36, color: Color(0xFFE91E8C)),
+                  ),
+                  const SizedBox(height: 14),
+                  // Title
+                  Text(
+                    'A Friendly Reminder',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                      color: c.text,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Divider(height: 1, color: c.border),
+                  const SizedBox(height: 16),
+                  // First-message context line
+                  Text.rich(
+                    TextSpan(
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w500,
+                        color: c.text,
+                      ),
+                      children: [
+                        const TextSpan(text: 'You are about to message '),
+                        TextSpan(
+                          text: partnerName,
+                          style: const TextStyle(
+                            color: Color(0xFFE91E8C),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const TextSpan(text: ' for the first time, who is a woman.'),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 10),
+                  // Body text
+                  Text.rich(
+                    TextSpan(
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'Outfit',
+                        color: c.textSecondary,
+                        height: 1.55,
+                      ),
+                      children: [
+                        const TextSpan(
+                          text: 'WiTalk is a safe space built on mutual respect and dignity. We ask every user to treat others with kindness and courtesy — the way you would want your loved ones to be treated.\n\n'
+                              'Sending inappropriate, offensive, or harassing messages is strictly prohibited. Any violation of our community standards ',
+                        ),
+                        TextSpan(
+                          text: 'may result in a permanent ban',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: c.text,
+                          ),
+                        ),
+                        const TextSpan(
+                          text: ' from WiTalk.\n\nBe kind. Be respectful. Make this a great conversation.',
+                        ),
+                      ],
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  // "I Understand" button with 5s countdown — ValueListenableBuilder
+                  // so only the button rebuilds on each tick, not the whole sheet
+                  ValueListenableBuilder<int>(
+                    valueListenable: _respectCountdown,
+                    builder: (_, count, __) {
+                      final enabled = count <= 0;
+                      return SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: enabled
+                              ? () {
+                                  _countdownTimer?.cancel();
+                                  _countdownTimer = null;
+                                  Navigator.pop(ctx);
+                                  // sheet dismissed
+                                }
+                              : null,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: enabled
+                                ? const Color(0xFFE91E8C)
+                                : (isDark
+                                    ? const Color(0xFF4A1A35)
+                                    : const Color(0xFFF0A0CB)),
+                            disabledBackgroundColor: isDark
+                                ? const Color(0xFF4A1A35)
+                                : const Color(0xFFF0A0CB),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: Text(
+                            enabled ? 'I Understand' : 'I Understand (${count}s)',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+    );
   }
 
   Future<void> _loadMessages({bool reset = false}) async {
@@ -302,6 +554,13 @@ class _ChatConversationScreenState
 
       if (reset) {
         ref.read(chatProvider.notifier).setMessages(widget.chatId, chatMsgs);
+        // Derive sent message count for outgoing-request 2-message limit
+        if (_isOutgoingRequest && _currentUserId != null) {
+          final sent = chatMsgs
+              .where((m) => m.senderId == _currentUserId)
+              .length;
+          if (mounted) setState(() => _sentMessageCount = sent);
+        }
       } else {
         ref
             .read(chatProvider.notifier)
@@ -550,6 +809,14 @@ class _ChatConversationScreenState
     final uid = _currentUserId;
     final partner = _chatPartner ?? widget.otherUser;
     if (uid == null || partner == null) return;
+
+    // 2-message limit for outgoing requests (mirrors RN handleSend guard)
+    if (_isOutgoingRequest && _sentMessageCount >= 2) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Waiting for the request to be accepted before sending more messages'),
+      ));
+      return;
+    }
 
     if (editing != null) {
       _inputCtrl.clearEditing();
@@ -1182,8 +1449,10 @@ class _ChatConversationScreenState
           otherUser: _chatPartner,
           isBlocked: _isBlocked,
           theyBlockedMe: _theyBlockedMe,
+          otherUserIsBanned: _otherUserIsBanned,
           privacyBlocked: _privacyBlocked,
           privacyMessage: _privacyMessage,
+          privacySetting: _privacySetting,
           isIncomingRequest: _isIncomingRequest,
           isOutgoingRequest: _isOutgoingRequest,
           sentMessageCount: _sentMessageCount,

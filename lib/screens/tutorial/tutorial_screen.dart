@@ -821,7 +821,6 @@ class _VideoPlayerModal extends StatefulWidget {
 class _VideoPlayerModalState extends State<_VideoPlayerModal> {
   late YoutubePlayerController _controller;
   bool _playerReady = false;
-  bool _playerError = false;
   bool _videoEnded = false;
 
   @override
@@ -833,28 +832,22 @@ class _VideoPlayerModalState extends State<_VideoPlayerModal> {
       flags: const YoutubePlayerFlags(
         autoPlay: true,
         mute: false,
-        disableDragSeek: false,
         loop: false,
-        isLive: false,
-        forceHD: false,
         enableCaption: false,
+        forceHD: false,
       ),
     )..addListener(_onPlayerStateChange);
   }
 
   void _onPlayerStateChange() {
     if (_controller.value.playerState == PlayerState.ended) {
-      if (!_videoEnded) {
-        setState(() {
-          _videoEnded = true;
-        });
+      if (!_videoEnded && mounted) {
+        setState(() => _videoEnded = true);
         widget.onCompleted?.call();
       }
     } else if (_controller.value.playerState == PlayerState.playing) {
-      if (_videoEnded) {
-        setState(() {
-          _videoEnded = false;
-        });
+      if (_videoEnded && mounted) {
+        setState(() => _videoEnded = false);
       }
     }
   }
@@ -874,8 +867,6 @@ class _VideoPlayerModalState extends State<_VideoPlayerModal> {
   Widget build(BuildContext context) {
     final colors = context.colors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final playerHeight = (screenWidth * (9 / 16)).roundToDouble();
 
     final title = widget.video['title']?.toString() ?? '';
     final description = widget.video['description']?.toString() ?? '';
@@ -909,89 +900,10 @@ class _VideoPlayerModalState extends State<_VideoPlayerModal> {
               ),
             ),
 
-            // Player wrapper
-            SizedBox(
-              width: screenWidth,
-              height: playerHeight,
-              child: Stack(
-                children: [
-                  if (!_playerError)
-                    YoutubePlayer(
-                      controller: _controller,
-                      showVideoProgressIndicator: true,
-                      progressIndicatorColor: colors.primary,
-                      onReady: () => setState(() => _playerReady = true),
-                      onEnded: (_) {
-                        if (!_videoEnded) {
-                          setState(() => _videoEnded = true);
-                          widget.onCompleted?.call();
-                        }
-                      },
-                    )
-                  else
-                    // Error fallback
-                    Stack(
-                      children: [
-                        CachedNetworkImage(
-                          imageUrl: _thumbUrl(youtubeId),
-                          width: screenWidth,
-                          height: playerHeight,
-                          fit: BoxFit.cover,
-                        ),
-                        Container(
-                          color: Colors.black.withValues(alpha: 0.7),
-                          child: const Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.error_outline, size: 36, color: Colors.white),
-                                SizedBox(height: 8),
-                                Text(
-                                  'Unable to load player',
-                                  style: TextStyle(
-                                    fontFamily: 'Outfit',
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 15,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'Check your internet connection',
-                                  style: TextStyle(
-                                    fontFamily: 'Outfit',
-                                    fontWeight: FontWeight.w400,
-                                    fontSize: 12,
-                                    color: Colors.white60,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                  // Loading overlay before player is ready
-                  if (!_playerReady && !_playerError)
-                    Stack(
-                      children: [
-                        CachedNetworkImage(
-                          imageUrl: _thumbUrl(youtubeId),
-                          width: screenWidth,
-                          height: playerHeight,
-                          fit: BoxFit.cover,
-                        ),
-                        Container(
-                          color: Colors.black.withValues(alpha: 0.5),
-                          child: const Center(
-                            child: CircularProgressIndicator(color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
+            // Player
+            YoutubePlayer(
+              controller: _controller,
+              aspectRatio: 16 / 9,
             ),
 
             // Video info
@@ -1113,10 +1025,8 @@ class _VideoPlayerModalState extends State<_VideoPlayerModal> {
                           Expanded(
                             child: GestureDetector(
                               onTap: () {
-                                setState(() {
-                                  _videoEnded = false;
-                                });
-                                _controller.seekTo(Duration.zero);
+                                setState(() => _videoEnded = false);
+                                _controller.seekTo(const Duration(seconds: 0));
                                 _controller.play();
                               },
                               child: Container(
@@ -1181,3 +1091,4 @@ class _VideoPlayerModalState extends State<_VideoPlayerModal> {
     );
   }
 }
+

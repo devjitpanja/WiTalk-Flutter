@@ -35,8 +35,10 @@ class ChatInputBar extends StatefulWidget {
   // Flags
   final bool isBlocked;
   final bool theyBlockedMe;
+  final bool otherUserIsBanned;
   final bool privacyBlocked;
   final String? privacyMessage;
+  final String? privacySetting;
   final bool isIncomingRequest;
   final bool isOutgoingRequest;
   final int sentMessageCount;
@@ -64,8 +66,10 @@ class ChatInputBar extends StatefulWidget {
     this.otherUser,
     this.isBlocked = false,
     this.theyBlockedMe = false,
+    this.otherUserIsBanned = false,
     this.privacyBlocked = false,
     this.privacyMessage,
+    this.privacySetting,
     this.isIncomingRequest = false,
     this.isOutgoingRequest = false,
     this.sentMessageCount = 0,
@@ -244,12 +248,16 @@ class _ChatInputBarState extends State<ChatInputBar> {
             c: c,
           ),
 
-        // Blocked / privacy banner
-        if (widget.theyBlockedMe || widget.privacyBlocked)
+        // Banned user (red) — highest priority, mirrors RN bannedBanner
+        if (widget.otherUserIsBanned)
+          _BannedUserBanner(c: c)
+        // Privacy blocked (amber) — only followers, verified only, etc.
+        else if (widget.theyBlockedMe || widget.privacyBlocked)
           _BlockedBanner(
             theyBlockedMe: widget.theyBlockedMe,
             privacyBlocked: widget.privacyBlocked,
             privacyMessage: widget.privacyMessage,
+            privacySetting: widget.privacySetting,
             c: c,
           )
         // Incoming request actions
@@ -268,13 +276,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
           _UploadingBanner(c: c)
         // Normal input
         else ...[
-          // Outgoing request pending
+          // Outgoing request pending banner — shown when limit reached
           if (widget.isOutgoingRequest && widget.sentMessageCount >= 2)
             _PendingRequestBanner(
               otherUserName: widget.otherUserName ?? 'User',
               c: c,
             ),
-          // Input row
+          // Input row — hidden when outgoing request limit reached (mirrors RN)
+          if (!(widget.isOutgoingRequest && widget.sentMessageCount >= 2))
           Container(
             padding: EdgeInsets.fromLTRB(
                 8, 8, 8, bottomPad + 8),
@@ -579,18 +588,9 @@ class _ComposeLinkPreview extends StatelessWidget {
   }
 }
 
-class _BlockedBanner extends StatelessWidget {
-  final bool theyBlockedMe;
-  final bool privacyBlocked;
-  final String? privacyMessage;
+class _BannedUserBanner extends StatelessWidget {
   final ThemeColors c;
-
-  const _BlockedBanner({
-    required this.theyBlockedMe,
-    required this.privacyBlocked,
-    required this.privacyMessage,
-    required this.c,
-  });
+  const _BannedUserBanner({required this.c});
 
   @override
   Widget build(BuildContext context) {
@@ -598,34 +598,72 @@ class _BlockedBanner extends StatelessWidget {
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: c.surface,
-        border: Border(
-            top: BorderSide(
-                color: c.border.withOpacity(0.3), width: 0.5)),
+        border: Border(top: BorderSide(color: c.border.withOpacity(0.3), width: 0.5)),
       ),
-      child: Row(mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-        Icon(
-          privacyBlocked ? Icons.lock : Icons.block,
-          size: 18,
-          color: privacyBlocked
-              ? const Color(0xFFFF9F0A)
-              : c.error,
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.block, size: 18, color: c.error),
+        const SizedBox(width: 8),
+        Flexible(
+          child: Text(
+            'This account has been banned',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: c.error),
+          ),
         ),
+      ]),
+    );
+  }
+}
+
+class _BlockedBanner extends StatelessWidget {
+  final bool theyBlockedMe;
+  final bool privacyBlocked;
+  final String? privacyMessage;
+  final String? privacySetting;
+  final ThemeColors c;
+
+  const _BlockedBanner({
+    required this.theyBlockedMe,
+    required this.privacyBlocked,
+    required this.privacyMessage,
+    this.privacySetting,
+    required this.c,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Icon varies by privacySetting (mirrors RN bannedBanner icon logic)
+    IconData icon;
+    if (privacyBlocked) {
+      if (privacySetting == 'same_gender') {
+        icon = Icons.wc;
+      } else if (privacySetting == 'verified_only') {
+        icon = Icons.verified;
+      } else {
+        icon = Icons.lock;
+      }
+    } else {
+      icon = Icons.block;
+    }
+
+    final color = privacyBlocked ? const Color(0xFFFF9F0A) : c.error;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.border.withOpacity(0.3), width: 0.5)),
+      ),
+      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(icon, size: 18, color: color),
         const SizedBox(width: 8),
         Flexible(
           child: Text(
             privacyBlocked
-                ? (privacyMessage ??
-                    'This user is not accepting messages')
+                ? (privacyMessage ?? 'This user is not accepting messages')
                 : 'You cannot message this user',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              fontFamily: 'Outfit',
-              color: privacyBlocked
-                  ? const Color(0xFFFF9F0A)
-                  : c.error,
-            ),
+            style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: color),
           ),
         ),
       ]),
@@ -773,11 +811,11 @@ class _PendingRequestBanner extends StatelessWidget {
       padding:
           const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: c.surface,
+        color: const Color(0xFFFF9F0A),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(children: [
-        Icon(Icons.access_time, size: 14, color: Colors.white),
+        const Icon(Icons.access_time, size: 14, color: Colors.white),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
