@@ -19,8 +19,6 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _scrollCtrl = ScrollController();
-  bool _headerVisible = true;
-  double _lastScrollY = 0;
 
   @override
   void initState() {
@@ -35,15 +33,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _onScroll() {
-    final y = _scrollCtrl.offset;
-    final diff = y - _lastScrollY;
-    _lastScrollY = y;
-
-    // Toggle header visibility on scroll
-    if (diff > 5 && _headerVisible) setState(() => _headerVisible = false);
-    if (diff < -5 && !_headerVisible) setState(() => _headerVisible = true);
-
-    // Infinite scroll pagination threshold (400px before end)
     if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 400) {
       ref.read(feedNotifierProvider.notifier).loadMore();
     }
@@ -128,84 +117,106 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       backgroundColor: c.background,
       body: SafeArea(
-        child: Column(children: [
-          AnimatedSlide(
-            offset: _headerVisible ? Offset.zero : const Offset(0, -1),
-            duration: const Duration(milliseconds: 200),
-            child: _buildHeader(),
-          ),
-          Expanded(
-            child: _buildBody(feedState, currentUserId, c),
-          ),
-        ]),
+        child: _buildBody(feedState, currentUserId, c),
       ),
     );
   }
 
   Widget _buildBody(FeedState state, String? currentUserId, ThemeColors c) {
     if (state.isLoading && state.posts.isEmpty) {
-      return _buildSkeleton(c);
+      return NestedScrollView(
+        headerSliverBuilder: (_, __) => [_buildSliverHeader(c)],
+        body: _buildSkeleton(c),
+      );
     }
 
     if (state.error != null && state.posts.isEmpty) {
-      return _buildError(state.error!, c);
+      return NestedScrollView(
+        headerSliverBuilder: (_, __) => [_buildSliverHeader(c)],
+        body: _buildError(state.error!, c),
+      );
     }
 
     if (state.posts.isEmpty) {
-      return _buildEmpty(c);
+      return NestedScrollView(
+        headerSliverBuilder: (_, __) => [_buildSliverHeader(c)],
+        body: _buildEmpty(c),
+      );
     }
 
     return RefreshIndicator(
       color: c.primaryButton,
       backgroundColor: c.surface,
+      notificationPredicate: (notification) => notification.depth == 0,
       onRefresh: () async {
         await ref.read(feedNotifierProvider.notifier).refresh();
       },
-      child: ListView.builder(
+      child: CustomScrollView(
         controller: _scrollCtrl,
-        itemCount: state.posts.length + (state.isFetchingMore ? 1 : 0),
-        itemBuilder: (_, i) {
-          if (i == state.posts.length) {
-            return Container(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              alignment: Alignment.center,
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2, color: c.primaryButton),
-              ),
-            );
-          }
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          _buildSliverHeader(c),
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (_, i) {
+                if (i == state.posts.length) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: c.primaryButton),
+                    ),
+                  );
+                }
 
-          final post = state.posts[i];
-          final postId = post['id'].toString();
+                final post = state.posts[i];
+                final postId = post['id'].toString();
 
-          // Start tracking view duration & metrics
-          if (currentUserId != null && currentUserId.isNotEmpty) {
-            postViewTrackingService.startTracking(
-              postId: postId,
-              userId: currentUserId,
-              screenType: 'feed',
-            );
-            postFeedbackService.startViewTracking(postId);
-          }
+                if (currentUserId != null && currentUserId.isNotEmpty) {
+                  postViewTrackingService.startTracking(
+                    postId: postId,
+                    userId: currentUserId,
+                    screenType: 'feed',
+                  );
+                  postFeedbackService.startViewTracking(postId);
+                }
 
-          return PostCard(
-            post: post,
-            currentUserId: currentUserId,
-            onLikeUpdate: _onLikeUpdate,
-            onCommentUpdate: _onCommentUpdate,
-            onShowMoreMenu: _onShowMoreMenu,
-          );
-        },
+                return PostCard(
+                  post: post,
+                  currentUserId: currentUserId,
+                  onLikeUpdate: _onLikeUpdate,
+                  onCommentUpdate: _onCommentUpdate,
+                  onShowMoreMenu: _onShowMoreMenu,
+                );
+              },
+              childCount: state.posts.length + (state.isFetchingMore ? 1 : 0),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildHeader() => const WiTalkHeader(
-        title: 'WiTalk',
-        showBorder: true,
-        showNotifications: true,
+  Widget _buildSliverHeader(ThemeColors c) => SliverAppBar(
+        floating: true,
+        snap: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: c.background,
+        automaticallyImplyLeading: false,
+        titleSpacing: 0,
+        toolbarHeight: 52,
+        title: const WiTalkHeader(
+          title: 'WiTalk',
+          showBorder: false,
+          showNotifications: true,
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(0.7),
+          child: Container(height: 0.7, color: c.border),
+        ),
       );
 
   Widget _buildSkeleton(ThemeColors c) => ListView.builder(
