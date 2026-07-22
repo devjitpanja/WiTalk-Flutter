@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/dio_client.dart';
 import 'auth_provider.dart';
@@ -131,11 +132,18 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   final String userId;
   Timer? _pollingTimer;
 
+  // IDs that have been marked read locally — used to override stale server
+  // responses that may still return is_read: false due to server caching or
+  // race conditions between our mark call and the next fetch.
+  final _localReadIds = <String>{};
+
   NotificationNotifier(this.userId) : super(const NotificationState()) {
+    debugPrint('[NotifProvider] 🟢 Notifier CREATED for userId=$userId');
     _init();
   }
 
   void _init() {
+    debugPrint('[NotifProvider] 🔄 _init: fetching notifications fresh from server');
     fetchNotifications(isRefresh: true);
     _startPolling();
   }
@@ -177,9 +185,18 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
       );
       final responseData = res.data['data'];
       final List<dynamic> rawList = responseData['notifications'] as List? ?? [];
+      // Apply local read overrides: if we already marked an ID as read locally,
+      // force isRead=true even if the server still returns false (race condition).
       final items = rawList
           .whereType<Map<String, dynamic>>()
-          .map(NotificationItem.fromJson)
+          .map((json) {
+            final item = NotificationItem.fromJson(json);
+            if (!item.isRead && _localReadIds.contains(item.id)) {
+              debugPrint('[NotifProvider] fetch override: id=${item.id} forced isRead=true (local cache)');
+              return item.copyWith(isRead: true);
+            }
+            return item;
+          })
           .toList();
 
       final hasMore = responseData['pagination']?['hasMore'] == true;
@@ -214,25 +231,36 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
   }
 
   Future<void> markAsRead(String notificationId) async {
+    debugPrint('[NotifProvider] markAsRead: id=$notificationId → calling API');
+    // Mark locally first so any concurrent/subsequent fetch won't re-show as unread
+    _localReadIds.add(notificationId);
+    // Optimistic UI update immediately
+    state = state.copyWith(
+      notifications: state.notifications
+          .map((n) => n.id == notificationId ? n.copyWith(isRead: true) : n)
+          .toList(),
+      unreadCount: (state.unreadCount - 1).clamp(0, 99999),
+    );
     try {
       await dioClient.put('/v1/notifications/$notificationId/read', data: {'userId': userId});
-      state = state.copyWith(
-        notifications: state.notifications
-            .map((n) => n.id == notificationId ? n.copyWith(isRead: true) : n)
-            .toList(),
-        unreadCount: (state.unreadCount - 1).clamp(0, 99999),
-      );
+      debugPrint('[NotifProvider] markAsRead: ✅ API success for id=$notificationId');
       _fetchCounts();
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[NotifProvider] markAsRead: ❌ API FAILED for id=$notificationId error=$e');
+    }
   }
 
   Future<void> markAllAsRead() async {
+    // Optimistic: mark all current IDs locally before API call
+    for (final n in state.notifications) {
+      _localReadIds.add(n.id);
+    }
+    state = state.copyWith(
+      notifications: state.notifications.map((n) => n.copyWith(isRead: true)).toList(),
+      unreadCount: 0,
+    );
     try {
       await dioClient.put('/v1/notifications/read-all', data: {'userId': userId});
-      state = state.copyWith(
-        notifications: state.notifications.map((n) => n.copyWith(isRead: true)).toList(),
-        unreadCount: 0,
-      );
     } catch (_) {}
   }
 
@@ -266,13 +294,18 @@ class NotificationNotifier extends StateNotifier<NotificationState> {
 
   @override
   void dispose() {
+    debugPrint('[NotifProvider] 🔴 Notifier DISPOSED — in-memory read state LOST. Next open fetches server state.');
     _pollingTimer?.cancel();
     super.dispose();
   }
 }
 
+// Not autoDispose — matches RN NotificationContext which is a global provider
+// that lives for the entire app lifetime. autoDispose was causing the notifier
+// to be destroyed every time the screen was popped, wiping in-memory isRead
+// state and re-fetching from server, making already-read items re-appear as unread.
 final notificationProvider =
-    StateNotifierProvider.autoDispose<NotificationNotifier, NotificationState>((ref) {
+    StateNotifierProvider<NotificationNotifier, NotificationState>((ref) {
   final uid = ref.watch(authProvider).uid ?? '';
   return NotificationNotifier(uid);
 });

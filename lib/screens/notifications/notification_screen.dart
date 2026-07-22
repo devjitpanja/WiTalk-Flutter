@@ -112,6 +112,16 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
   void dispose() {
     _scrollController.dispose();
     _batchMarkTimer?.cancel();
+    if (_pendingMarks.isNotEmpty) {
+      debugPrint('[NotifScreen] dispose: flushing ${_pendingMarks.length} pending marks: $_pendingMarks');
+      final notifier = ref.read(notificationProvider.notifier);
+      for (final id in _pendingMarks) {
+        notifier.markAsRead(id);
+      }
+      _pendingMarks.clear();
+    } else {
+      debugPrint('[NotifScreen] dispose: no pending marks to flush');
+    }
     super.dispose();
   }
 
@@ -124,6 +134,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
 
   void _scheduleMarkAsRead(String id) {
     if (_markedSet.contains(id)) return;
+    debugPrint('[NotifScreen] scheduleMarkAsRead: queuing id=$id (pendingCount=${_pendingMarks.length + 1})');
     _markedSet.add(id);
     _pendingMarks.add(id);
 
@@ -131,6 +142,7 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
     _batchMarkTimer = Timer(const Duration(seconds: 1), () {
       final ids = Set<String>.from(_pendingMarks);
       _pendingMarks.clear();
+      debugPrint('[NotifScreen] batchTimer fired: marking ${ids.length} notifications as read: $ids');
       for (final id in ids) {
         ref.read(notificationProvider.notifier).markAsRead(id);
       }
