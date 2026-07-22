@@ -17,6 +17,9 @@ class SocketService {
   io.Socket? _groupSocket;
   io.Socket? _audioRoomSocket;
 
+  // Stored audio-room join params — re-emitted on every reconnect
+  Map<String, dynamic>? _audioRoomJoinParams;
+
   final _storage = const FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true));
   bool _isConnected = false;
@@ -224,9 +227,14 @@ class SocketService {
   void _setupAudioRoomLifecycleListeners(String? uid) {
     _audioRoomSocket?.on('connect', (_) {
       debugPrint('[AUDIO-ROOM-SOCKET] ✅ Connected! id=${_audioRoomSocket?.id}');
-      if (uid != null) {
+      // Re-emit join with the stored params (set by emitAudioRoomJoin)
+      final params = _audioRoomJoinParams;
+      if (params != null) {
+        _audioRoomSocket?.emit('join', [params['roomId'], params['userInfo']]);
+        debugPrint('[AUDIO-ROOM-SOCKET] Re-emitting join roomId=${params['roomId']}');
+      } else if (uid != null) {
+        // Fallback: user-only join (before a room is entered)
         _audioRoomSocket?.emit('join', uid);
-        debugPrint('[AUDIO-ROOM-SOCKET] Emitting join uid=$uid');
       }
     });
 
@@ -327,6 +335,36 @@ class SocketService {
   }
 
   // ── Emit helpers (/audio-room-chat namespace) ──────────────────────────────
+
+  /// Join an audio room — emits the room-join event with the correct server
+  /// payload and stores params so they're re-emitted on every reconnect.
+  void joinAudioRoom(String roomId, {
+    required String userId,
+    required String username,
+    String? profilePicture,
+  }) {
+    _audioRoomJoinParams = {
+      'roomId': roomId,
+      'userInfo': {
+        'userId': userId,
+        'username': username,
+        'profile_picture': profilePicture,
+      },
+    };
+    _audioRoomSocket?.emit('join', [roomId, {
+      'userId': userId,
+      'username': username,
+      'profile_picture': profilePicture,
+    }]);
+    debugPrint('[AUDIO-ROOM-SOCKET] Emitting join roomId=$roomId uid=$userId');
+  }
+
+  /// Clear stored join params when the user leaves a room.
+  void leaveAudioRoom(String roomId) {
+    _audioRoomJoinParams = null;
+    _audioRoomSocket?.emit('leave_room', {'roomId': roomId});
+  }
+
   void emitAudioRoom(String event, [dynamic data]) {
     _audioRoomSocket?.emit(event, data);
   }

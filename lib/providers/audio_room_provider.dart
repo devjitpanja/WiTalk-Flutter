@@ -115,6 +115,16 @@ class AudioRoomState {
   final Map<String, dynamic>? leaveDialogConfig;
   final bool showLeaveDialog;
 
+  // ── Access / community ────────────────────────────────────────────────────
+  final bool canTakeAddaSeat;
+  final String? myCommunityRole;
+  final String? channelName;
+
+  // ── Navigation signals ────────────────────────────────────────────────────
+  final bool shouldNavigateBack; // host ends own room → just pop, no ended screen
+  final bool kickedFromRoom;     // kicked → toast + navigate back
+  final bool bannedFromRoom;     // banned → toast + navigate back
+
   const AudioRoomState({
     this.roomId,
     this.roomName = 'WiTalk Adda',
@@ -186,6 +196,12 @@ class AudioRoomState {
     this.showAlertDialog = false,
     this.leaveDialogConfig,
     this.showLeaveDialog = false,
+    this.canTakeAddaSeat = true,
+    this.myCommunityRole,
+    this.channelName,
+    this.shouldNavigateBack = false,
+    this.kickedFromRoom = false,
+    this.bannedFromRoom = false,
   });
 
   AudioRoomState copyWith({
@@ -259,6 +275,12 @@ class AudioRoomState {
     bool? showAlertDialog,
     Object? leaveDialogConfig = _sentinel,
     bool? showLeaveDialog,
+    bool? canTakeAddaSeat,
+    Object? myCommunityRole = _sentinel,
+    Object? channelName = _sentinel,
+    bool? shouldNavigateBack,
+    bool? kickedFromRoom,
+    bool? bannedFromRoom,
   }) {
     return AudioRoomState(
       roomId: roomId ?? this.roomId,
@@ -351,6 +373,16 @@ class AudioRoomState {
           ? this.leaveDialogConfig
           : leaveDialogConfig as Map<String, dynamic>?,
       showLeaveDialog: showLeaveDialog ?? this.showLeaveDialog,
+      canTakeAddaSeat: canTakeAddaSeat ?? this.canTakeAddaSeat,
+      myCommunityRole: myCommunityRole == _sentinel
+          ? this.myCommunityRole
+          : myCommunityRole as String?,
+      channelName: channelName == _sentinel
+          ? this.channelName
+          : channelName as String?,
+      shouldNavigateBack: shouldNavigateBack ?? this.shouldNavigateBack,
+      kickedFromRoom: kickedFromRoom ?? this.kickedFromRoom,
+      bannedFromRoom: bannedFromRoom ?? this.bannedFromRoom,
     );
   }
 }
@@ -383,6 +415,12 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   int _dailySpentSecondsLocal = 0;
   bool _timeLimitFired = false;
   bool _reactionOnCooldown = false;
+  // Reconnect tracking — mirrors lastReconnectedAtRef in RN
+  int _lastReconnectedAt = 0;
+  // Last join params for retry after connection error
+  Map<String, dynamic>? _joinParams;
+  // Seat change cooldown
+  int _lastSeatChangeTime = 0;
 
   AudioRoomNotifier(this.ref) : super(const AudioRoomState());
 
@@ -433,9 +471,23 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       // ── Step 2: Extract room metadata ──────────────────────────────────────
       final data =
           (joinResult['data'] ?? {}) as Map<String, dynamic>;
+
+      // ── user_data access checks (mirrors RN initialize()) ──────────────────
       final userData = (data['user_data'] ?? joinResult['user_data'])
           as Map<String, dynamic>?;
+      bool canTakeAddaSeat = true;
       if (userData != null) {
+        // Access check — bail before doing anything else
+        final access = userData['access'] as Map?;
+        if (access != null && access['can_join_adda'] == false) {
+          state = state.copyWith(
+            isLoading: false,
+            error: "You don't have permission to join Adda rooms.",
+          );
+          return false;
+        }
+        canTakeAddaSeat = access?['can_take_adda_seat'] != false;
+
         final fetchedName =
             userData['name']?.toString() ?? userData['username']?.toString();
         final fetchedPic = userData['profile_pic_medium']?.toString() ??
@@ -449,6 +501,32 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         }
       }
 
+      // ── already_in_room: stale session from app force-kill ─────────────────
+      // (mirrors RN check: re-leave then re-join once; if still flagged → multi-device)
+      if (joinResult['already_in_room'] == true && !isHost) {
+        try {
+          await audioRoomService.leaveRoom(roomId);
+        } catch (_) {}
+        try {
+          final retryResult = await audioRoomService.joinRoom(roomId, effectiveRole);
+          if (retryResult['already_in_room'] == true) {
+            state = state.copyWith(
+              isLoading: false,
+              error: 'You are already in this adda from another device. Please leave on the other device first.',
+            );
+            return false;
+          }
+          // Use the fresh result going forward — merged below
+          joinResult.addAll(retryResult);
+        } catch (_) {
+          state = state.copyWith(
+            isLoading: false,
+            error: 'You are already in this adda from another device. Please leave on the other device first.',
+          );
+          return false;
+        }
+      }
+
       final livekitToken = joinResult['livekit_token']?.toString() ?? '';
       final livekitUrl = joinResult['livekit_url']?.toString() ?? '';
       final iceServers = joinResult['ice_servers'] as List<dynamic>?;
@@ -459,11 +537,13 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       final myRole = joinResult['my_role']?.toString() ?? effectiveRole;
       final actualIsAdmin =
           myRole == 'admin' || myRole == 'host' || actualIsHost;
+      final myCommunityRole = joinResult['my_community_role']?.toString();
 
-      final admins = (data['admins'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          [];
+      final adminsList = data['admins'] as List?;
+      final admins = adminsList?.map((e) {
+        if (e is Map) return e['uid']?.toString() ?? e.toString();
+        return e.toString();
+      }).toList() ?? <String>[];
       final maxSeats = (data['max_seats'] as int?) ?? 8;
       final stageRequestEnabled = data['stage_request_enabled'] != null
           ? data['stage_request_enabled'] == 1 ||
@@ -477,11 +557,17 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
               (data['egress_id'] != null &&
                   data['egress_id'].toString().isNotEmpty);
 
-      // Daily limit
-      final dailyLimitMinutes =
-          (joinResult['daily_limit_minutes'] as int?) ??
+      // Daily limit — hosts are exempt
+      final dailyLimitMinutes = isHost
+          ? 0
+          : (joinResult['daily_limit_minutes'] as int?) ??
               (data['daily_limit_minutes'] as int?) ??
               0;
+      // Seed daily spent seconds from join response
+      final dailySpentSeconds = isHost
+          ? 0
+          : (joinResult['daily_spent_seconds'] as int?) ?? 0;
+      _dailySpentSecondsLocal = dailySpentSeconds;
 
       // Seed seat manager
       _seatManager.isHost = actualIsHost;
@@ -565,6 +651,10 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
             Map<String, Map<String, dynamic>>.from(
                 _participantManager.profiles),
         dailyLimitMinutes: dailyLimitMinutes,
+        dailySpentSeconds: dailySpentSeconds,
+        canTakeAddaSeat: canTakeAddaSeat,
+        myCommunityRole: myCommunityRole,
+        channelName: data['channel_name']?.toString(),
       );
 
       // ── Step 3: Connect LiveKit ────────────────────────────────────────────
@@ -588,19 +678,61 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         if (actualIsHost) {
           try {
             await liveKitAudioManager.startPublishing();
-            await liveKitAudioManager.setMicrophoneEnabled(true);
+            // NOTE: startPublishing() enables mic internally — do NOT call
+            // setMicrophoneEnabled(true) again (causes double-enable on Android)
+            final micStarted = liveKitAudioManager.isPublishing;
+            state = state.copyWith(isMuted: !micStarted);
+            if (micStarted && _myUid != null) {
+              _participantManager.updateParticipantMic(_myUid!, true);
+              liveKitAudioManager.sendRoomCommand(
+                'MIC_STATE_CHANGED',
+                data: {'userID': _myUid, 'isMicOn': true},
+              );
+            }
           } catch (e) {
             if (kDebugMode) {
               print('[AudioRoomProvider] Host mic start failed: $e');
             }
           }
         }
+
+        // Auto-admin: broadcast ROLE_CHANGED if non-host was granted admin on join
+        if (!actualIsHost && actualIsAdmin && _myUid != null) {
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              liveKitAudioManager.sendRoomCommand(
+                'ROLE_CHANGED',
+                data: {
+                  'userID': _myUid,
+                  'newRole': 'admin',
+                  'autoGrant': true,
+                },
+              );
+            }
+          });
+        }
       }
+
+      // Store join params for retry on reconnect failure
+      _joinParams = {
+        'token': livekitToken,
+        'livekitUrl': livekitUrl,
+        'iceServers': iceServers,
+        'name': myDisplayName,
+      };
 
       // ── Step 4: Connect Socket.IO & set up all event listeners ───────────
       await socketService.connect();
-      socketService.emitAudioRoom('join_room', {'roomId': roomId});
-      socketService.emitAudioRoom('seat_state_request', {'roomId': roomId});
+      // joinAudioRoom emits join(roomId, {userId, username, profile_picture})
+      // matching the server's /audio-room-chat 'join' handler exactly.
+      // It also stores params for auto-re-emit on reconnect.
+      socketService.joinAudioRoom(
+        roomId,
+        userId: currentUid,
+        username: myDisplayName,
+        profilePicture: myPhotoUrl,
+      );
+      socketService.emitAudioRoom('seat_state_request'); // no args — server uses socket room context
       _setupAllSocketListeners(roomId, currentUid, hostUid);
 
       // ── Step 5: Start timers ───────────────────────────────────────────────
@@ -612,7 +744,27 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         _startDailyLimitTimer(roomId, dailyLimitMinutes);
       }
 
-      // ── Step 6: Subscribe to participant manager events ────────────────────
+      // ── Step 6: Host triggers recording after 3s ───────────────────────────
+      if (actualIsHost && !cloudRecordingActive) {
+        Future.delayed(const Duration(seconds: 3), () async {
+          if (!mounted || state.roomId == null) return;
+          try {
+            final recRes =
+                await audioRoomService.startRecording(state.roomId!);
+            if (recRes['success'] == true && recRes['isHidden'] != true) {
+              if (mounted) {
+                state = state.copyWith(cloudRecordingActive: true);
+                liveKitAudioManager.sendRoomCommand(
+                  'RECORDING_STARTED',
+                  data: {'isPublic': state.isRoomPublic},
+                );
+              }
+            }
+          } catch (_) {}
+        });
+      }
+
+      // ── Step 7: Subscribe to participant manager events ────────────────────
       final managerSub = _participantManager.events.listen((_) {
         state = state.copyWith(
           participantProfiles: Map<String, Map<String, dynamic>>.from(
@@ -633,14 +785,25 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         final serverMsg = e.response?.data is Map
             ? (e.response!.data as Map)['message']?.toString()
             : null;
+        final errorCode = e.response?.data is Map
+            ? (e.response!.data as Map)['errorCode']?.toString()
+            : null;
         if (statusCode == 426) {
           msg = 'Please update the app to join this room.';
+        } else if (statusCode == 429 || errorCode == 'DAILY_LIMIT_REACHED') {
+          msg = "You've used your daily Adda time for today. Come back tomorrow!";
+        } else if (statusCode == 403 && errorCode == 'NOT_COMMUNITY_MEMBER') {
+          msg = serverMsg ?? 'You need to join this community first.';
+        } else if (statusCode == 403 && errorCode == 'COMMUNITY_MUTED') {
+          msg = serverMsg ?? 'You have been muted in this community.';
+        } else if (statusCode == 400 && errorCode == 'PRIVATE_ROOM') {
+          msg = serverMsg ?? 'This is a private room. You need an invite link to join.';
         } else if (statusCode == 403) {
-          msg = 'You are not allowed to join this room.';
+          msg = serverMsg ?? 'You are not allowed to join this room.';
         } else if (statusCode == 404) {
           msg = 'This room no longer exists.';
-        } else if (statusCode == 429) {
-          msg = 'You have reached your daily limit for Personal Addas.';
+        } else if (statusCode == 400) {
+          msg = serverMsg ?? 'This adda has ended.';
         } else if (serverMsg != null && serverMsg.isNotEmpty) {
           msg = serverMsg;
         }
@@ -725,19 +888,75 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         case LiveKitAudioEvents.roomStateChanged:
           final errorCode = event['errorCode'] as int?;
           final isReconnect = event['isReconnect'] == true;
-          if (isReconnect) {
-            // After reconnect, re-request seat state to resync
-            socketService.emitAudioRoom(
-                'seat_state_request', {'roomId': state.roomId});
+          if (errorCode == 0) {
+            // Connected or Reconnected
+            if (isReconnect) {
+              _lastReconnectedAt = DateTime.now().millisecondsSinceEpoch;
+              // Re-register in backend DB after reconnect (clears left_at)
+              final rejoRole = state.isHost ? 'host' : (state.isAdmin ? 'admin' : 'audience');
+              audioRoomService.joinRoom(roomId, rejoRole, reconnect: true)
+                  .catchError((_) => <String, dynamic>{});
+              // Re-request seat state to resync
+              socketService.emitAudioRoom('seat_state_request');
+            }
           } else if (errorCode == 1002034) {
             // Room deleted by host
+            if (_roomClosedShown) return;
+            _roomClosedShown = true;
+            liveKitAudioManager.destroy().catchError((_) {});
             _showRoomEndedScreen();
           } else if (errorCode == 1002035) {
-            // Participant removed (kick/ban)
-            // The KICK/BAN roomCommand handler takes priority — only fallback here
-            state = state.copyWith(
-                error: 'You were removed from this room.');
-            leaveRoom();
+            // PARTICIPANT_REMOVED — may be spurious after reconnect
+            if (_roomClosedShown) return;
+            final msSinceReconnect = DateTime.now().millisecondsSinceEpoch - _lastReconnectedAt;
+            final isLikelyFalseKick = msSinceReconnect < 10000;
+            if (state.isHost || isLikelyFalseKick) {
+              // Check room health before evicting
+              audioRoomService.checkRoomHealth(roomId).then((health) async {
+                if (!mounted) return;
+                if (health['data']?['active'] == false) {
+                  if (_roomClosedShown) return;
+                  _roomClosedShown = true;
+                  await liveKitAudioManager.destroy().catchError((_) {});
+                  _showRoomEndedScreen();
+                } else {
+                  // Room alive — attempt rejoin with fresh token
+                  final freshRole = state.isHost ? 'host' : (state.isAdmin ? 'admin' : 'audience');
+                  audioRoomService.joinRoom(roomId, freshRole).then((joinRes) async {
+                    if (!mounted) return;
+                    final freshToken = joinRes['livekit_token']?.toString() ?? _joinParams?['token'] ?? '';
+                    final freshUrl = joinRes['livekit_url']?.toString() ?? _joinParams?['livekitUrl'] ?? '';
+                    if (freshToken.isNotEmpty && freshUrl.isNotEmpty) {
+                      try {
+                        await liveKitAudioManager.joinRoom(
+                          roomId: roomId,
+                          userId: myUid,
+                          userName: _joinParams?['name'] ?? myUid,
+                          token: freshToken,
+                          livekitUrl: freshUrl,
+                        );
+                        _joinParams = {...?_joinParams, 'token': freshToken, 'livekitUrl': freshUrl};
+                      } catch (_) {}
+                    }
+                  }).catchError((_) {});
+                }
+              }).catchError((_) {});
+            } else {
+              // Not host, not a false kick — we were kicked
+              _roomClosedShown = true;
+              liveKitAudioManager.stopPublishing().catchError((_) {});
+              liveKitAudioManager.leaveRoom().catchError((_) {});
+              audioRoomService.leaveRoom(roomId).catchError((_) => <String, dynamic>{});
+              state = state.copyWith(kickedFromRoom: true);
+            }
+          } else if (errorCode == 1002051) {
+            // Full reconnect failed — wait 4s then check health and rejoin
+            final waitStartedAt = DateTime.now().millisecondsSinceEpoch;
+            Future.delayed(const Duration(seconds: 4), () async {
+              if (!mounted) return;
+              if (_lastReconnectedAt > waitStartedAt) return; // recovered on its own
+              _attemptRejoinAfterDisconnect(roomId, myUid, state.isHost ? 'host' : (state.isAdmin ? 'admin' : 'audience'));
+            });
           }
           break;
 
@@ -817,39 +1036,44 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         break;
 
       case 'TURN_MIC_ON':
-        // Host is directly turning on my mic
+        // Host requests turn on my mic — show Decline / Turn On dialog (mirrors RN)
         _showAlert(
-          title: 'Mic Turned On',
-          message: 'The host has turned on your microphone.',
+          title: 'Microphone Request',
+          message: 'The host has requested you to turn on your microphone.',
           type: 'info',
-          confirmLabel: 'OK',
+          confirmLabel: 'Turn On',
+          cancelLabel: 'Decline',
+          onConfirm: () async {
+            state = state.copyWith(mutedByHost: false);
+            await liveKitAudioManager.setMicrophoneEnabled(true);
+            state = state.copyWith(isMuted: false);
+            if (_myUid != null) {
+              _participantManager.updateParticipantMic(_myUid!, true);
+              liveKitAudioManager.sendRoomCommand(
+                'MIC_STATE_CHANGED',
+                data: {'userID': _myUid, 'isMicOn': true},
+              );
+            }
+          },
         );
-        if (!state.mutedByHost) {
-          liveKitAudioManager.setMicrophoneEnabled(true);
-          state = state.copyWith(isMuted: false);
-        }
         break;
 
       case 'KICK':
-        // Kicked from room
+        // Kicked — stop audio immediately, signal navigation (no dialog)
         _roomClosedShown = true;
-        _showAlert(
-          title: 'Removed',
-          message: 'You have been removed from this room.',
-          type: 'danger',
-          onConfirm: () => leaveRoom(),
-        );
+        liveKitAudioManager.stopPublishing().catchError((_) => null);
+        liveKitAudioManager.leaveRoom().catchError((_) => null);
+        audioRoomService.leaveRoom(state.roomId ?? '').catchError((_) => <String, dynamic>{});
+        state = state.copyWith(kickedFromRoom: true);
         break;
 
       case 'BAN':
-        // Banned from room
+        // Banned — stop audio immediately, signal navigation
         _roomClosedShown = true;
-        _showAlert(
-          title: 'Banned',
-          message: 'You have been banned from this room.',
-          type: 'danger',
-          onConfirm: () => leaveRoom(),
-        );
+        liveKitAudioManager.stopPublishing().catchError((_) => null);
+        liveKitAudioManager.leaveRoom().catchError((_) => null);
+        audioRoomService.leaveRoom(state.roomId ?? '').catchError((_) => <String, dynamic>{});
+        state = state.copyWith(bannedFromRoom: true);
         break;
 
       case 'ROOM_CLOSED':
@@ -1069,12 +1293,35 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     });
 
     socketService.onAudioRoom('seat_request_accepted', (data) {
-      // My seat request was accepted — I'll be placed via seat_state
+      // My seat request was accepted
+      final acceptedUid = (data is Map) ? data['uid']?.toString() : null;
+      if (acceptedUid != null && acceptedUid != myUid) return;
+
+      final seatIndex = (data is Map)
+          ? (data['seatIndex'] ?? data['seat_index'])
+          : null;
+      final si = seatIndex is int
+          ? seatIndex
+          : int.tryParse(seatIndex?.toString() ?? '') ?? -1;
+      final serverAssigned = (data is Map) ? data['serverAssigned'] == true : false;
+
       _seatManager.clearPendingOwnRequest();
+      if (si >= 0) {
+        _seatManager.lockedSeats.remove(si);
+        liveKitAudioManager.setSeatIndex(si);
+      }
       state = state.copyWith(isHandRaised: false);
+
+      // serverAssigned=false (legacy): server only unlocked seat, we must claim it
+      if (!serverAssigned && si >= 0) {
+        socketService.emitAudioRoom('seat_take', {'seatIndex': si});
+      }
+      // Audio start fires via seat_state confirmation
     });
 
     socketService.onAudioRoom('seat_request_rejected', (data) {
+      final rejectedUid = (data is Map) ? data['uid']?.toString() : null;
+      if (rejectedUid != null && rejectedUid != myUid) return;
       _seatManager.clearPendingOwnRequest();
       state = state.copyWith(isHandRaised: false);
       _showAlert(
@@ -1085,14 +1332,38 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     });
 
     socketService.onAudioRoom('seat_take_failed', (data) {
-      // Seat claim failed (occupied, locked, etc.)
-      final reason =
-          (data is Map) ? data['reason']?.toString() : null;
-      _showAlert(
-        title: 'Could Not Take Seat',
-        message: reason ?? 'This seat is no longer available.',
-        type: 'warning',
-      );
+      // Seat claim failed — auto-retry on 'occupied' (mirrors RN)
+      final reason = (data is Map) ? data['reason']?.toString() : null;
+      if (reason == 'occupied') {
+        // Check if we're already in a seat (race: seat_state arrived first)
+        final alreadySeated = _seatManager.getSeatForUser(myUid) != -1;
+        if (!alreadySeated) {
+          final nextSeat = _seatManager.findAvailableSeat();
+          if (nextSeat != -1) {
+            // Silent retry with next available seat
+            liveKitAudioManager.setSeatIndex(nextSeat);
+            socketService.emitAudioRoom('seat_take', {'seatIndex': nextSeat});
+            return;
+          }
+        }
+        _showAlert(
+          title: 'Could Not Take Seat',
+          message: 'All seats are taken. Please try again later.',
+          type: 'warning',
+        );
+      } else if (reason == 'locked') {
+        _showAlert(
+          title: 'Seat Locked',
+          message: 'That seat is locked by the host.',
+          type: 'warning',
+        );
+      } else {
+        _showAlert(
+          title: 'Could Not Take Seat',
+          message: 'Could not take seat. Please try again.',
+          type: 'warning',
+        );
+      }
     });
 
     socketService.onAudioRoom('seat_request_received', (data) {
@@ -1584,6 +1855,13 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
 
   // ── _showRoomEndedScreen ───────────────────────────────────────────────────
   Future<void> _showRoomEndedScreen() async {
+    // If current user is the host, just navigate back — no "ended" screen
+    if (state.isHost || _myUid == state.hostUid) {
+      await _cleanupOnLeave();
+      state = state.copyWith(shouldNavigateBack: true);
+      return;
+    }
+
     // Try to fetch host profile for the ended screen
     Map<String, dynamic>? hostProfile;
     if (state.hostUid != null) {
@@ -1655,12 +1933,61 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     });
   }
 
+  // ── Rejoin after 1002051 disconnect ─────────────────────────────────────
+  Future<void> _attemptRejoinAfterDisconnect(
+      String roomId, String myUid, String role) async {
+    if (!mounted || _roomClosedShown) return;
+    try {
+      final health = await audioRoomService.checkRoomHealth(roomId);
+      if (!mounted) return;
+      if (health['data']?['active'] == false) {
+        if (_roomClosedShown) return;
+        _roomClosedShown = true;
+        await liveKitAudioManager.destroy().catchError((_) {});
+        _showRoomEndedScreen();
+        return;
+      }
+      // Room alive — get fresh token and rejoin
+      final joinRes = await audioRoomService.joinRoom(roomId, role);
+      if (!mounted) return;
+      if (joinRes['success'] != true) {
+        if (_roomClosedShown) return;
+        _roomClosedShown = true;
+        await liveKitAudioManager.destroy().catchError((_) {});
+        _showRoomEndedScreen();
+        return;
+      }
+      final freshToken = joinRes['livekit_token']?.toString() ?? _joinParams?['token'] ?? '';
+      final freshUrl = joinRes['livekit_url']?.toString() ?? _joinParams?['livekitUrl'] ?? '';
+      if (freshToken.isNotEmpty && freshUrl.isNotEmpty) {
+        await liveKitAudioManager.joinRoom(
+          roomId: roomId,
+          userId: myUid,
+          userName: _joinParams?['name'] ?? myUid,
+          token: freshToken,
+          livekitUrl: freshUrl,
+        );
+        _joinParams = {...?_joinParams, 'token': freshToken, 'livekitUrl': freshUrl};
+      }
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final s = e.response?.statusCode;
+      if (s == 400 || s == 404) {
+        if (_roomClosedShown) return;
+        _roomClosedShown = true;
+        await liveKitAudioManager.destroy().catchError((_) {});
+        _showRoomEndedScreen();
+      }
+      // For other errors: schedule retry with backoff
+    } catch (_) {}
+  }
+
   // ── Heartbeat (30s) ───────────────────────────────────────────────────────
   void _startHeartbeat(String roomId) {
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(
       const Duration(seconds: 30),
-      (_) => socketService.emitAudioRoom('heartbeat', {'roomId': roomId}),
+      (_) => socketService.emitAudioRoom('heartbeat'),
     );
   }
 
@@ -1709,7 +2036,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     await _cleanupOnLeave();
 
     if (roomId != null) {
-      socketService.emitAudioRoom('leave_room', {'roomId': roomId});
+      socketService.leaveAudioRoom(roomId); // clears stored join params + emits leave_room
     }
 
     if (roomId != null) {
@@ -1820,12 +2147,42 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   // ══════════════════════════════════════════════════════════════════
 
   void takeSeat(int seatIndex) {
-    socketService.emitAudioRoom(
-        'take_seat', {'roomId': state.roomId, 'seatIndex': seatIndex});
+    // Guards: must be initialized and connected (mirrors RN handleEmptySeatPress)
+    if (!state.seatsInitialized) return;
+    if (!liveKitAudioManager.isConnected) return;
+    if (!state.canTakeAddaSeat) return;
+
+    // If already in a seat, this is a seat-change (5s cooldown)
+    final currentSeat = _seatManager.getSeatForUser(_myUid ?? '');
+    if (currentSeat != -1) {
+      changeSeat(currentSeat, seatIndex);
+      return;
+    }
+
+    liveKitAudioManager.setSeatIndex(seatIndex);
+    socketService.emitAudioRoom('seat_take', {'seatIndex': seatIndex});
+  }
+
+  void changeSeat(int fromIndex, int toIndex) {
+    // 5-second cooldown between seat changes (mirrors RN lastSeatChangeTimeRef)
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastSeatChangeTime < 5000) return;
+    _lastSeatChangeTime = now;
+
+    liveKitAudioManager.setSeatIndex(toIndex);
+    socketService.emitAudioRoom('seat_change', {
+      'fromIndex': fromIndex,
+      'toIndex': toIndex,
+    });
+  }
+
+  void removeGhostFromSeat(String uid) {
+    // Host removes a disconnected ghost user from a seat (mirrors RN seat_remove)
+    socketService.emitAudioRoom('seat_remove', {'targetUid': uid});
   }
 
   Future<void> leaveSeat() async {
-    socketService.emitAudioRoom('leave_seat', {'roomId': state.roomId});
+    socketService.emitAudioRoom('seat_leave'); // no args — server uses socket room context
     await liveKitAudioManager.stopPublishing().catchError((_) => null);
     state = state.copyWith(
       isInSeat: false,
@@ -1843,11 +2200,12 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     state = state.copyWith(isHandRaised: nextState);
     if (nextState) {
       _seatManager.setPendingOwnRequest();
-      socketService.emitAudioRoom('seat_request', {'roomId': state.roomId});
+      // Server determines seat assignment; pass seatIndex=-1 to let it pick
+      socketService.emitAudioRoom('seat_request', {'seatIndex': -1});
     } else {
       _seatManager.clearPendingOwnRequest();
-      socketService
-          .emitAudioRoom('cancel_seat_request', {'roomId': state.roomId});
+      // No server cancel event — server infers cancellation from disconnect/re-join
+      // Just clear local state; the host will see the request disappear on next seat_state
     }
   }
 
@@ -1861,11 +2219,12 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       updatedLocked.add(seatIndex);
     }
     state = state.copyWith(lockedSeats: updatedLocked);
-    socketService.emitAudioRoom('toggle_seat_lock', {
-      'roomId': state.roomId,
-      'seatIndex': seatIndex,
-      'locked': !isLocked,
-    });
+    // Server uses separate seat_lock / seat_unlock events (mirrors RN)
+    if (isLocked) {
+      socketService.emitAudioRoom('seat_unlock', {'seatIndex': seatIndex});
+    } else {
+      socketService.emitAudioRoom('seat_lock', {'seatIndex': seatIndex});
+    }
   }
 
   void acceptSeatInvite() {
@@ -1873,8 +2232,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     if (invite == null) return;
     final si = invite['seatIndex'] as int? ?? -1;
     if (si < 0) return;
-    socketService.emitAudioRoom(
-        'seat_invite_accept', {'roomId': state.roomId, 'seatIndex': si});
+    socketService.emitAudioRoom('seat_invite_accept', {'seatIndex': si});
     state = state.copyWith(incomingSeatInvite: null);
   }
 
@@ -1887,8 +2245,15 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   // ══════════════════════════════════════════════════════════════════
 
   void acceptSeatRequest(String uid) {
-    socketService.emitAudioRoom(
-        'accept_seat_request', {'roomId': state.roomId, 'uid': uid});
+    // RN server uses seat_request_accept with targetUid + optional seatIndex
+    final req = state.handRaiseQueue.firstWhere(
+      (r) => r['uid'] == uid,
+      orElse: () => <String, dynamic>{},
+    );
+    socketService.emitAudioRoom('seat_request_accept', {
+      'targetUid': uid,
+      if (req['seatIndex'] != null) 'seatIndex': req['seatIndex'],
+    });
     _seatManager.removeSeatRequest(uid);
     final updated =
         state.handRaiseQueue.where((r) => r['uid'] != uid).toList();
@@ -1896,8 +2261,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   }
 
   void rejectSeatRequest(String uid) {
-    socketService.emitAudioRoom(
-        'reject_seat_request', {'roomId': state.roomId, 'uid': uid});
+    socketService.emitAudioRoom('seat_request_reject', {'targetUid': uid});
     _seatManager.removeSeatRequest(uid);
     final updated =
         state.handRaiseQueue.where((r) => r['uid'] != uid).toList();
@@ -1906,23 +2270,20 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
 
   void inviteToSeat(String uid, int seatIndex) {
     socketService.emitAudioRoom('seat_invite', {
-      'roomId': state.roomId,
-      'uid': uid,
+      'targetUid': uid,
       'seatIndex': seatIndex,
     });
   }
 
   void moveParticipantToSeat(String uid, int seatIndex) {
-    socketService.emitAudioRoom('move_to_seat', {
-      'roomId': state.roomId,
-      'uid': uid,
+    socketService.emitAudioRoom('host_move_seat', {
+      'targetUid': uid,
       'seatIndex': seatIndex,
     });
   }
 
   void offStageParticipant(String uid) {
-    socketService
-        .emitAudioRoom('off_stage', {'roomId': state.roomId, 'uid': uid});
+    socketService.emitAudioRoom('seat_offstage', {'targetUid': uid});
   }
 
   Future<void> muteParticipant(String uid) async {
@@ -1943,8 +2304,10 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   }
 
   Future<void> kickParticipant(String uid) async {
-    socketService
-        .emitAudioRoom('kick_user', {'roomId': state.roomId, 'uid': uid});
+    socketService.emitAudioRoom('user_kicked', {
+      'kicked_uid': uid,
+      'kicked_name': _participantManager.getDisplayName(uid),
+    });
     await liveKitAudioManager.sendRoomCommand(
       'KICK',
       targetUserId: uid,
@@ -1962,8 +2325,10 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       targetUserId: uid,
       data: {'userID': uid},
     );
-    socketService.emitAudioRoom(
-        'user_banned', {'roomId': roomId, 'banned_uid': uid});
+    socketService.emitAudioRoom('user_banned', {
+      'banned_uid': uid,
+      'banned_name': _participantManager.getDisplayName(uid),
+    });
   }
 
   Future<void> communityKick(String uid, String userName, {String? reason}) async {
@@ -2086,11 +2451,9 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     _seatManager.stageRequestEnabled = enabled;
     try {
       if (enabled) {
-        socketService.emitAudioRoom(
-            'seat_lock_all', {'roomId': state.roomId});
+        socketService.emitAudioRoom('seat_lock_all'); // no args
       } else {
-        socketService.emitAudioRoom(
-            'seat_unlock_all', {'roomId': state.roomId});
+        socketService.emitAudioRoom('seat_unlock_all'); // no args
       }
       await audioRoomService.updateStageRequestEnabled(
           state.roomId!, enabled);
@@ -2128,29 +2491,34 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
 
   void sendChatMessage(String text, {Map<String, dynamic>? replyTo}) {
     if (text.trim().isEmpty) return;
+    // Server expects: { room_id, content, reply_to_id?, reply_to_username?, reply_to_content? }
     socketService.emitAudioRoom('send_message', {
-      'roomId': state.roomId,
-      'text': text.trim(),
-      if (replyTo != null) 'reply_to': replyTo,
+      'room_id': state.roomId,
+      'content': text.trim(),
+      if (replyTo != null) ...{
+        'reply_to_id': replyTo['id'],
+        'reply_to_username': replyTo['senderName'] ?? replyTo['sender_username'],
+        'reply_to_content': replyTo['text'] ?? replyTo['content'],
+      },
     });
-    // Clear reply state
     if (state.replyingTo != null) {
       state = state.copyWith(replyingTo: null);
     }
   }
 
   void deleteMessage(String messageId) {
-    socketService.emitAudioRoom(
-        'delete_message', {'roomId': state.roomId, 'messageId': messageId});
+    // Server expects: { message_id }
+    socketService.emitAudioRoom('delete_message', {'message_id': messageId});
   }
 
   void pinMessage(String messageId) {
-    socketService.emitAudioRoom(
-        'pin_message', {'roomId': state.roomId, 'messageId': messageId});
+    // Server expects: { message_id }
+    socketService.emitAudioRoom('pin_message', {'message_id': messageId});
   }
 
   void unpinMessage() {
-    socketService.emitAudioRoom('unpin_message', {'roomId': state.roomId});
+    // Server expects no body (room context from join)
+    socketService.emitAudioRoom('unpin_message', {});
   }
 
   void dismissPinnedMessage() {
@@ -2279,8 +2647,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     state = state.copyWith(isMinimised: false);
     // Re-request seat state to resync after restore
     if (state.roomId != null) {
-      socketService.emitAudioRoom(
-          'seat_state_request', {'roomId': state.roomId});
+      socketService.emitAudioRoom('seat_state_request');
     }
   }
 

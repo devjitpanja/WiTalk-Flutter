@@ -59,6 +59,10 @@ import '../screens/channels/channel_screen.dart';
 import '../screens/channels/explore_channels_screen.dart';
 import '../screens/channels/create_channel_screen.dart';
 import '../screens/channels/channel_info_screen.dart';
+import '../screens/channels/edit_channel_screen.dart';
+import '../screens/channels/channel_subscribers_screen.dart';
+import '../screens/channels/channel_admins_screen.dart';
+import '../screens/channels/channel_banned_users_screen.dart';
 import '../screens/connect/adda_screen.dart';
 import '../screens/connect/live_audio_room_screen.dart';
 import '../screens/connect/create_audio_room_screen.dart';
@@ -274,10 +278,52 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       // Channels
       GoRoute(path: '/channels', builder: (_, __) => const ChannelListScreen()),
-      GoRoute(path: '/channel/:id', builder: (_, s) => ChannelScreen(channelId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/channel/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ChannelScreen(
+            channelId: s.pathParameters['id']!,
+            initialChannel: extra?['channel'] as Map<String, dynamic>?,
+          );
+        },
+      ),
       GoRoute(path: '/explore-channels', builder: (_, __) => const ExploreChannelsScreen()),
       GoRoute(path: '/create-channel', builder: (_, __) => const CreateChannelScreen()),
       GoRoute(path: '/channel-info/:id', builder: (_, s) => ChannelInfoScreen(channelId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/edit-channel/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return EditChannelScreen(
+            channelId: s.pathParameters['id']!,
+            initialChannel: extra?['channel'] as Map<String, dynamic>?,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/channel-subscribers/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ChannelSubscribersScreen(
+            channelId: s.pathParameters['id']!,
+            initialSubscriberCount: (extra?['subscriberCount'] as num?)?.toInt() ?? 0,
+            isOwner: extra?['isOwner'] == true,
+            isAdmin: extra?['isAdmin'] == true,
+          );
+        },
+      ),
+      GoRoute(
+        path: '/channel-admins/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ChannelAdminsScreen(
+            channelId: s.pathParameters['id']!,
+            isOwner: extra?['isOwner'] == true,
+          );
+        },
+      ),
+      GoRoute(path: '/channel-banned-users/:id', builder: (_, s) => ChannelBannedUsersScreen(channelId: s.pathParameters['id']!)),
 
       // Connect
       GoRoute(path: '/live-audio/:id', builder: (_, s) => LiveAudioRoomScreen(roomId: s.pathParameters['id']!)),

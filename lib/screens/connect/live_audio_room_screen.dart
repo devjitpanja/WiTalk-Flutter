@@ -78,8 +78,22 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final s = ref.read(audioRoomProvider);
     final notifier = ref.read(audioRoomProvider.notifier);
 
+    // Guard: seats not initialized yet
+    if (!s.seatsInitialized) {
+      _showSnack('Seats are still loading, please wait...');
+      return;
+    }
+
+    // Guard: no permission to take seats
+    if (!s.canTakeAddaSeat) {
+      _showSnack("You don't have permission to take a seat.");
+      return;
+    }
+
     final isLocked = s.lockedSeats.contains(seatIndex);
-    final canBypassLock = s.isHost || s.isAdmin;
+    final isCommunityPrivileged =
+        s.myCommunityRole == 'super_admin' || s.myCommunityRole == 'admin';
+    final canBypassLock = s.isHost || s.isAdmin || isCommunityPrivileged;
 
     if (isLocked && !canBypassLock) {
       if (s.isHandRaised) {
@@ -88,6 +102,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         notifier.toggleHandRaise();
         _showSnack('Seat request sent to the host');
       }
+      return;
+    }
+
+    // If already in a different seat, switch seats
+    if (s.isInSeat && s.currentSeatIndex != seatIndex) {
+      notifier.changeSeat(s.currentSeatIndex, seatIndex);
+      _showSnack('Moving to Seat #${seatIndex + 1}...');
       return;
     }
 
@@ -408,7 +429,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final roomState = ref.watch(audioRoomProvider);
     final myUid = ref.watch(authProvider).uid;
 
-    // Auto-listen to state changes for room ended
     // Auto-listen to state changes
     ref.listen<AudioRoomState>(audioRoomProvider, (prev, next) {
       if (!mounted) return;
@@ -445,9 +465,38 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         });
       }
 
-      // Room ended screen
+      // Room ended screen (non-host)
       if (next.showRoomEndedScreen && !(prev?.showRoomEndedScreen ?? false)) {
         setState(() => _isRoomEnded = true);
+      }
+
+      // Host ended own room → just navigate back
+      if (next.shouldNavigateBack && !(prev?.shouldNavigateBack ?? false)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) context.pop();
+        });
+      }
+
+      // Kicked from room — show toast then navigate back
+      if (next.kickedFromRoom && !(prev?.kickedFromRoom ?? false)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showSnack('You have been removed from this room by the host');
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted) context.pop();
+          });
+        });
+      }
+
+      // Banned from room — show toast then navigate back
+      if (next.bannedFromRoom && !(prev?.bannedFromRoom ?? false)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showSnack('You have been banned from this room by the host');
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted) context.pop();
+          });
+        });
       }
     });
 
@@ -1081,21 +1130,60 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final myUid = ref.read(authProvider).uid;
     final uid = participant['uid']?.toString() ?? '';
     final isSelf = uid == myUid;
+    final isAuthority = s.isHost || s.isAdmin || s.isCoHost;
+
+    // Ghost seat: user is in a seat but has no real profile data
+    // Host/admin see a "Remove from seat" option
+    final isGhost = participant['isEmpty'] != true &&
+        (participant['name'] == null ||
+            participant['name'] == 'User' ||
+            participant['name'] == uid);
+    if (isGhost && !isSelf && isAuthority) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: const Color(0xFF1A2340),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text(
+            'Unknown User in Seat',
+            style: TextStyle(color: Color(0xFFEBEBF5), fontFamily: 'Outfit', fontWeight: FontWeight.w700),
+          ),
+          content: const Text(
+            'This seat has a disconnected user blocking the spot. Would you like to remove them?',
+            style: TextStyle(color: Color(0x99EBEBF5), fontFamily: 'Outfit', fontSize: 14),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel', style: TextStyle(color: Color(0x73EBEBF5), fontFamily: 'Outfit')),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                ref.read(audioRoomProvider.notifier).removeGhostFromSeat(uid);
+              },
+              child: const Text('Remove', style: TextStyle(color: Color(0xFFFF3B30), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _ParticipantSheet(
         participant: participant,
-        isHost: s.isHost || s.isCoHost,
+        isHost: isAuthority,
         isSelf: isSelf,
-        onKick: !isSelf && (s.isHost || s.isCoHost)
+        onKick: !isSelf && isAuthority
             ? () => ref.read(audioRoomProvider.notifier).kickParticipant(uid)
             : null,
-        onMute: !isSelf && (s.isHost || s.isCoHost)
+        onMute: !isSelf && isAuthority
             ? () => ref.read(audioRoomProvider.notifier).muteParticipant(uid)
             : null,
-        onOffStage: !isSelf && (s.isHost || s.isCoHost) && participant['isInSeat'] == true
+        onOffStage: !isSelf && isAuthority && participant['isInSeat'] == true
             ? () => ref.read(audioRoomProvider.notifier).offStageParticipant(uid)
             : null,
       ),
