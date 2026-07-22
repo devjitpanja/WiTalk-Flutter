@@ -696,7 +696,7 @@ class _HeroCard extends StatelessWidget {
                     decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: colors.surface, width: 2)),
                     clipBehavior: Clip.hardEdge,
                     child: profilePic != null
-                        ? CachedNetworkImage(imageUrl: profilePic!, fit: BoxFit.cover, errorWidget: (_, __, ___) => _AvatarFallback(name: name, colors: colors))
+                        ? CachedNetworkImage(imageUrl: profilePic!, fit: BoxFit.cover, width: double.infinity, height: double.infinity, errorWidget: (_, __, ___) => _AvatarFallback(name: name, colors: colors))
                         : _AvatarFallback(name: name, colors: colors),
                   ),
                 ),
