@@ -7,10 +7,12 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'package:photo_view/photo_view_gallery.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../services/post_view_tracking_service.dart';
 import '../../services/post_feedback_service.dart';
+import '../../services/global_video_settings.dart';
 import 'verification_badge.dart';
 
 // ─── Content parsing ────────────────────────────────────────────────────────
@@ -72,12 +74,9 @@ class PostCard extends StatefulWidget {
   final Map<String, dynamic> post;
   final String? currentUserId;
   final bool isRemoved;
-  /// True when this card is actually visible on screen (used for video autoplay).
-  final bool isVisible;
   final void Function(String postId, bool isLiked, int count)? onLikeUpdate;
   final void Function(String postId, int count)? onCommentUpdate;
   final void Function(String postId, String userId, Map<String, dynamic> extra)? onShowMoreMenu;
-  /// Called when the comment button is tapped. When provided, skips default navigation.
   final void Function(String postId)? onCommentTap;
 
   const PostCard({
@@ -85,7 +84,6 @@ class PostCard extends StatefulWidget {
     required this.post,
     this.currentUserId,
     this.isRemoved = false,
-    this.isVisible = true,
     this.onLikeUpdate,
     this.onCommentUpdate,
     this.onShowMoreMenu,
@@ -105,6 +103,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   bool _expanded = false;
   bool _showReadMore = false;
   int _mediaIndex = 0;
+  late PageController _pageCtrl;
 
   // Video player
   VideoPlayerController? _videoCtrl;
@@ -112,6 +111,9 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   bool _videoMuted = true;
   bool _isBuffering = false;
   String? _currentVideoUrl;
+
+  // Visibility tracking (VisibilityDetector-based, replaces isVisible prop)
+  bool _isVisible = false;
 
   // Double-tap heart
   late AnimationController _heartCtrl;
@@ -162,6 +164,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     final text = (_p['content'] ?? '') as String;
     if (text.isNotEmpty) _parsedContent = _parseContent(text);
 
+    _pageCtrl = PageController();
     _heartCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
     _heartCtrl.addStatusListener((s) {
       if (s == AnimationStatus.completed) {
@@ -172,6 +175,10 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
       }
     });
 
+    // Sync initial mute state from global settings
+    _videoMuted = globalVideoSettings.muted;
+    globalVideoSettings.addListener(_onGlobalMuteChanged);
+
     _startViewTimer();
     _initVideoIfNeeded();
   }
@@ -179,15 +186,6 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(PostCard old) {
     super.didUpdateWidget(old);
-    // Autoplay / pause based on visibility
-    if (widget.isVisible != old.isVisible) {
-      if (widget.isVisible) {
-        _videoCtrl?.play();
-      } else {
-        _videoCtrl?.pause();
-      }
-    }
-    // Re-init if media changed
     if (widget.post != old.post) {
       _disposeVideo();
       _initVideoIfNeeded();
@@ -196,6 +194,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   @override
   void dispose() {
+    globalVideoSettings.removeListener(_onGlobalMuteChanged);
+    _pageCtrl.dispose();
     _heartCtrl.dispose();
     _singleTapTimer?.cancel();
     _viewTimer?.cancel();
@@ -205,6 +205,15 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
       postFeedbackService.endViewTracking(widget.currentUserId!, _postId);
     }
     super.dispose();
+  }
+
+  // ── Global mute sync ────────────────────────────────────────────────────────
+  void _onGlobalMuteChanged(bool muted) {
+    if (!mounted) return;
+    setState(() {
+      _videoMuted = muted;
+      _videoCtrl?.setVolume(muted ? 0.0 : 1.0);
+    });
   }
 
   // ── Video ──────────────────────────────────────────────────────────────────
@@ -225,7 +234,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     ctrl.initialize().then((_) {
       if (mounted) {
         setState(() => _videoInitialized = true);
-        if (widget.isVisible) ctrl.play();
+        // Only auto-play if the card is actually on screen
+        if (_isVisible) ctrl.play();
       }
     });
   }
@@ -246,14 +256,23 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   }
 
   void _toggleMute() {
-    setState(() {
-      _videoMuted = !_videoMuted;
-      _videoCtrl?.setVolume(_videoMuted ? 0.0 : 1.0);
-    });
+    // Broadcast to all cards via GlobalVideoSettings
+    globalVideoSettings.setMuted(!_videoMuted);
+  }
+
+  void _onVisibilityChanged(VisibilityInfo info) {
+    // Mirror RN: treat card as "visible" when >50% is on screen
+    final visible = info.visibleFraction >= 0.5;
+    if (visible == _isVisible) return;
+    setState(() => _isVisible = visible);
+    if (visible) {
+      _videoCtrl?.play();
+    } else {
+      _videoCtrl?.pause();
+    }
   }
 
   void _openMiniScreen(String videoUrl) {
-    // Build a post map suitable for MiniScreen
     final postData = Map<String, dynamic>.from(_p);
     postData['videoUrl'] = videoUrl;
     context.push('/mini', extra: {
@@ -359,17 +378,21 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Container(
-      decoration: BoxDecoration(
-        color: c.surface,
-        border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
+    return VisibilityDetector(
+      key: Key('post-$_postId'),
+      onVisibilityChanged: _onVisibilityChanged,
+      child: Container(
+        decoration: BoxDecoration(
+          color: c.surface,
+          border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          _buildHeader(c),
+          if ((_p['content'] as String? ?? '').isNotEmpty) _buildContent(c),
+          if (_mediaItems.isNotEmpty) _buildMediaSection(c),
+          _buildActions(c),
+        ]),
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildHeader(c),
-        if ((_p['content'] as String? ?? '').isNotEmpty) _buildContent(c),
-        if (_mediaItems.isNotEmpty) _buildMediaSection(c),
-        _buildActions(c),
-      ]),
     );
   }
 
@@ -517,12 +540,35 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
     final screenW = MediaQuery.of(context).size.width;
     final current = items[_mediaIndex];
-    final ar      = _mediaAspectRatio(current);
+    final isVideo = (current['type'] as String?) == 'video';
+
+    // For video: use natural size once initialized, else fall back to metadata AR.
+    // For images: use metadata AR. Mirrors RN logic exactly.
+    double ar;
+    if (isVideo && _videoInitialized && _videoCtrl != null) {
+      final sz = _videoCtrl!.value.size;
+      if (sz.width > 0 && sz.height > 0) {
+        ar = sz.width / sz.height;
+      } else {
+        ar = _mediaAspectRatio(current);
+      }
+    } else {
+      ar = _mediaAspectRatio(current);
+    }
+
     double height;
     if (ar <= 0.6) {
+      // Portrait (9:16 or taller) — cap at 1.5× width
       height = (screenW / ar).clamp(0.0, screenW * 1.5);
-    } else {
+    } else if (ar >= 1.6) {
+      // Landscape (16:9 or wider)
       height = screenW / ar;
+    } else if (ar < 1.0) {
+      // Portrait-ish (4:5, 3:4, etc.)
+      height = screenW / ar;
+    } else {
+      // Square or near-square
+      height = screenW;
     }
     height = height.clamp(160.0, screenW * 1.6);
 
@@ -530,9 +576,9 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
       SizedBox(
         height: height,
         child: PageView.builder(
+          controller: _pageCtrl,
           itemCount: items.length,
           onPageChanged: (i) {
-            // Pause old video, start new one if applicable
             if (_videoInitialized) _videoCtrl?.pause();
             setState(() { _mediaIndex = i; });
             _disposeVideo();
@@ -540,9 +586,9 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           },
           itemBuilder: (_, i) {
             final item    = items[i];
-            final isVideo = (item['type'] as String?) == 'video';
+            final isVid   = (item['type'] as String?) == 'video';
             final url     = (item['url'] ?? '') as String;
-            if (isVideo) return _buildVideoTile(url, height, c);
+            if (isVid) return _buildVideoTile(url, height, c);
             return _buildImageTile(url, i, c);
           },
         ),
@@ -559,7 +605,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         if (_mediaIndex > 0)
           Positioned(left: 12, top: 0, bottom: 0,
             child: Center(child: GestureDetector(
-              onTap: () => setState(() => _mediaIndex--),
+              onTap: () => _pageCtrl.animateToPage(_mediaIndex - 1,
+                  duration: const Duration(milliseconds: 300), curve: Curves.easeInOut),
               child: Container(width: 36, height: 36,
                 decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(18)),
                 child: const Icon(Icons.chevron_left, color: Colors.white, size: 20)),
@@ -567,7 +614,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         if (_mediaIndex < items.length - 1)
           Positioned(right: 12, top: 0, bottom: 0,
             child: Center(child: GestureDetector(
-              onTap: () => setState(() => _mediaIndex++),
+              onTap: () => _pageCtrl.animateToPage(_mediaIndex + 1,
+                  duration: const Duration(milliseconds: 300), curve: Curves.easeInOut),
               child: Container(width: 36, height: 36,
                 decoration: BoxDecoration(color: Colors.black45, borderRadius: BorderRadius.circular(18)),
                 child: const Icon(Icons.chevron_right, color: Colors.white, size: 20)),
@@ -617,7 +665,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     ctrl.initialize().then((_) {
       if (mounted) {
         setState(() => _videoInitialized = true);
-        if (widget.isVisible) ctrl.play();
+        if (_isVisible) ctrl.play();
       }
     });
   }
@@ -626,7 +674,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     return GestureDetector(
       onTap: () => _openMiniScreen(url),
       child: Stack(fit: StackFit.expand, children: [
-        // Thumbnail background while loading
+        // Thumbnail while loading
         if ((_mediaItems[_mediaIndex]['thumbnail'] as String?) != null)
           CachedNetworkImage(
             imageUrl: _mediaItems[_mediaIndex]['thumbnail'] as String,
@@ -635,7 +683,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         else
           Container(color: Colors.black87),
 
-        // Actual video player
+        // Actual video — natural size fills the container
         if (_videoInitialized && _videoCtrl != null)
           SizedBox.expand(child: FittedBox(
             fit: BoxFit.cover,
@@ -646,11 +694,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             ),
           )),
 
-        // Buffering / loading spinner (shown while not yet initialized OR while buffering)
+        // Spinner while buffering or not yet ready
         if (!_videoInitialized || _isBuffering)
           const Center(child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5)),
 
-        // Mute toggle (bottom-right like RN)
+        // Mute toggle (bottom-right)
         Positioned(bottom: 10, right: 10,
           child: GestureDetector(
             onTap: _toggleMute,
@@ -680,12 +728,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     );
   }
 
-  // ── Actions (pill buttons – match RN PostCard exactly) ────────────────────
+  // ── Actions (pill buttons) ─────────────────────────────────────────────────
   Widget _buildActions(ThemeColors c) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
       child: Row(children: [
-        // Like pill
         _pillBtn(
           iconWidget: Image.asset('assets/icons/heart.png', width: 14, height: 14,
               color: _isLiked ? c.likeColor : c.iconTint),
@@ -696,7 +743,6 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           c: c,
         ),
         const SizedBox(width: 10),
-        // Comment pill
         _pillBtn(
           iconWidget: Image.asset('assets/icons/comment.png', width: 14, height: 14, color: c.iconTint),
           iconColor: c.iconTint,
@@ -719,7 +765,6 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           c: c,
         ),
         const SizedBox(width: 10),
-        // Share pill
         _pillBtn(
           iconWidget: Image.asset('assets/icons/share.png', width: 14, height: 14, color: c.iconTint),
           iconColor: c.iconTint,

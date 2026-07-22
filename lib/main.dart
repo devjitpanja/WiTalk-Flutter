@@ -12,6 +12,8 @@ import 'services/location_service.dart';
 import 'providers/chat_provider.dart';
 import 'services/chat_api_service.dart';
 import 'services/message_sync_manager.dart';
+import 'services/global_video_settings.dart';
+import 'package:visibility_detector/visibility_detector.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +25,12 @@ void main() async {
 
   // Push notifications (OneSignal)
   await notificationService.initialize();
+
+  // Load persisted video mute preference
+  await globalVideoSettings.init();
+
+  // Fire visibility updates quickly so video play/pause reacts without noticeable lag
+  VisibilityDetectorController.instance.updateInterval = const Duration(milliseconds: 100);
 
   runApp(const ProviderScope(child: WiTalkApp()));
 }
