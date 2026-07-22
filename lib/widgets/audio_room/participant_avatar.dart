@@ -114,6 +114,18 @@ class ParticipantAvatar extends StatelessWidget {
                         width: 2.0,
                       ),
                     ),
+                  )
+                else
+                  Container(
+                    width: size + 4,
+                    height: size + 4,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white38,
+                        width: 1.5,
+                      ),
+                    ),
                   ),
 
                 // Avatar image container
@@ -221,9 +233,9 @@ class ParticipantAvatar extends StatelessWidget {
                   const SizedBox(width: 3),
                 ],
 
-                // Verified badge icon
-                if (isVerified) ...[
-                  const Icon(Icons.stars_rounded, size: 12, color: Color(0xFF0751DF)),
+                // Verified badge icon — only show when no role badge already present
+                if (isVerified && !isHost && communityRole != 'super_admin' && communityRole != 'admin' && !isAdmin) ...[
+                  const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF0751DF)),
                   const SizedBox(width: 2),
                 ],
 

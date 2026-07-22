@@ -984,7 +984,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       );
     }
 
-    final sender = msg['senderName']?.toString() ?? 'User';
+    final sender = (msg['senderName'] ??
+            msg['sender_name'] ??
+            msg['username'] ??
+            msg['name'] ??
+            msg['user_name'] ??
+            'User')
+        .toString();
     final ts = msg['timestamp'];
     String time = '';
     if (ts is int) {
@@ -992,45 +998,121 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     }
 
+    final senderPic = (msg['senderAvatar'] ??
+            msg['sender_avatar'] ??
+            msg['profile_pic'] ??
+            msg['avatar'])
+        ?.toString();
+    final isMe = msg['isSelf'] == true;
+
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
+          // Avatar
+          Container(
+            width: 30,
+            height: 30,
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0x1A0751DF),
+              border: Border.all(color: const Color(0x330751DF), width: 1),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: senderPic != null && senderPic.isNotEmpty
+                ? Image.network(senderPic, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Center(
+                      child: Text(
+                        sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ))
+                : Center(
+                    child: Text(
+                      sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+          ),
+
+          // Bubble
           Expanded(
-            child: RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: '$sender  ',
-                    style: const TextStyle(
-                      color: _kGold,
-                      fontSize: 12,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isMe
+                        ? const Color(0x1A0751DF)
+                        : const Color(0x1AFFFFFF),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                      bottomRight: Radius.circular(12),
+                      bottomLeft: Radius.circular(2),
+                    ),
+                    border: Border.all(
+                      color: isMe
+                          ? const Color(0x260751DF)
+                          : const Color(0x1AFFFFFF),
+                      width: 1,
                     ),
                   ),
-                  TextSpan(
-                    text: text,
-                    style: const TextStyle(
-                      color: Color(0xCCEBEBF5),
-                      fontSize: 12,
-                      fontFamily: 'Outfit',
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            sender,
+                            style: TextStyle(
+                              color: isMe ? _kGold : const Color(0xFF5B9AFF),
+                              fontSize: 11,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (time.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            Text(
+                              time,
+                              style: const TextStyle(
+                                color: Color(0x4DFFFFFF),
+                                fontSize: 9,
+                                fontFamily: 'Outfit',
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        text,
+                        style: const TextStyle(
+                          color: Color(0xCCEBEBF5),
+                          fontSize: 13,
+                          fontFamily: 'Outfit',
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
-          if (time.isNotEmpty)
-            Text(
-              time,
-              style: const TextStyle(
-                color: Color(0x4DFFFFFF),
-                fontSize: 10,
-                fontFamily: 'Outfit',
-              ),
-            ),
         ],
       ),
     );

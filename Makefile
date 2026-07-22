@@ -1,4 +1,4 @@
-.PHONY: android16 android15 dev both web mac phone clean build-apk build-aab
+.PHONY: android16 android15 dev both web mac phone iphone clean build-apk build-aab build-ipa
 
 # --- Launch Emulators (run one of these first, then run 'make dev') ---
 
@@ -22,6 +22,10 @@ both:
 phone:
 	flutter run -d 22021211RI
 
+# Run on physical iPhone (wired)
+iphone:
+	flutter run -d 00008120-000E54D23672201E
+
 # Run on Chrome browser
 web:
 	flutter run -d chrome
@@ -37,6 +41,9 @@ build-apk:
 
 build-aab:
 	flutter build appbundle
+
+build-ipa:
+	flutter build ipa
 
 # --- Utilities ---
 

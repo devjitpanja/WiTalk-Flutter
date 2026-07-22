@@ -1190,23 +1190,36 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
 
     socketService.onAudioRoom('message_history', (data) {
       if (data is List) {
-        final messages = data.cast<Map<String, dynamic>>();
+        final messages = data.cast<Map<String, dynamic>>().map((m) {
+          final senderUid = m['senderUid']?.toString() ??
+              m['sender_uid']?.toString() ??
+              m['userId']?.toString() ??
+              m['uid']?.toString();
+          return {...m, 'isSelf': senderUid == myUid};
+        }).toList();
         state = state.copyWith(chatMessages: messages);
       }
     });
 
     socketService.onAudioRoom('new_message', (data) {
       if (data is Map<String, dynamic>) {
+        final senderUid = data['senderUid']?.toString() ??
+            data['sender_uid']?.toString() ??
+            data['userId']?.toString() ??
+            data['uid']?.toString();
+        final tagged = {...data, 'isSelf': senderUid == myUid};
         final updated =
-            List<Map<String, dynamic>>.from(state.chatMessages)..add(data);
+            List<Map<String, dynamic>>.from(state.chatMessages)..add(tagged);
         state = state.copyWith(chatMessages: updated);
       }
     });
 
     socketService.onAudioRoom('message_sent', (data) {
       if (data is Map<String, dynamic>) {
+        // message_sent is always our own message echoed back
+        final tagged = {...data, 'isSelf': true};
         final updated =
-            List<Map<String, dynamic>>.from(state.chatMessages)..add(data);
+            List<Map<String, dynamic>>.from(state.chatMessages)..add(tagged);
         state = state.copyWith(chatMessages: updated);
       }
     });
@@ -2033,6 +2046,14 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   // ── leaveRoom ──────────────────────────────────────────────────────────────
   Future<void> leaveRoom() async {
     final roomId = state.roomId;
+
+    // Must free the seat on the server BEFORE leaving the room socket event.
+    // Without this, the server keeps the seat occupied and other clients see "Joining...".
+    if (state.isInSeat && roomId != null) {
+      socketService.emitAudioRoom('seat_leave');
+      await Future.delayed(const Duration(milliseconds: 150));
+    }
+
     await _cleanupOnLeave();
 
     if (roomId != null) {

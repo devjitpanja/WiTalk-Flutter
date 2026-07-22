@@ -127,7 +127,7 @@ class GridSeatingLayout extends StatelessWidget {
             uid: uid,
             name: seat['name']?.toString(),
             avatarUrl: seat['profile_pic']?.toString(),
-            avatarFrameUrl: seat['avatar_frame_url']?.toString(),
+            avatarFrameUrl: (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
             isHost: isHostSeat,
             isAdmin: seat['isAdmin'] == true,
             communityRole: seat['communityRole']?.toString(),

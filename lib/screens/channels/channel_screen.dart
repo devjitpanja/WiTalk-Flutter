@@ -10,7 +10,7 @@ import '../../api/channel_api.dart';
 import '../../theme/theme_colors.dart';
 
 // ─── Theme Helper ─────────────────────────────────────────────────────────────
-extension ChannelScreenColors on BuildContext {
+extension ChannelScreenContextX on BuildContext {
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
 }
 
@@ -245,7 +245,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     return m;
   }
 
-  Widget _reactions_row(ThemeColors c) {
+  Widget _reactionsRow(ThemeColors c) {
     final counts = _reactions;
     if (counts.isEmpty) return const SizedBox.shrink();
     final my = widget.item['my_reaction'] as String?;
@@ -312,7 +312,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           const SizedBox(height: 4),
           Text(content, style: TextStyle(fontSize: 15, color: c.text)),
         ],
-        _reactions_row(c),
+        _reactionsRow(c),
         const SizedBox(height: 6),
         _footer(c),
       ]),
@@ -345,7 +345,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           if ((widget.item['content'] as String? ?? '').isNotEmpty)
             Padding(padding: const EdgeInsets.only(top: 6, bottom: 2),
               child: Text(widget.item['content'] as String, style: TextStyle(fontSize: 15, color: c.text))),
-          _reactions_row(c), _footer(c),
+          _reactionsRow(c), _footer(c),
         ])),
       ]),
     );
@@ -378,7 +378,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           if ((widget.item['content'] as String? ?? '').isNotEmpty)
             Padding(padding: const EdgeInsets.only(top: 6, bottom: 2),
               child: Text(widget.item['content'] as String, style: TextStyle(fontSize: 15, color: c.text))),
-          _reactions_row(c), _footer(c),
+          _reactionsRow(c), _footer(c),
         ])),
       ]),
     );
@@ -435,7 +435,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         }),
         if (total > 0) Text('$total votes', style: TextStyle(fontSize: 12, color: c.textSecondary)),
         const SizedBox(height: 8),
-        _reactions_row(c),
+        _reactionsRow(c),
         _footer(c),
       ]),
     );
@@ -462,7 +462,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
             Text('🎵 $m:$s', style: TextStyle(fontSize: 13, color: c.textSecondary)),
           ])),
         ]),
-        _reactions_row(c),
+        _reactionsRow(c),
         _footer(c),
       ]),
     );
@@ -500,7 +500,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
             )),
           ]),
         ),
-      _reactions_row(c),
+      _reactionsRow(c),
     ]);
   }
 
@@ -706,9 +706,7 @@ class ChannelScreen extends StatefulWidget {
 }
 
 class _ChannelScreenState extends State<ChannelScreen> {
-  final _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: false),
-  );
+  final _storage = const FlutterSecureStorage();
   final _textCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
   final _focusNode = FocusNode();
@@ -740,18 +738,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
   Map<String, dynamic>? _editingMsg;
   bool _uploadingImage = false;
   double _uploadProgress = 0;
-  int _uploadingCount = 0;
   List<Map<String, dynamic>> _pendingImages = [];
 
   String? _highlightId;
-  String? _pendingScrollId;
 
   final Set<String> _viewedIds = {};
   final Set<String> _pendingViews = {};
   Timer? _viewTimer;
 
   bool get _isAdmin => _myRole == 'owner' || _myRole == 'admin';
-  bool get _isOwner => _myRole == 'owner';
   String get _chName => (_channel?['name'] ?? widget.initialChannel?['name'] ?? '') as String;
 
   @override
@@ -832,7 +827,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
         _loading = false;
       });
       if (msgs.isNotEmpty && data?['is_member'] != false) {
-        ChannelApi.markRead(widget.channelId, msgs.last['id'].toString()).catchError((_) {});
+        unawaited(ChannelApi.markRead(widget.channelId, msgs.last['id'].toString()).then((_) {}).catchError((_) {}));
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollCtrl.hasClients) _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
@@ -855,7 +850,6 @@ class _ChannelScreenState extends State<ChannelScreen> {
         _firstUnreadId = null;
         _loading = false;
       });
-      _pendingScrollId = id;
     } catch (_) { await _loadMessages(); }
   }
 
@@ -894,7 +888,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       if (_pendingViews.isEmpty) return;
       final ids = List<String>.from(_pendingViews);
       _pendingViews.clear(); _viewedIds.addAll(ids);
-      ChannelApi.trackViews(widget.channelId, ids).catchError((_) {});
+      unawaited(ChannelApi.trackViews(widget.channelId, ids).then((_) {}).catchError((_) {}));
     });
   }
 
@@ -1068,7 +1062,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       final cap = trimmed;
       final rid = _replyingTo?['id']?.toString();
       setState(() { _pendingImages.clear(); _textCtrl.clear(); _replyingTo = null;
-        _uploadingImage = true; _uploadProgress = 0; _uploadingCount = imgs.length; });
+        _uploadingImage = true; _uploadProgress = 0; });
       try {
         final uploaded = imgs.map((i) => {'url': i['uri'] as String, 'width': i['width'] ?? 1080, 'height': i['height'] ?? 1080}).toList();
         final single = uploaded.length == 1;
@@ -1086,7 +1080,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
         }
       } catch (_) { _snack('Failed to send image', error: true); }
       finally {
-        if (mounted) setState(() { _uploadingImage = false; _uploadProgress = 0; _uploadingCount = 0; _sending = false; });
+        if (mounted) setState(() { _uploadingImage = false; _uploadProgress = 0; _sending = false; });
       }
       return;
     }
@@ -1116,7 +1110,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
       if (m != null && mounted) {
         setState(() { if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) _messages = [..._messages, m]; });
         _scrollToBottom();
-        ChannelApi.markRead(widget.channelId, m['id'].toString()).catchError((_) {});
+        unawaited(ChannelApi.markRead(widget.channelId, m['id'].toString()).then((_) {}).catchError((_) {}));
       }
     } catch (_) { _snack('Failed to send', error: true); _textCtrl.text = trimmed; }
     finally { if (mounted) setState(() => _sending = false); }

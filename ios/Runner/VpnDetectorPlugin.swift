@@ -1,6 +1,7 @@
 import Flutter
 import Foundation
 import Network
+import MachO
 
 /// Flutter MethodChannel bridge for VPN / simulator / Frida detection on iOS.
 ///
