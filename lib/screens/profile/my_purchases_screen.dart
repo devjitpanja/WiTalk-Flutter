@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -244,22 +245,27 @@ class _MyPurchasesScreenState extends ConsumerState<MyPurchasesScreen> {
                 const SizedBox(height: 12),
                 Text('Loading purchases…', style: TextStyle(fontFamily: 'Outfit', fontSize: 14, color: t.textTertiary)),
               ]))
-            : RefreshIndicator(
-                color: t.primary,
-                backgroundColor: t.surface,
-                onRefresh: _syncAndRefresh,
-                child: _purchases.isEmpty
-                    ? _emptyState(t)
-                    : ListView.builder(
-                        controller: _scrollController,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 32),
-                        itemCount: _purchases.length + (_loadingMore ? 1 : 0),
-                        itemBuilder: (_, i) {
-                          if (i == _purchases.length) return Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)));
-                          return _card(_purchases[i], t, isDark);
-                        },
+            : CustomScrollView(
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  CupertinoSliverRefreshControl(onRefresh: _syncAndRefresh),
+                  if (_purchases.isEmpty)
+                    SliverFillRemaining(child: _emptyState(t))
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(14, 10, 14, 32),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (_, i) {
+                            if (i == _purchases.length) return Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)));
+                            return _card(_purchases[i], t, isDark);
+                          },
+                          childCount: _purchases.length + (_loadingMore ? 1 : 0),
+                        ),
                       ),
+                    ),
+                ],
               )),
       ])),
     );

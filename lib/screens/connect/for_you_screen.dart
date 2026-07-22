@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -26,12 +27,22 @@ class ForYouScreen extends ConsumerWidget {
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primaryButton)),
         error: (_, __) => const Center(child: Text('Failed to load', style: TextStyle(color: Colors.white70))),
-        data: (posts) => RefreshIndicator(
-          color: AppColors.primaryButton, backgroundColor: AppColors.surface,
-          onRefresh: () => ref.refresh(_forYouProvider.future),
-          child: posts.isEmpty
-              ? const Center(child: Text('Nothing here yet', style: TextStyle(color: AppColors.textTertiary, fontFamily: 'Outfit')))
-              : ListView.builder(itemCount: posts.length, itemBuilder: (_, i) => PostCard(post: posts[i] as Map<String, dynamic>)),
+        data: (posts) => CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            CupertinoSliverRefreshControl(onRefresh: () => ref.refresh(_forYouProvider.future)),
+            if (posts.isEmpty)
+              const SliverFillRemaining(
+                child: Center(child: Text('Nothing here yet', style: TextStyle(color: AppColors.textTertiary, fontFamily: 'Outfit'))),
+              )
+            else
+              SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => PostCard(post: posts[i] as Map<String, dynamic>),
+                  childCount: posts.length,
+                ),
+              ),
+          ],
         ),
       ),
     );

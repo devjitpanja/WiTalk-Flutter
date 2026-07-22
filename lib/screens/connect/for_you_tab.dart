@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -147,16 +148,16 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
     final topAsync = ref.watch(_topCommunitiesProvider);
     final recAsync = ref.watch(_recommendedCommunitiesProvider);
 
-    return RefreshIndicator(
-      color: c.primary,
-      backgroundColor: c.surface,
-      onRefresh: _onRefresh,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+        SliverPadding(
+          padding: const EdgeInsets.only(bottom: 32),
+          sliver: SliverToBoxAdapter(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             // ── Top Communities ──
             _Section(
               emoji: '🔥',
@@ -373,9 +374,11 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                   ],
                 ),
               ),
-          ],
+              ],
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 

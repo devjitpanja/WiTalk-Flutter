@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -392,14 +393,15 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
       return _buildSkeleton(c);
     }
 
-    if (combined.isEmpty && pendingRequests.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _refresh,
-        color: c.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
+    final isEmpty = combined.isEmpty && pendingRequests.isEmpty;
+    final listCount = combined.length + (pendingRequests.isNotEmpty ? 1 : 0);
+
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _refresh),
+        if (isEmpty)
+          SliverFillRemaining(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.chat_bubble_outline, size: 64, color: c.textTertiary),
@@ -420,61 +422,56 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
                         fontFamily: 'Outfit')),
               ]),
             ),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (ctx, i) {
+                // Message requests banner at top
+                if (pendingRequests.isNotEmpty && i == 0) {
+                  return _MessageRequestsBanner(count: pendingRequests.length);
+                }
+                final item = combined[pendingRequests.isNotEmpty ? i - 1 : i];
+
+                if (item.type == 'channel') {
+                  final ch = item.channelData!;
+                  return _ChannelTile(channelData: ch, currentUserId: uid);
+                }
+
+                if (item.type == 'group') {
+                  final conv = item.conv!;
+                  final isGroupMuted = mutedGroups[conv.id] == 'muted';
+                  return _ChatTile(
+                    conv: conv,
+                    isGroup: true,
+                    isOnline: false,
+                    isMuted: isGroupMuted,
+                    currentUserId: uid,
+                  );
+                }
+
+                // private
+                final conv = item.conv!;
+                final theyBlockedMe = conv.theyBlockedMe;
+                final isOnline = !theyBlockedMe &&
+                    conv.status != 'request_pending' &&
+                    conv.otherUserId != null &&
+                    onlineUsers.contains(conv.otherUserId);
+                final isMuted = conv.otherUserId != null &&
+                    mutedChats.contains(conv.otherUserId);
+                return _ChatTile(
+                  conv: conv,
+                  isGroup: false,
+                  isOnline: isOnline,
+                  isMuted: isMuted,
+                  currentUserId: uid,
+                  onLongPress: () => _showQuickActionsSheet(context, conv, isMuted, uid),
+                );
+              },
+              childCount: listCount,
+            ),
           ),
-        ),
-      );
-    }
-
-    final listCount = combined.length + (pendingRequests.isNotEmpty ? 1 : 0);
-
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      color: c.primary,
-      child: ListView.builder(
-        itemCount: listCount,
-        itemBuilder: (ctx, i) {
-          // Message requests banner at top
-          if (pendingRequests.isNotEmpty && i == 0) {
-            return _MessageRequestsBanner(count: pendingRequests.length);
-          }
-          final item = combined[pendingRequests.isNotEmpty ? i - 1 : i];
-
-          if (item.type == 'channel') {
-            final ch = item.channelData!;
-            return _ChannelTile(channelData: ch, currentUserId: uid);
-          }
-
-          if (item.type == 'group') {
-            final conv = item.conv!;
-            final isGroupMuted = mutedGroups[conv.id] == 'muted';
-            return _ChatTile(
-              conv: conv,
-              isGroup: true,
-              isOnline: false,
-              isMuted: isGroupMuted,
-              currentUserId: uid,
-            );
-          }
-
-          // private
-          final conv = item.conv!;
-          final theyBlockedMe = conv.theyBlockedMe;
-          final isOnline = !theyBlockedMe &&
-              conv.status != 'request_pending' &&
-              conv.otherUserId != null &&
-              onlineUsers.contains(conv.otherUserId);
-          final isMuted = conv.otherUserId != null &&
-              mutedChats.contains(conv.otherUserId);
-          return _ChatTile(
-            conv: conv,
-            isGroup: false,
-            isOnline: isOnline,
-            isMuted: isMuted,
-            currentUserId: uid,
-            onLongPress: () => _showQuickActionsSheet(context, conv, isMuted, uid),
-          );
-        },
-      ),
+      ],
     );
   }
 
@@ -568,14 +565,15 @@ class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
         .where((c) => !(c.status == 'request_pending' && c.initiatorId != uid))
         .toList();
 
-    if (conversations.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _refresh,
-        color: c.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
+    final isEmpty = conversations.isEmpty;
+    final listCount = active.length + (pending.isNotEmpty ? 1 : 0);
+
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _refresh),
+        if (isEmpty)
+          SliverFillRemaining(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.chat_bubble_outline, size: 64, color: c.textTertiary),
@@ -595,38 +593,35 @@ class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
                         fontFamily: 'Outfit')),
               ]),
             ),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (ctx, i) {
+                if (pending.isNotEmpty && i == 0) {
+                  return _MessageRequestsBanner(count: pending.length);
+                }
+                final conv = active[pending.isNotEmpty ? i - 1 : i];
+                final theyBlockedMe = conv.theyBlockedMe;
+                final isOnline = !theyBlockedMe &&
+                    conv.status != 'request_pending' &&
+                    conv.otherUserId != null &&
+                    onlineUsers.contains(conv.otherUserId);
+                final isMuted =
+                    conv.otherUserId != null && mutedChats.contains(conv.otherUserId);
+                return _ChatTile(
+                  conv: conv,
+                  isGroup: false,
+                  isOnline: isOnline,
+                  isMuted: isMuted,
+                  currentUserId: uid,
+                  onLongPress: () => _showQuickActionsSheet(ctx, conv, isMuted, uid),
+                );
+              },
+              childCount: listCount,
+            ),
           ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      color: c.primary,
-      child: ListView.builder(
-        itemCount: active.length + (pending.isNotEmpty ? 1 : 0),
-        itemBuilder: (ctx, i) {
-          if (pending.isNotEmpty && i == 0) {
-            return _MessageRequestsBanner(count: pending.length);
-          }
-          final conv = active[pending.isNotEmpty ? i - 1 : i];
-          final theyBlockedMe = conv.theyBlockedMe;
-          final isOnline = !theyBlockedMe &&
-              conv.status != 'request_pending' &&
-              conv.otherUserId != null &&
-              onlineUsers.contains(conv.otherUserId);
-          final isMuted =
-              conv.otherUserId != null && mutedChats.contains(conv.otherUserId);
-          return _ChatTile(
-            conv: conv,
-            isGroup: false,
-            isOnline: isOnline,
-            isMuted: isMuted,
-            currentUserId: uid,
-            onLongPress: () => _showQuickActionsSheet(ctx, conv, isMuted, uid),
-          );
-        },
-      ),
+      ],
     );
   }
 }
@@ -661,14 +656,12 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
     final groups = ref.watch(chatProvider.select((s) => s.groups));
     final mutedGroups = ref.watch(chatProvider.select((s) => s.mutedGroups));
 
-    if (groups.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _refresh,
-        color: c.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _refresh),
+        if (groups.isEmpty)
+          SliverFillRemaining(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.group_outlined, size: 64, color: c.textTertiary),
@@ -688,28 +681,25 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
                         fontFamily: 'Outfit')),
               ]),
             ),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (ctx, i) {
+                final g = groups[i];
+                final isGroupMuted = mutedGroups[g.id] == 'muted';
+                return _ChatTile(
+                  conv: g,
+                  isGroup: true,
+                  isOnline: false,
+                  isMuted: isGroupMuted,
+                  currentUserId: uid,
+                );
+              },
+              childCount: groups.length,
+            ),
           ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      color: c.primary,
-      child: ListView.builder(
-        itemCount: groups.length,
-        itemBuilder: (ctx, i) {
-          final g = groups[i];
-          final isGroupMuted = mutedGroups[g.id] == 'muted';
-          return _ChatTile(
-            conv: g,
-            isGroup: true,
-            isOnline: false,
-            isMuted: isGroupMuted,
-            currentUserId: uid,
-          );
-        },
-      ),
+      ],
     );
   }
 }
@@ -762,14 +752,12 @@ class _ChannelChatListState extends ConsumerState<_ChannelChatList> {
       return Center(child: CircularProgressIndicator(color: c.primary));
     }
 
-    if (_channels.isEmpty) {
-      return RefreshIndicator(
-        onRefresh: _refresh,
-        color: c.primary,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: _refresh),
+        if (_channels.isEmpty)
+          SliverFillRemaining(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.campaign_outlined, size: 64, color: c.textTertiary),
@@ -782,29 +770,26 @@ class _ChannelChatListState extends ConsumerState<_ChannelChatList> {
                         fontWeight: FontWeight.w600)),
               ]),
             ),
+          )
+        else
+          SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (ctx, i) => _ChannelTile(
+                channelData: _channels[i],
+                currentUserId: uid,
+                onUnreadZeroed: (id) {
+                  setState(() {
+                    final idx = _channels.indexWhere((ch) => ch['id'].toString() == id);
+                    if (idx != -1) {
+                      _channels[idx] = {..._channels[idx], 'unread_count': 0};
+                    }
+                  });
+                },
+              ),
+              childCount: _channels.length,
+            ),
           ),
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: _refresh,
-      color: c.primary,
-      child: ListView.builder(
-        itemCount: _channels.length,
-        itemBuilder: (ctx, i) => _ChannelTile(
-          channelData: _channels[i],
-          currentUserId: uid,
-          onUnreadZeroed: (id) {
-            setState(() {
-              final idx = _channels.indexWhere((ch) => ch['id'].toString() == id);
-              if (idx != -1) {
-                _channels[idx] = {..._channels[idx], 'unread_count': 0};
-              }
-            });
-          },
-        ),
-      ),
+      ],
     );
   }
 }

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -117,28 +118,31 @@ class _NotificationSettingsScreenState extends ConsumerState<NotificationSetting
             const SizedBox(width: 32),
           ]),
         ),
-        Expanded(child: RefreshIndicator(
-          onRefresh: () async { await _load(); },
-          color: t.primary,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Column(children: [
-              // Info card
-              Container(
-                margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(color: t.primary.withAlpha(0x15), borderRadius: BorderRadius.circular(12)),
-                child: Row(children: [
-                  Icon(Icons.info_outline, size: 20, color: t.primary),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text('Control which notifications you want to receive. All notifications are enabled by default.', style: TextStyle(fontFamily: 'Outfit', fontSize: 13, color: t.text, height: 1.5))),
+        Expanded(child: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            CupertinoSliverRefreshControl(onRefresh: () async { await _load(); }),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              sliver: SliverToBoxAdapter(
+                child: Column(children: [
+                  // Info card
+                  Container(
+                    margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(color: t.primary.withAlpha(0x15), borderRadius: BorderRadius.circular(12)),
+                    child: Row(children: [
+                      Icon(Icons.info_outline, size: 20, color: t.primary),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text('Control which notifications you want to receive. All notifications are enabled by default.', style: TextStyle(fontFamily: 'Outfit', fontSize: 13, color: t.text, height: 1.5))),
+                    ]),
+                  ),
+                  for (final section in _sections) _buildSection(section.$1, section.$2, section.$3, t),
+                  const SizedBox(height: 20),
                 ]),
               ),
-              for (final section in _sections) _buildSection(section.$1, section.$2, section.$3, t),
-              const SizedBox(height: 20),
-            ]),
-          ),
+            ),
+          ],
         )),
         if (_updating) const LinearProgressIndicator(minHeight: 2),
       ])),

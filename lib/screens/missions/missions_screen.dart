@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -240,37 +241,37 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
         // Tab bar
         _tabBar(t, isDark),
         // Content
-        Expanded(child: RefreshIndicator(
-          onRefresh: _onRefresh,
-          color: t.primary,
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.only(bottom: 20),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(4, 16, 4, 12),
-                  child: Text(
-                    _activeTab == 'daily'
-                        ? 'Complete daily missions to earn bonus XP. Resets every 24 hours.'
-                        : 'Long-term achievements that unlock as you progress.',
-                    style: TextStyle(fontFamily: 'Outfit', fontSize: 12, color: t.textSecondary, height: 1.4),
+        Expanded(child: CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+            SliverPadding(
+              padding: const EdgeInsets.only(bottom: 20, left: 16, right: 16),
+              sliver: SliverToBoxAdapter(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(4, 16, 4, 12),
+                    child: Text(
+                      _activeTab == 'daily'
+                          ? 'Complete daily missions to earn bonus XP. Resets every 24 hours.'
+                          : 'Long-term achievements that unlock as you progress.',
+                      style: TextStyle(fontFamily: 'Outfit', fontSize: 12, color: t.textSecondary, height: 1.4),
+                    ),
                   ),
-                ),
-                if (_activeTab == 'daily') ...[
-                  if (_daily.isEmpty) _empty(t, Icons.check_circle, 'No daily missions available')
-                  else ...[
-                    ..._sort(_daily).where((m) => m['milestoneGroup'] == null).map((m) => _missionCard(m, t, isDark)),
-                    ..._groupMilestones(_sort(_daily).where((m) => m['milestoneGroup'] != null).toList(), t, isDark),
+                  if (_activeTab == 'daily') ...[
+                    if (_daily.isEmpty) _empty(t, Icons.check_circle, 'No daily missions available')
+                    else ...[
+                      ..._sort(_daily).where((m) => m['milestoneGroup'] == null).map((m) => _missionCard(m, t, isDark)),
+                      ..._groupMilestones(_sort(_daily).where((m) => m['milestoneGroup'] != null).toList(), t, isDark),
+                    ],
+                  ] else ...[
+                    if (_lifetime.isEmpty) _empty(t, Icons.stars, 'No lifetime missions available')
+                    else ..._sort(_lifetime).map((m) => _missionCard(m, t, isDark)),
                   ],
-                ] else ...[
-                  if (_lifetime.isEmpty) _empty(t, Icons.stars, 'No lifetime missions available')
-                  else ..._sort(_lifetime).map((m) => _missionCard(m, t, isDark)),
-                ],
-              ]),
+                ]),
+              ),
             ),
-          ),
+          ],
         )),
       ])),
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -67,47 +68,55 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
         child: Text('Failed to load communities',
             style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit')),
       ),
-      data: (groups) => RefreshIndicator(
-        color: c.primary,
-        backgroundColor: c.surface,
-        onRefresh: () => ref.refresh(_activitiesProvider(_cityFilter).future),
-        child: groups.isEmpty
-            ? ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
+      data: (groups) => CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          CupertinoSliverRefreshControl(
+            onRefresh: () => ref.refresh(_activitiesProvider(_cityFilter).future),
+          ),
+          if (groups.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   SizedBox(height: MediaQuery.of(context).size.height * 0.25),
-                  Column(children: [
-                    Icon(Icons.explore, size: 64, color: c.textTertiary),
-                    const SizedBox(height: 16),
-                    Text('No Public Community Yet',
-                        style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
-                    const SizedBox(height: 8),
-                    Text(
-                      _cityFilter.isNotEmpty
-                          ? 'No public community found in $_cityFilter.'
-                          : 'Be the first to create a Community!',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary),
-                    ),
-                  ]),
+                  Icon(Icons.explore, size: 64, color: c.textTertiary),
+                  const SizedBox(height: 16),
+                  Text('No Public Community Yet',
+                      style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
+                  const SizedBox(height: 8),
+                  Text(
+                    _cityFilter.isNotEmpty
+                        ? 'No public community found in $_cityFilter.'
+                        : 'Be the first to create a Community!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary),
+                  ),
                 ],
-              )
-            : ListView.builder(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(bottom: 20),
-                itemCount: groups.length + 1,
-                itemBuilder: (context, i) {
-                  if (i == groups.length) return _ExploreBanner(onTap: () => context.push('/communities'));
-                  final g = groups[i] as Map<String, dynamic>;
-                  return _CommunityCard(
-                    group: g,
-                    fmtCount: _fmtCount,
-                    parseTags: _parseTags,
-                    onTap: () => _openGroup(context, g),
-                    onJoin: () => _openGroup(context, g),
-                  );
-                },
               ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.only(bottom: 20),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    if (i == groups.length) return _ExploreBanner(onTap: () => context.push('/communities'));
+                    final g = groups[i] as Map<String, dynamic>;
+                    return _CommunityCard(
+                      group: g,
+                      fmtCount: _fmtCount,
+                      parseTags: _parseTags,
+                      onTap: () => _openGroup(context, g),
+                      onJoin: () => _openGroup(context, g),
+                    );
+                  },
+                  childCount: groups.length + 1,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }

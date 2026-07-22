@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -186,28 +187,33 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
         // Grid
         Expanded(child: _loading && _posts.isEmpty
             ? Center(child: CircularProgressIndicator(color: t.primary))
-            : RefreshIndicator(
-                color: t.primary,
-                backgroundColor: t.surface,
-                onRefresh: _onRefresh,
-                child: _posts.isEmpty
-                    ? _emptyState(t)
-                    : GridView.builder(
-                        controller: _scrollCtrl,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+            : CustomScrollView(
+                controller: _scrollCtrl,
+                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                slivers: [
+                  CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+                  if (_posts.isEmpty)
+                    SliverFillRemaining(child: _emptyState(t))
+                  else
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 0),
+                      sliver: SliverGrid(
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount: 3,
                           crossAxisSpacing: 4,
                           mainAxisSpacing: 4,
                           childAspectRatio: itemW / itemH,
                         ),
-                        itemCount: _posts.length + (_loadingMore ? 1 : 0),
-                        itemBuilder: (_, i) {
-                          if (i == _posts.length) return Center(child: Padding(padding: const EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)));
-                          return _postTile(_posts[i], t);
-                        },
+                        delegate: SliverChildBuilderDelegate(
+                          (_, i) {
+                            if (i == _posts.length) return Center(child: Padding(padding: const EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2, color: t.primary)));
+                            return _postTile(_posts[i], t);
+                          },
+                          childCount: _posts.length + (_loadingMore ? 1 : 0),
+                        ),
                       ),
+                    ),
+                ],
               )),
       ])),
     );

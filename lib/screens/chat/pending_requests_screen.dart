@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -118,59 +119,66 @@ class _PendingRequestsScreenState
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: c.primary))
-          : RefreshIndicator(
-              color: c.primary,
-              backgroundColor: c.surface,
-              onRefresh: () => _load(),
-              child: _pending.isEmpty
-                  ? ListView(
-                      children: [
-                        SizedBox(
-                          height: MediaQuery.of(context).size.height * 0.6,
-                          child: Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.hourglass_empty_outlined,
-                                    size: 64, color: c.textTertiary),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'No pending requests',
-                                  style: TextStyle(
-                                    color: c.text,
-                                    fontSize: 18,
-                                    fontFamily: 'Outfit',
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Text(
-                                  'Message requests you\'ve sent\nwill appear here until accepted',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: c.textSecondary,
-                                    fontSize: 14,
-                                    fontFamily: 'Outfit',
-                                    height: 1.5,
-                                  ),
-                                ),
-                              ],
+          : CustomScrollView(
+              physics: const BouncingScrollPhysics(
+                  parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                CupertinoSliverRefreshControl(onRefresh: () => _load()),
+                if (_pending.isEmpty)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.hourglass_empty_outlined,
+                              size: 64, color: c.textTertiary),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No pending requests',
+                            style: TextStyle(
+                              color: c.text,
+                              fontSize: 18,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        ),
-                      ],
-                    )
-                  : ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: _pending.length,
-                      separatorBuilder: (_, __) =>
-                          Divider(color: c.border, height: 1, indent: 80),
-                      itemBuilder: (_, i) => _PendingTile(
-                        conversation: _pending[i],
-                        onCancel: () =>
-                            _cancelRequest(_pending[i]['id']?.toString() ?? ''),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Message requests you\'ve sent\nwill appear here until accepted',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: c.textSecondary,
+                              fontSize: 14,
+                              fontFamily: 'Outfit',
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, index) {
+                          final i = index ~/ 2;
+                          if (index.isOdd) {
+                            return Divider(
+                                color: c.border, height: 1, indent: 80);
+                          }
+                          return _PendingTile(
+                            conversation: _pending[i],
+                            onCancel: () => _cancelRequest(
+                                _pending[i]['id']?.toString() ?? ''),
+                          );
+                        },
+                        childCount: _pending.length * 2 - 1,
+                      ),
+                    ),
+                  ),
+              ],
             ),
     );
   }

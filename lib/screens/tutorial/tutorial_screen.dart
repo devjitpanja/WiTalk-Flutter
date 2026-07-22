@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -286,255 +287,256 @@ class _TutorialScreenState extends State<TutorialScreen> {
                         ],
                       ),
                     )
-                  : RefreshIndicator(
-                      color: colors.primary,
-                      onRefresh: () => _fetchData(true),
-                      child: SingleChildScrollView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Hero Progress Card
-                            Container(
-                              margin: const EdgeInsets.symmetric(horizontal: 16).copyWith(top: 8),
-                              decoration: BoxDecoration(
-                                borderRadius: BorderRadius.circular(20),
-                                gradient: LinearGradient(
-                                  colors: isDark
-                                      ? const [Color(0xFF0F1A3A), Color(0xFF152250), Color(0xFF1A2B66)]
-                                      : const [Color(0xFF1565C0), Color(0xFF1976D2), Color(0xFF1E88E5)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                              ),
-                              child: Stack(
-                                children: [
-                                  Positioned(
-                                    right: -12,
-                                    top: -12,
-                                    child: Icon(
-                                      Icons.school,
-                                      size: 88,
-                                      color: Colors.white.withValues(alpha: 0.07),
-                                    ),
+                  : CustomScrollView(
+                      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                      slivers: [
+                        CupertinoSliverRefreshControl(onRefresh: () => _fetchData(true)),
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // Hero Progress Card
+                              Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 16).copyWith(top: 8),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(20),
+                                  gradient: LinearGradient(
+                                    colors: isDark
+                                        ? const [Color(0xFF0F1A3A), Color(0xFF152250), Color(0xFF1A2B66)]
+                                        : const [Color(0xFF1565C0), Color(0xFF1976D2), Color(0xFF1E88E5)],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
                                   ),
-                                  Padding(
-                                    padding: const EdgeInsets.all(20),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Learn WiTalk',
-                                          style: TextStyle(
-                                            fontFamily: 'Outfit',
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 22,
-                                            color: Colors.white,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '$totalVideos tutorial${totalVideos != 1 ? 's' : ''} · Watch to master every feature',
-                                          style: TextStyle(
-                                            fontFamily: 'Outfit',
-                                            fontWeight: FontWeight.w400,
-                                            fontSize: 13,
-                                            color: Colors.white.withValues(alpha: 0.7),
-                                          ),
-                                        ),
-                                        if (totalVideos > 0) ...[
-                                          const SizedBox(height: 16),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                            children: [
-                                              Text(
-                                                'Your progress',
-                                                style: TextStyle(
-                                                  fontFamily: 'Outfit',
-                                                  fontWeight: FontWeight.w400,
-                                                  fontSize: 12,
-                                                  color: Colors.white.withValues(alpha: 0.7),
-                                                ),
-                                              ),
-                                              Text(
-                                                '$progressPct%',
-                                                style: const TextStyle(
-                                                  fontFamily: 'Outfit',
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 13,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Container(
-                                            height: 6,
-                                            decoration: BoxDecoration(
-                                              borderRadius: BorderRadius.circular(3),
-                                              color: Colors.white.withValues(alpha: 0.2),
+                                ),
+                                child: Stack(
+                                  children: [
+                                    Positioned(
+                                      right: -12,
+                                      top: -12,
+                                      child: Icon(
+                                        Icons.school,
+                                        size: 88,
+                                        color: Colors.white.withValues(alpha: 0.07),
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.all(20),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          const Text(
+                                            'Learn WiTalk',
+                                            style: TextStyle(
+                                              fontFamily: 'Outfit',
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 22,
+                                              color: Colors.white,
                                             ),
-                                            clipBehavior: Clip.antiAlias,
-                                            child: Align(
-                                              alignment: Alignment.centerLeft,
-                                              child: FractionallySizedBox(
-                                                widthFactor: progressPct > 0 ? (progressPct / 100).clamp(0.0, 1.0) : 0.0,
-                                                child: Container(
-                                                  decoration: BoxDecoration(
-                                                    borderRadius: BorderRadius.circular(3),
-                                                    gradient: const LinearGradient(
-                                                      colors: [Color(0xFF34C759), Color(0xFF30D158)],
-                                                      begin: Alignment.centerLeft,
-                                                      end: Alignment.centerRight,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            '$totalVideos tutorial${totalVideos != 1 ? 's' : ''} · Watch to master every feature',
+                                            style: TextStyle(
+                                              fontFamily: 'Outfit',
+                                              fontWeight: FontWeight.w400,
+                                              fontSize: 13,
+                                              color: Colors.white.withValues(alpha: 0.7),
+                                            ),
+                                          ),
+                                          if (totalVideos > 0) ...[
+                                            const SizedBox(height: 16),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Text(
+                                                  'Your progress',
+                                                  style: TextStyle(
+                                                    fontFamily: 'Outfit',
+                                                    fontWeight: FontWeight.w400,
+                                                    fontSize: 12,
+                                                    color: Colors.white.withValues(alpha: 0.7),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '$progressPct%',
+                                                  style: const TextStyle(
+                                                    fontFamily: 'Outfit',
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 13,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              height: 6,
+                                              decoration: BoxDecoration(
+                                                borderRadius: BorderRadius.circular(3),
+                                                color: Colors.white.withValues(alpha: 0.2),
+                                              ),
+                                              clipBehavior: Clip.antiAlias,
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: FractionallySizedBox(
+                                                  widthFactor: progressPct > 0 ? (progressPct / 100).clamp(0.0, 1.0) : 0.0,
+                                                  child: Container(
+                                                    decoration: BoxDecoration(
+                                                      borderRadius: BorderRadius.circular(3),
+                                                      gradient: const LinearGradient(
+                                                        colors: [Color(0xFF34C759), Color(0xFF30D158)],
+                                                        begin: Alignment.centerLeft,
+                                                        end: Alignment.centerRight,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                          const SizedBox(height: 16),
-                                          Row(
-                                            mainAxisAlignment: MainAxisAlignment.spaceAround,
-                                            children: [
-                                              _buildHeroStat('$watchedCount', 'Watched'),
-                                              Container(
-                                                width: 1,
-                                                height: 28,
-                                                color: Colors.white.withValues(alpha: 0.2),
-                                              ),
-                                              _buildHeroStat('$completedCount', 'Completed'),
-                                              Container(
-                                                width: 1,
-                                                height: 28,
-                                                color: Colors.white.withValues(alpha: 0.2),
-                                              ),
-                                              _buildHeroStat('${totalVideos - completedCount}', 'Remaining'),
-                                            ],
-                                          ),
+                                            const SizedBox(height: 16),
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                                              children: [
+                                                _buildHeroStat('$watchedCount', 'Watched'),
+                                                Container(
+                                                  width: 1,
+                                                  height: 28,
+                                                  color: Colors.white.withValues(alpha: 0.2),
+                                                ),
+                                                _buildHeroStat('$completedCount', 'Completed'),
+                                                Container(
+                                                  width: 1,
+                                                  height: 28,
+                                                  color: Colors.white.withValues(alpha: 0.2),
+                                                ),
+                                                _buildHeroStat('${totalVideos - completedCount}', 'Remaining'),
+                                              ],
+                                            ),
+                                          ],
                                         ],
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            // Category Tabs
-                            if (_categories.isNotEmpty) ...[
-                              const SizedBox(height: 20),
-                              SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                child: Row(
-                                  children: [
-                                    // "All" tab
-                                    _buildCategoryTab(
-                                      id: null,
-                                      name: 'All',
-                                      iconData: Icons.apps,
-                                      iconColor: _selectedCat == null ? Colors.white : colors.textSecondary,
-                                      count: _videos.length,
-                                      isSelected: _selectedCat == null,
-                                      activeColor: colors.primary,
-                                      isDark: isDark,
-                                      colors: colors,
-                                    ),
-                                    ..._categories.map((cat) {
-                                      final cId = (cat['id'] ?? cat['_id'])?.toString();
-                                      final isSel = _selectedCat == cId;
-                                      final catVids = _videos.where((v) => (v['category_id'] ?? v['categoryId'])?.toString() == cId).toList();
-                                      final cColor = _parseCategoryColor(cat['color']?.toString());
-                                      return Padding(
-                                        padding: const EdgeInsets.only(left: 8),
-                                        child: _buildCategoryTab(
-                                          id: cId,
-                                          name: cat['name']?.toString() ?? '',
-                                          iconData: _getCategoryIcon(cat['icon']?.toString()),
-                                          iconColor: isSel ? Colors.white : cColor,
-                                          count: catVids.length,
-                                          isSelected: isSel,
-                                          activeColor: cColor,
-                                          isDark: isDark,
-                                          colors: colors,
-                                        ),
-                                      );
-                                    }),
                                   ],
                                 ),
                               ),
-                            ],
 
-                            // Videos Grid / Empty state
-                            if (filteredVideos.isEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 60, left: 32, right: 32),
-                                child: Center(
-                                  child: Column(
+                              // Category Tabs
+                              if (_categories.isNotEmpty) ...[
+                                const SizedBox(height: 20),
+                                SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                                  child: Row(
                                     children: [
-                                      Icon(Icons.video_library, size: 52, color: colors.textTertiary),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        'No videos yet',
-                                        style: TextStyle(
-                                          fontFamily: 'Outfit',
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 17,
-                                          color: colors.text,
-                                        ),
+                                      // "All" tab
+                                      _buildCategoryTab(
+                                        id: null,
+                                        name: 'All',
+                                        iconData: Icons.apps,
+                                        iconColor: _selectedCat == null ? Colors.white : colors.textSecondary,
+                                        count: _videos.length,
+                                        isSelected: _selectedCat == null,
+                                        activeColor: colors.primary,
+                                        isDark: isDark,
+                                        colors: colors,
                                       ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        'New tutorials will appear here soon.',
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                          fontFamily: 'Outfit',
-                                          fontWeight: FontWeight.w400,
-                                          fontSize: 13,
-                                          height: 1.5,
-                                          color: colors.textTertiary,
-                                        ),
-                                      ),
+                                      ..._categories.map((cat) {
+                                        final cId = (cat['id'] ?? cat['_id'])?.toString();
+                                        final isSel = _selectedCat == cId;
+                                        final catVids = _videos.where((v) => (v['category_id'] ?? v['categoryId'])?.toString() == cId).toList();
+                                        final cColor = _parseCategoryColor(cat['color']?.toString());
+                                        return Padding(
+                                          padding: const EdgeInsets.only(left: 8),
+                                          child: _buildCategoryTab(
+                                            id: cId,
+                                            name: cat['name']?.toString() ?? '',
+                                            iconData: _getCategoryIcon(cat['icon']?.toString()),
+                                            iconColor: isSel ? Colors.white : cColor,
+                                            count: catVids.length,
+                                            isSelected: isSel,
+                                            activeColor: cColor,
+                                            isDark: isDark,
+                                            colors: colors,
+                                          ),
+                                        );
+                                      }),
                                     ],
                                   ),
                                 ),
-                              )
-                            else
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                                child: GridView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 2,
-                                    crossAxisSpacing: 12,
-                                    mainAxisSpacing: 12,
-                                    childAspectRatio: 0.74,
+                              ],
+
+                              // Videos Grid / Empty state
+                              if (filteredVideos.isEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 60, left: 32, right: 32),
+                                  child: Center(
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.video_library, size: 52, color: colors.textTertiary),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'No videos yet',
+                                          style: TextStyle(
+                                            fontFamily: 'Outfit',
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 17,
+                                            color: colors.text,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 10),
+                                        Text(
+                                          'New tutorials will appear here soon.',
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontFamily: 'Outfit',
+                                            fontWeight: FontWeight.w400,
+                                            fontSize: 13,
+                                            height: 1.5,
+                                            color: colors.textTertiary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                  itemCount: filteredVideos.length,
-                                  itemBuilder: (context, index) {
-                                    final video = filteredVideos[index];
-                                    final vId = (video['id'] ?? video['_id'])?.toString() ?? '';
-                                    final catId = (video['category_id'] ?? video['categoryId'])?.toString();
-                                    final isWatched = _progress.containsKey(vId);
-                                    final isCompleted = _progress[vId]?['completed'] == true;
+                                )
+                              else
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                                  child: GridView.builder(
+                                    shrinkWrap: true,
+                                    physics: const NeverScrollableScrollPhysics(),
+                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 12,
+                                      childAspectRatio: 0.74,
+                                    ),
+                                    itemCount: filteredVideos.length,
+                                    itemBuilder: (context, index) {
+                                      final video = filteredVideos[index];
+                                      final vId = (video['id'] ?? video['_id'])?.toString() ?? '';
+                                      final catId = (video['category_id'] ?? video['categoryId'])?.toString();
+                                      final isWatched = _progress.containsKey(vId);
+                                      final isCompleted = _progress[vId]?['completed'] == true;
 
-                                    return _VideoCard(
-                                      video: video,
-                                      thumbUrl: _thumbUrl(video['youtube_id']?.toString() ?? ''),
-                                      categoryColor: categoryColorMap[catId],
-                                      isWatched: isWatched,
-                                      isCompleted: isCompleted,
-                                      onPress: () => _handleVideoPress(video),
-                                      colors: colors,
-                                    );
-                                  },
+                                      return _VideoCard(
+                                        video: video,
+                                        thumbUrl: _thumbUrl(video['youtube_id']?.toString() ?? ''),
+                                        categoryColor: categoryColorMap[catId],
+                                        isWatched: isWatched,
+                                        isCompleted: isCompleted,
+                                        onPress: () => _handleVideoPress(video),
+                                        colors: colors,
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
 
-                            const SizedBox(height: 40),
-                          ],
+                              const SizedBox(height: 40),
+                            ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
             ),
           ],

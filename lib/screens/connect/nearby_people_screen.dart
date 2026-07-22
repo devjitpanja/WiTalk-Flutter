@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'discover_all_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -547,16 +548,20 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
     }
 
     final grp = _groups;
-    if (grp == null || grp.isEmpty) {
-      return RefreshIndicator(
-        color: c.primary,
-        backgroundColor: c.surface,
-        onRefresh: _refresh,
-        child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            children: [
-              SizedBox(height: MediaQuery.of(context).size.height * 0.3),
-              Column(children: [
+
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: _refresh,
+        ),
+        if (grp == null || grp.isEmpty)
+          SliverFillRemaining(
+            hasScrollBody: false,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(height: MediaQuery.of(context).size.height * 0.3),
                 Icon(Icons.people_outline, size: 64, color: c.textTertiary),
                 const SizedBox(height: 16),
                 Text('No one nearby right now',
@@ -564,19 +569,12 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
                 const SizedBox(height: 8),
                 Text('Try expanding your search radius',
                     style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary)),
-              ]),
-            ]),
-      );
-    }
-
-    return RefreshIndicator(
-      color: c.primary,
-      backgroundColor: c.surface,
-      onRefresh: _refresh,
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.only(bottom: 32, top: 4),
-        children: [
+              ],
+            ),
+          )
+        else
+          SliverList(
+            delegate: SliverChildListDelegate([
               // Stale cache banner
               if (_isLocationCached && _cacheAgeMinutes >= 5)
                 Builder(builder: (ctx) {
@@ -599,18 +597,20 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
                     ]),
                   );
                 }),
-              ..._buildSection(context, grp.catchUp,     icon: Icons.cake,          color: const Color(0xFFF472B6), title: 'Birthdays Today',             isBirthday: true, liveDot: false),
-              ..._buildSection(context, grp.onlineNearby, icon: Icons.wifi_tethering, color: const Color(0xFF22C55E), title: 'Online Nearby',               isBirthday: false, liveDot: true),
-              ..._buildSection(context, grp.bestMatches,  icon: Icons.stars,          color: const Color(0xFFFF6B6B), title: 'Best Matches',                isBirthday: false, liveDot: false),
-              ..._buildSection(context, grp.sharedVibes,  icon: Icons.favorite,       color: const Color(0xFF4ECDC4), title: 'Similar Vibes',               isBirthday: false, liveDot: false),
-              ..._buildSection(context, grp.sameAge,      icon: Icons.group,          color: const Color(0xFF45B7D1), title: 'Your Age Group',              isBirthday: false, liveDot: false),
-              ..._buildSection(context, grp.nearby,       icon: Icons.near_me,        color: const Color(0xFF96CEB4), title: 'Close By',                    isBirthday: false, liveDot: false),
-              ..._buildSection(context, grp.others,       icon: Icons.explore,        color: const Color(0xFF9B59B6), title: 'Discover',                    isBirthday: false, liveDot: false,
+              ..._buildSection(context, grp.catchUp,      icon: Icons.cake,           color: const Color(0xFFF472B6), title: 'Birthdays Today',  isBirthday: true,  liveDot: false),
+              ..._buildSection(context, grp.onlineNearby, icon: Icons.wifi_tethering,  color: const Color(0xFF22C55E), title: 'Online Nearby',    isBirthday: false, liveDot: true),
+              ..._buildSection(context, grp.bestMatches,  icon: Icons.stars,           color: const Color(0xFFFF6B6B), title: 'Best Matches',     isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.sharedVibes,  icon: Icons.favorite,        color: const Color(0xFF4ECDC4), title: 'Similar Vibes',    isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.sameAge,      icon: Icons.group,           color: const Color(0xFF45B7D1), title: 'Your Age Group',   isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.nearby,       icon: Icons.near_me,         color: const Color(0xFF96CEB4), title: 'Close By',         isBirthday: false, liveDot: false),
+              ..._buildSection(context, grp.others,       icon: Icons.explore,         color: const Color(0xFF9B59B6), title: 'Discover',         isBirthday: false, liveDot: false,
                   onViewAll: grp.others.isNotEmpty ? () => Navigator.of(context).push(MaterialPageRoute(
                     builder: (_) => DiscoverAllScreen(users: grp.others, me: _me),
                   )) : null),
-        ],
-      ),
+              const SizedBox(height: 32),
+            ]),
+          ),
+      ],
     );
   }
 }

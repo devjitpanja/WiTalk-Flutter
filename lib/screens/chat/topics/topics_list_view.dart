@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -269,37 +270,43 @@ class _TopicTabPage extends StatelessWidget {
       );
     }
 
-    return RefreshIndicator(
-      color: c.primary,
-      backgroundColor: c.surface,
-      onRefresh: () async => onRefresh(),
-      child: ListView.builder(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        itemCount: topics.length + (hasMore ? 1 : 0),
-        itemBuilder: (ctx, i) {
-          if (i == topics.length) {
-            // Load more trigger
-            WidgetsBinding.instance
-                .addPostFrameCallback((_) => onLoadMore());
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: c.primary),
-                ),
-              ),
-            );
-          }
-          return _TopicCard(
-            topic: topics[i],
-            groupId: groupId,
-            isAdmin: isAdmin,
-          );
-        },
-      ),
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(onRefresh: () async => onRefresh()),
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          sliver: SliverList(
+            delegate: SliverChildBuilderDelegate(
+              (ctx, i) {
+                if (i == topics.length) {
+                  // Load more trigger
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => onLoadMore());
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: c.primary),
+                      ),
+                    ),
+                  );
+                }
+                return _TopicCard(
+                  topic: topics[i],
+                  groupId: groupId,
+                  isAdmin: isAdmin,
+                );
+              },
+              childCount: topics.length + (hasMore ? 1 : 0),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

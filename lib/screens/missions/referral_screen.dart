@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -204,24 +205,24 @@ class _ReferralScreenState extends ConsumerState<ReferralScreen> {
               GestureDetector(onTap: _onRefresh, child: Container(width: 40, height: 56, alignment: Alignment.center, child: Icon(Icons.refresh, size: 24, color: t.text))),
             ]),
           ),
-          Expanded(child: RefreshIndicator(
-            color: t.primary,
-            backgroundColor: t.surface,
-            onRefresh: _onRefresh,
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Column(children: [
-                // Code card (gradient)
-                _codeCard(t, bonus),
-                // How it works
-                _howItWorksCard(t, bonus),
-                // Stats card
-                if (_stats != null) _statsCard(t, balance),
-                // Referrals list
-                _referralsList(t),
-                const SizedBox(height: 24),
-              ]),
-            ),
+          Expanded(child: CustomScrollView(
+            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+              SliverToBoxAdapter(
+                child: Column(children: [
+                  // Code card (gradient)
+                  _codeCard(t, bonus),
+                  // How it works
+                  _howItWorksCard(t, bonus),
+                  // Stats card
+                  if (_stats != null) _statsCard(t, balance),
+                  // Referrals list
+                  _referralsList(t),
+                  const SizedBox(height: 24),
+                ]),
+              ),
+            ],
           )),
         ]),
 

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -63,18 +64,23 @@ class _GroupListScreenState extends ConsumerState<GroupListScreen> {
           ),
         ],
       ),
-      body: groups.isEmpty && !_refreshing
-          ? _buildEmpty(c)
-          : RefreshIndicator(
-              onRefresh: _refresh,
-              color: c.primary,
-              child: ListView.builder(
-                itemCount: groups.length,
-                itemExtent: 88,
-                itemBuilder: (ctx, i) => _GroupTile(
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: _refresh),
+          if (groups.isEmpty && !_refreshing)
+            SliverFillRemaining(child: _buildEmpty(c))
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (ctx, i) => _GroupTile(
                     group: groups[i], currentUserId: uid, c: c),
+                childCount: groups.length,
               ),
             ),
+        ],
+      ),
     );
   }
 

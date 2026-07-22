@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -525,47 +526,50 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
       return _buildSkeleton(c);
     }
 
-    return RefreshIndicator(
-      color: c.primary,
-      backgroundColor: c.surface,
-      onRefresh: () => ref.read(addaNotifierProvider.notifier).refreshLive(),
-      child: state.groupedItems.isEmpty
-          ? SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Container(
-                height: MediaQuery.of(context).size.height * 0.65,
-                alignment: Alignment.center,
-                child: _buildEmptyLive(c, canCreateAdda, isDark),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              itemCount: state.groupedItems.length,
-              itemBuilder: (ctx, i) {
-                final item = state.groupedItems[i];
-                final type = item['type']?.toString();
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: () => ref.read(addaNotifierProvider.notifier).refreshLive(),
+        ),
+        if (state.groupedItems.isEmpty)
+          SliverFillRemaining(
+            child: _buildEmptyLive(c, canCreateAdda, isDark),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (ctx, i) {
+                  final item = state.groupedItems[i];
+                  final type = item['type']?.toString();
 
-                if (type == 'community') {
-                  final commId = item['communityId']?.toString() ?? '';
-                  final isExpanded = state.expandedCommunities[commId] ?? true;
-                  return CommunityAddaCard(
-                    item: item,
-                    isExpanded: isExpanded,
-                    onToggleExpand: () {
-                      ref.read(addaNotifierProvider.notifier).toggleCommunityExpand(commId);
-                    },
+                  if (type == 'community') {
+                    final commId = item['communityId']?.toString() ?? '';
+                    final isExpanded = state.expandedCommunities[commId] ?? true;
+                    return CommunityAddaCard(
+                      item: item,
+                      isExpanded: isExpanded,
+                      onToggleExpand: () {
+                        ref.read(addaNotifierProvider.notifier).toggleCommunityExpand(commId);
+                      },
+                      onJoinRoom: _handleJoinRoom,
+                    );
+                  }
+
+                  final room = (item['room'] as Map<String, dynamic>?) ?? {};
+                  return PersonalAddaCard(
+                    room: room,
+                    paletteIndex: i,
                     onJoinRoom: _handleJoinRoom,
                   );
-                }
-
-                final room = (item['room'] as Map<String, dynamic>?) ?? {};
-                return PersonalAddaCard(
-                  room: room,
-                  paletteIndex: i,
-                  onJoinRoom: _handleJoinRoom,
-                );
-              },
+                },
+                childCount: state.groupedItems.length,
+              ),
             ),
+          ),
+      ],
     );
   }
 
@@ -576,42 +580,45 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
 
     final currentUid = ref.read(authProvider).uid ?? '';
 
-    return RefreshIndicator(
-      color: c.primary,
-      backgroundColor: c.surface,
-      onRefresh: () => ref.read(addaNotifierProvider.notifier).refreshUpcoming(),
-      child: state.upcomingRooms.isEmpty
-          ? SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              child: Container(
-                height: MediaQuery.of(context).size.height * 0.65,
-                alignment: Alignment.center,
-                child: _buildEmptyUpcoming(c, isDark),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              itemCount: state.upcomingRooms.length,
-              itemBuilder: (ctx, i) {
-                final room = state.upcomingRooms[i];
-                final roomId = room['room_id']?.toString() ?? '';
-                final isFollowing = state.followingMap[roomId] ?? false;
-                final isOwnRoom = room['host_uid']?.toString() == currentUid;
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: () => ref.read(addaNotifierProvider.notifier).refreshUpcoming(),
+        ),
+        if (state.upcomingRooms.isEmpty)
+          SliverFillRemaining(
+            child: _buildEmptyUpcoming(c, isDark),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            sliver: SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (ctx, i) {
+                  final room = state.upcomingRooms[i];
+                  final roomId = room['room_id']?.toString() ?? '';
+                  final isFollowing = state.followingMap[roomId] ?? false;
+                  final isOwnRoom = room['host_uid']?.toString() == currentUid;
 
-                return UpcomingAddaCard(
-                  room: room,
-                  isFollowing: isFollowing,
-                  isOwnRoom: isOwnRoom,
-                  onToggleBell: () {
-                    if (roomId.isNotEmpty) {
-                      ref.read(addaNotifierProvider.notifier).toggleFollowSchedule(roomId);
-                    }
-                  },
-                  onDelete: () => _handleDeleteScheduledAdda(room),
-                  onStartNow: () => _handleStartScheduledAdda(room),
-                );
-              },
+                  return UpcomingAddaCard(
+                    room: room,
+                    isFollowing: isFollowing,
+                    isOwnRoom: isOwnRoom,
+                    onToggleBell: () {
+                      if (roomId.isNotEmpty) {
+                        ref.read(addaNotifierProvider.notifier).toggleFollowSchedule(roomId);
+                      }
+                    },
+                    onDelete: () => _handleDeleteScheduledAdda(room),
+                    onStartNow: () => _handleStartScheduledAdda(room),
+                  );
+                },
+                childCount: state.upcomingRooms.length,
+              ),
             ),
+          ),
+      ],
     );
   }
 

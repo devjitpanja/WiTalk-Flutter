@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -111,17 +112,19 @@ class _RewardsScreenState extends ConsumerState<RewardsScreen> {
             ? Center(child: CircularProgressIndicator(color: t.primary))
             : _error != null
                 ? _errorState(t)
-                : RefreshIndicator(
-                    color: t.primary,
-                    backgroundColor: t.surface,
-                    onRefresh: _onRefresh,
-                    child: SingleChildScrollView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
-                      child: isPoolEmpty
-                          ? _emptyPoolBody(t, monthName, year)
-                          : _fullBody(t, isDark, monthName, year, minPoints, myPoints, pointsNeeded.toDouble(), progressPct, distLen, isEligible, myRankNum, isInRewardZone),
-                    ),
+                : CustomScrollView(
+                    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                    slivers: [
+                      CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+                        sliver: SliverToBoxAdapter(
+                          child: isPoolEmpty
+                              ? _emptyPoolBody(t, monthName, year)
+                              : _fullBody(t, isDark, monthName, year, minPoints, myPoints, pointsNeeded.toDouble(), progressPct, distLen, isEligible, myRankNum, isInRewardZone),
+                        ),
+                      ),
+                    ],
                   )),
 
         // Sticky bottom button

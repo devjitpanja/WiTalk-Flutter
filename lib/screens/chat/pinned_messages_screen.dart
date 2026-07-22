@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -210,68 +211,79 @@ class _PinnedMessagesScreenState
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: c.primary))
-          : _messages.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.push_pin_outlined,
-                          size: 64, color: c.textTertiary),
-                      const SizedBox(height: 16),
-                      Text(
-                        'No pinned messages',
-                        style: TextStyle(
-                          color: c.text,
-                          fontSize: 18,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Important messages you pin\nwill appear here',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 14,
-                          fontFamily: 'Outfit',
-                          height: 1.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : RefreshIndicator(
-                  color: c.primary,
-                  backgroundColor: c.surface,
+          : CustomScrollView(
+              controller: _scrollCtrl,
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                CupertinoSliverRefreshControl(
                   onRefresh: () => _load(reset: true),
-                  child: ListView.builder(
-                    controller: _scrollCtrl,
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: _messages.length + (_loadingMore ? 1 : 0),
-                    itemBuilder: (_, i) {
-                      if (i == _messages.length) {
-                        return const Center(
-                          child: Padding(
-                            padding: EdgeInsets.all(16),
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                if (_messages.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.push_pin_outlined,
+                              size: 64, color: c.textTertiary),
+                          const SizedBox(height: 16),
+                          Text(
+                            'No pinned messages',
+                            style: TextStyle(
+                              color: c.text,
+                              fontSize: 18,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
-                        );
-                      }
-                      return _PinnedMessageCard(
-                        message: _messages[i],
-                        currentUserId: _currentUserId,
-                        isAdmin: _isAdmin,
-                        onTap: () => _jumpToMessage(_messages[i]),
-                        onUnpin: () => _unpin(_messages[i]),
-                      );
-                    },
+                          const SizedBox(height: 6),
+                          Text(
+                            'Important messages you pin\nwill appear here',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: c.textSecondary,
+                              fontSize: 14,
+                              fontFamily: 'Outfit',
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) {
+                          if (i == _messages.length) {
+                            return const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(16),
+                                child: SizedBox(
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                              ),
+                            );
+                          }
+                          return _PinnedMessageCard(
+                            message: _messages[i],
+                            currentUserId: _currentUserId,
+                            isAdmin: _isAdmin,
+                            onTap: () => _jumpToMessage(_messages[i]),
+                            onUnpin: () => _unpin(_messages[i]),
+                          );
+                        },
+                        childCount: _messages.length + (_loadingMore ? 1 : 0),
+                      ),
+                    ),
                   ),
-                ),
+              ],
+            ),
     );
   }
 }

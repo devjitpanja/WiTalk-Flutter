@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -46,57 +47,55 @@ class MessageRequestsScreen extends ConsumerWidget {
           ),
         ),
       ),
-      body: RefreshIndicator(
-        color: c.primary,
-        backgroundColor: c.surface,
-        onRefresh: () => _refresh(ref),
-        child: pendingRequests.isEmpty
-            ? ListView(
-                children: [
-                  SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.7,
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 40),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.mail_outline,
-                                size: 56, color: c.textTertiary),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No message requests',
-                              style: TextStyle(
-                                color: c.text,
-                                fontSize: 18,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              "When someone you don't follow messages you, their request will appear here.",
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: c.textSecondary,
-                                fontSize: 14,
-                                fontFamily: 'Outfit',
-                                height: 1.5,
-                              ),
-                            ),
-                          ],
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          CupertinoSliverRefreshControl(onRefresh: () => _refresh(ref)),
+          if (pendingRequests.isEmpty)
+            SliverFillRemaining(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.mail_outline,
+                          size: 56, color: c.textTertiary),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No message requests',
+                        style: TextStyle(
+                          color: c.text,
+                          fontSize: 18,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "When someone you don't follow messages you, their request will appear here.",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: c.textSecondary,
+                          fontSize: 14,
+                          fontFamily: 'Outfit',
+                          height: 1.5,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              )
-            : ListView.builder(
-                itemCount: pendingRequests.length,
-                itemBuilder: (_, i) => _RequestTile(
-                  conv: pendingRequests[i],
                 ),
               ),
+            )
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (_, i) => _RequestTile(conv: pendingRequests[i]),
+                childCount: pendingRequests.length,
+              ),
+            ),
+        ],
       ),
     );
   }

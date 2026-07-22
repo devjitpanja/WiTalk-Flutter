@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../api/channel_api.dart';
@@ -143,96 +144,100 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
         ],
         elevation: 0,
       ),
-      body: RefreshIndicator(
-        color: colors.primary,
-        onRefresh: _loadChannels,
-        child: ListView.separated(
-          itemCount: _channels.length,
-          separatorBuilder: (_, __) => Divider(height: 1, indent: 80, color: colors.border.withOpacity(0.15)),
-          itemBuilder: (context, index) {
-            final item = _channels[index];
-            final name = item['name']?.toString() ?? 'Channel';
-            final iconUrl = item['icon']?.toString();
-            final isBanned = (item['is_banned'] == 1 || item['is_banned'] == true);
-            final isVerified = (item['is_verified'] == 1 || item['is_verified'] == true);
-            final unreadCount = (item['unread_count'] as num?)?.toInt() ?? 0;
+      body: CustomScrollView(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        slivers: [
+          CupertinoSliverRefreshControl(
+            onRefresh: _loadChannels,
+          ),
+          SliverList.separated(
+            itemCount: _channels.length,
+            separatorBuilder: (_, __) => Divider(height: 1, indent: 80, color: colors.border.withOpacity(0.15)),
+            itemBuilder: (context, index) {
+              final item = _channels[index];
+              final name = item['name']?.toString() ?? 'Channel';
+              final iconUrl = item['icon']?.toString();
+              final isBanned = (item['is_banned'] == 1 || item['is_banned'] == true);
+              final isVerified = (item['is_verified'] == 1 || item['is_verified'] == true);
+              final unreadCount = (item['unread_count'] as num?)?.toInt() ?? 0;
 
-            return ListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              leading: Stack(
-                children: [
-                  CircleAvatar(
-                    radius: 28,
-                    backgroundColor: isBanned ? Colors.grey : colors.primary,
-                    backgroundImage: iconUrl != null && iconUrl.isNotEmpty ? NetworkImage(iconUrl) : null,
-                    child: iconUrl == null || iconUrl.isEmpty
-                        ? Text(
-                            (name.isNotEmpty ? name[0] : 'C').toUpperCase(),
-                            style: const TextStyle(fontSize: 22, color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.bold),
-                          )
-                        : null,
-                  ),
-                  if (isBanned)
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.black.withOpacity(0.4),
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                leading: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: isBanned ? Colors.grey : colors.primary,
+                      backgroundImage: iconUrl != null && iconUrl.isNotEmpty ? NetworkImage(iconUrl) : null,
+                      child: iconUrl == null || iconUrl.isEmpty
+                          ? Text(
+                              (name.isNotEmpty ? name[0] : 'C').toUpperCase(),
+                              style: const TextStyle(fontSize: 22, color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.bold),
+                            )
+                          : null,
+                    ),
+                    if (isBanned)
+                      Positioned.fill(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.black.withOpacity(0.4),
+                          ),
+                          child: const Icon(Icons.gavel, color: Colors.white, size: 20),
                         ),
-                        child: const Icon(Icons.gavel, color: Colors.white, size: 20),
                       ),
-                    ),
-                ],
-              ),
-              title: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w600,
-                        color: isBanned ? colors.textSecondary : colors.text,
-                      ),
-                    ),
-                  ),
-                  if (!isBanned && isVerified) ...[
-                    const SizedBox(width: 4),
-                    const Icon(Icons.verified, size: 16, color: Color(0xFF0751DF)),
                   ],
-                ],
-              ),
-              subtitle: Text(
-                isBanned ? 'This channel has been banned by the platform' : _getLastMessageText(item),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontFamily: 'Outfit',
-                  fontStyle: isBanned ? FontStyle.italic : FontStyle.normal,
-                  color: isBanned ? Colors.red : colors.textSecondary,
                 ),
-              ),
-              trailing: unreadCount > 0 && !isBanned
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: colors.primary,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+                title: Row(
+                  children: [
+                    Flexible(
                       child: Text(
-                        unreadCount > 99 ? '99+' : '$unreadCount',
-                        style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.bold, color: Colors.white),
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                          color: isBanned ? colors.textSecondary : colors.text,
+                        ),
                       ),
-                    )
-                  : null,
-              onTap: () => _openChannel(item),
-            );
-          },
-        ),
+                    ),
+                    if (!isBanned && isVerified) ...[
+                      const SizedBox(width: 4),
+                      const Icon(Icons.verified, size: 16, color: Color(0xFF0751DF)),
+                    ],
+                  ],
+                ),
+                subtitle: Text(
+                  isBanned ? 'This channel has been banned by the platform' : _getLastMessageText(item),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontFamily: 'Outfit',
+                    fontStyle: isBanned ? FontStyle.italic : FontStyle.normal,
+                    color: isBanned ? Colors.red : colors.textSecondary,
+                  ),
+                ),
+                trailing: unreadCount > 0 && !isBanned
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: colors.primary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          unreadCount > 99 ? '99+' : '$unreadCount',
+                          style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                      )
+                    : null,
+                onTap: () => _openChannel(item),
+              );
+            },
+          ),
+        ],
       ),
     );
   }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -514,13 +515,10 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
       backgroundColor: t.bg,
       body: SafeArea(
         child: Stack(children: [
-          RefreshIndicator(
-            color: t.primary,
-            backgroundColor: t.surface,
-            onRefresh: _onRefresh,
-            child: CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
+          CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
+                CupertinoSliverRefreshControl(onRefresh: _onRefresh),
                 SliverToBoxAdapter(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   _buildHeader(t),
                   _buildProfileCard(t, isDark),
@@ -539,7 +537,6 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
                 ])),
               ],
             ),
-          ),
           // Dialogs
           if (_showLogoutDialog) _buildLogoutDialog(t),
           if (_showAccountSwitchDialog) _buildAccountSwitchDialog(t),

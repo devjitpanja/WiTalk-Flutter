@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -301,30 +302,42 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
     child: Text('$count', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 11, color: t.primary)),
   );
 
-  Widget _suggestionList(_T t) => RefreshIndicator(
-    onRefresh: _onRefresh,
-    color: t.primary,
-    backgroundColor: t.surface,
-    child: _suggestions.isEmpty
-        ? _emptyState(Icons.lightbulb, 'No suggestions yet', 'Be the first to share an idea!', t)
-        : ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-            itemCount: _suggestions.length,
-            itemBuilder: (_, i) => _suggestionCard(_suggestions[i], t),
+  Widget _suggestionList(_T t) => CustomScrollView(
+    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+    slivers: [
+      CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+      if (_suggestions.isEmpty)
+        SliverFillRemaining(child: _emptyState(Icons.lightbulb, 'No suggestions yet', 'Be the first to share an idea!', t))
+      else
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => Padding(
+              padding: EdgeInsets.fromLTRB(16, i == 0 ? 16 : 0, 16, i == _suggestions.length - 1 ? 32 : 0),
+              child: _suggestionCard(_suggestions[i], t),
+            ),
+            childCount: _suggestions.length,
           ),
+        ),
+    ],
   );
 
-  Widget _bugList(_T t) => RefreshIndicator(
-    onRefresh: _onRefresh,
-    color: t.primary,
-    backgroundColor: t.surface,
-    child: _bugs.isEmpty
-        ? _emptyState(Icons.bug_report, 'No bug reports yet', 'No bugs reported yet. Great!', t)
-        : ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-            itemCount: _bugs.length,
-            itemBuilder: (_, i) => _bugCard(_bugs[i], t),
+  Widget _bugList(_T t) => CustomScrollView(
+    physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+    slivers: [
+      CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+      if (_bugs.isEmpty)
+        SliverFillRemaining(child: _emptyState(Icons.bug_report, 'No bug reports yet', 'No bugs reported yet. Great!', t))
+      else
+        SliverList(
+          delegate: SliverChildBuilderDelegate(
+            (_, i) => Padding(
+              padding: EdgeInsets.fromLTRB(16, i == 0 ? 16 : 0, 16, i == _bugs.length - 1 ? 32 : 0),
+              child: _bugCard(_bugs[i], t),
+            ),
+            childCount: _bugs.length,
           ),
+        ),
+    ],
   );
 
   Widget _suggestionCard(Map<String, dynamic> item, _T t) {

@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -176,21 +177,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
     }
 
-    return RefreshIndicator(
-      color: c.primaryButton,
-      backgroundColor: c.surface,
-      notificationPredicate: (notification) => notification.depth == 0,
-      onRefresh: () async {
-        await ref.read(feedNotifierProvider.notifier).refresh();
-      },
-      child: CustomScrollView(
-        controller: _scrollCtrl,
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          _buildSliverHeader(c),
-          bodySliver,
-        ],
-      ),
+    return CustomScrollView(
+      controller: _scrollCtrl,
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        _buildSliverHeader(c),
+        CupertinoSliverRefreshControl(
+          onRefresh: () => ref.read(feedNotifierProvider.notifier).refresh(),
+        ),
+        bodySliver,
+      ],
     );
   }
 

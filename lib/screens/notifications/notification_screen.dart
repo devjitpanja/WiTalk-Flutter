@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -375,40 +376,45 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
                           child: CircularProgressIndicator(color: c.primary))
                       : flatItems.isEmpty && !state.loading
                           ? _buildEmpty(c)
-                          : RefreshIndicator(
-                              color: c.primary,
-                              backgroundColor: c.surface,
-                              onRefresh: () => ref
-                                  .read(notificationProvider.notifier)
-                                  .fetchNotifications(isRefresh: true),
-                              child: ListView.builder(
-                                controller: _scrollController,
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                itemCount: flatItems.length + (state.loading && state.hasMore ? 1 : 0),
-                                itemBuilder: (context, index) {
-                                  if (index == flatItems.length) {
-                                    return Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 20),
-                                      child: Center(
-                                          child: CircularProgressIndicator(
-                                              color: c.primary, strokeWidth: 2)),
-                                    );
-                                  }
-                                  final item = flatItems[index];
-                                  if (item.isHeader) {
-                                    return _SectionHeader(title: item.title!);
-                                  }
-                                  final notif = item.notification!;
-                                  if (!notif.isRead) _scheduleMarkAsRead(notif.id);
-                                  return _SwipeableNotifTile(
-                                    key: ValueKey(notif.id),
-                                    notif: notif,
-                                    onPress: () => _handleNotificationPress(notif),
-                                    onProfilePress: () => _handleProfilePress(notif),
-                                    onDelete: () => _handleDeleteRequest(notif.id),
-                                  );
-                                },
-                              ),
+                          : CustomScrollView(
+                              controller: _scrollController,
+                              physics: const BouncingScrollPhysics(
+                                  parent: AlwaysScrollableScrollPhysics()),
+                              slivers: [
+                                CupertinoSliverRefreshControl(
+                                  onRefresh: () => ref
+                                      .read(notificationProvider.notifier)
+                                      .fetchNotifications(isRefresh: true),
+                                ),
+                                SliverList(
+                                  delegate: SliverChildBuilderDelegate(
+                                    (context, index) {
+                                      if (index == flatItems.length) {
+                                        return Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 20),
+                                          child: Center(
+                                              child: CircularProgressIndicator(
+                                                  color: c.primary, strokeWidth: 2)),
+                                        );
+                                      }
+                                      final item = flatItems[index];
+                                      if (item.isHeader) {
+                                        return _SectionHeader(title: item.title!);
+                                      }
+                                      final notif = item.notification!;
+                                      if (!notif.isRead) _scheduleMarkAsRead(notif.id);
+                                      return _SwipeableNotifTile(
+                                        key: ValueKey(notif.id),
+                                        notif: notif,
+                                        onPress: () => _handleNotificationPress(notif),
+                                        onProfilePress: () => _handleProfilePress(notif),
+                                        onDelete: () => _handleDeleteRequest(notif.id),
+                                      );
+                                    },
+                                    childCount: flatItems.length + (state.loading && state.hasMore ? 1 : 0),
+                                  ),
+                                ),
+                              ],
                             ),
                 ),
               ],

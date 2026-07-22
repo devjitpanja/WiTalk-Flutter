@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -92,16 +93,22 @@ class _ContentPreferencesScreenState extends ConsumerState<ContentPreferencesScr
       body: SafeArea(child: Stack(children: [
         Column(children: [
           _header(t),
-          Expanded(child: RefreshIndicator(
-            onRefresh: _onRefresh,
-            color: t.primary,
-            child: _excluded.isEmpty
-                ? _emptyState(t)
-                : ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 20), children: [
+          Expanded(child: CustomScrollView(
+            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            slivers: [
+              CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+              if (_excluded.isEmpty)
+                SliverFillRemaining(child: _emptyState(t))
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                  sliver: SliverList(delegate: SliverChildListDelegate([
                     _infoCard(t),
                     const SizedBox(height: 8),
                     ..._excluded.map((u) => _userCard(u, t)),
-                  ]),
+                  ])),
+                ),
+            ],
           )),
         ]),
         if (_alertConfig != null) _alertDialog(t),
@@ -165,16 +172,15 @@ class _ContentPreferencesScreenState extends ConsumerState<ContentPreferencesScr
     );
   }
 
-  Widget _emptyState(_T t) => ListView(children: [
-    SizedBox(height: MediaQuery.of(context).size.height * 0.2),
-    Column(children: [
+  Widget _emptyState(_T t) => Center(
+    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
       Container(width: 120, height: 120, decoration: BoxDecoration(color: t.primary.withAlpha(0x15), shape: BoxShape.circle), child: Icon(Icons.visibility_off, size: 64, color: t.primary)),
       const SizedBox(height: 24),
       Text('No Excluded Users', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 20, color: t.text)),
       const SizedBox(height: 8),
       Text("When you exclude users, they'll appear here.\nYou won't see their posts in your feed.", textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Outfit', fontSize: 14, color: t.textTertiary, height: 1.5)),
     ]),
-  ]);
+  );
 
   Widget _skeleton(_T t) => Scaffold(
     backgroundColor: t.bg,

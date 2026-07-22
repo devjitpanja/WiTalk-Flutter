@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -149,10 +150,17 @@ class _CommunityAddaListScreenState extends ConsumerState<CommunityAddaListScree
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: c.primary))
-          : RefreshIndicator(
-              onRefresh: () => _fetchAddas(true),
-              child: _addas.isEmpty
-                  ? ListView(
+          : CustomScrollView(
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+              slivers: [
+                CupertinoSliverRefreshControl(
+                  onRefresh: () => _fetchAddas(true),
+                ),
+                if (_addas.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         SizedBox(height: MediaQuery.of(context).size.height * 0.3),
                         Icon(Icons.mic_off, size: 48, color: c.textSecondary),
@@ -161,19 +169,26 @@ class _CommunityAddaListScreenState extends ConsumerState<CommunityAddaListScree
                         const SizedBox(height: 8),
                         Text('No community addas are live right now.', style: TextStyle(color: c.textSecondary, fontSize: 14, fontFamily: 'Outfit'), textAlign: TextAlign.center),
                       ],
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(14).copyWith(bottom: 20),
-                      itemCount: _addas.length,
-                      itemBuilder: (context, index) {
-                        final adda = _addas[index];
-                        return PersonalAddaCard(
-                          room: adda,
-                          paletteIndex: index,
-                          onJoinRoom: _handleJoin,
-                        );
-                      },
                     ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.all(14).copyWith(bottom: 20),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final adda = _addas[index];
+                          return PersonalAddaCard(
+                            room: adda,
+                            paletteIndex: index,
+                            onJoinRoom: _handleJoin,
+                          );
+                        },
+                        childCount: _addas.length,
+                      ),
+                    ),
+                  ),
+              ],
             ),
     );
   }
