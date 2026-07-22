@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shimmer/shimmer.dart';
@@ -113,34 +114,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final c = context.colors;
     final feedState = ref.watch(feedNotifierProvider);
     final currentUserId = ref.watch(authProvider).uid;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      backgroundColor: c.background,
-      body: SafeArea(
-        child: _buildBody(feedState, currentUserId, c),
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        backgroundColor: c.background,
+        body: _buildBody(feedState, currentUserId, c),
       ),
     );
   }
 
   Widget _buildBody(FeedState state, String? currentUserId, ThemeColors c) {
+    Widget bodySliver;
+
     if (state.isLoading && state.posts.isEmpty) {
-      return NestedScrollView(
-        headerSliverBuilder: (_, __) => [_buildSliverHeader(c)],
-        body: _buildSkeleton(c),
-      );
-    }
+      bodySliver = SliverToBoxAdapter(child: _buildSkeleton(c));
+    } else if (state.error != null && state.posts.isEmpty) {
+      bodySliver = SliverFillRemaining(child: _buildError(state.error!, c));
+    } else if (state.posts.isEmpty) {
+      bodySliver = SliverFillRemaining(child: _buildEmpty(c));
+    } else {
+      bodySliver = SliverList(
+        delegate: SliverChildBuilderDelegate(
+          (_, i) {
+            if (i == state.posts.length) {
+              return Container(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: c.primaryButton),
+                ),
+              );
+            }
 
-    if (state.error != null && state.posts.isEmpty) {
-      return NestedScrollView(
-        headerSliverBuilder: (_, __) => [_buildSliverHeader(c)],
-        body: _buildError(state.error!, c),
-      );
-    }
+            final post = state.posts[i];
+            final postId = post['id'].toString();
 
-    if (state.posts.isEmpty) {
-      return NestedScrollView(
-        headerSliverBuilder: (_, __) => [_buildSliverHeader(c)],
-        body: _buildEmpty(c),
+            if (currentUserId != null && currentUserId.isNotEmpty) {
+              postViewTrackingService.startTracking(
+                postId: postId,
+                userId: currentUserId,
+                screenType: 'feed',
+              );
+              postFeedbackService.startViewTracking(postId);
+            }
+
+            return PostCard(
+              post: post,
+              currentUserId: currentUserId,
+              onLikeUpdate: _onLikeUpdate,
+              onCommentUpdate: _onCommentUpdate,
+              onShowMoreMenu: _onShowMoreMenu,
+            );
+          },
+          childCount: state.posts.length + (state.isFetchingMore ? 1 : 0),
+        ),
       );
     }
 
@@ -156,68 +188,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
           _buildSliverHeader(c),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (_, i) {
-                if (i == state.posts.length) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    alignment: Alignment.center,
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: c.primaryButton),
-                    ),
-                  );
-                }
-
-                final post = state.posts[i];
-                final postId = post['id'].toString();
-
-                if (currentUserId != null && currentUserId.isNotEmpty) {
-                  postViewTrackingService.startTracking(
-                    postId: postId,
-                    userId: currentUserId,
-                    screenType: 'feed',
-                  );
-                  postFeedbackService.startViewTracking(postId);
-                }
-
-                return PostCard(
-                  post: post,
-                  currentUserId: currentUserId,
-                  onLikeUpdate: _onLikeUpdate,
-                  onCommentUpdate: _onCommentUpdate,
-                  onShowMoreMenu: _onShowMoreMenu,
-                );
-              },
-              childCount: state.posts.length + (state.isFetchingMore ? 1 : 0),
-            ),
-          ),
+          bodySliver,
         ],
       ),
     );
   }
 
-  Widget _buildSliverHeader(ThemeColors c) => SliverAppBar(
-        floating: true,
-        snap: true,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: c.background,
-        automaticallyImplyLeading: false,
-        titleSpacing: 0,
-        toolbarHeight: 52,
-        title: const WiTalkHeader(
-          title: 'WiTalk',
-          showBorder: false,
-          showNotifications: true,
+  Widget _buildSliverHeader(ThemeColors c) {
+    final statusBarH = MediaQuery.of(context).padding.top;
+    final totalH = statusBarH + 52;
+
+    return SliverPersistentHeader(
+      floating: true,
+      delegate: _BlurHeaderDelegate(
+        child: Container(
+          decoration: BoxDecoration(
+            color: c.background,
+            border: Border(bottom: BorderSide(color: c.border, width: 0.7)),
+          ),
+          padding: EdgeInsets.only(top: statusBarH),
+          child: const WiTalkHeader(
+            title: 'WiTalk',
+            showBorder: false,
+            showNotifications: true,
+          ),
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(0.7),
-          child: Container(height: 0.7, color: c.border),
-        ),
-      );
+        minH: totalH,
+        maxH: totalH,
+      ),
+    );
+  }
 
   Widget _buildSkeleton(ThemeColors c) => ListView.builder(
         itemCount: 4,
@@ -274,4 +274,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ]),
       );
+}
+
+class _BlurHeaderDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  final double minH;
+  final double maxH;
+
+  const _BlurHeaderDelegate({
+    required this.child,
+    required this.minH,
+    required this.maxH,
+  });
+
+  @override
+  double get minExtent => minH;
+
+  @override
+  double get maxExtent => maxH;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) => child;
+
+  @override
+  bool shouldRebuild(_BlurHeaderDelegate old) =>
+      old.minH != minH || old.maxH != maxH || old.child != child;
 }
