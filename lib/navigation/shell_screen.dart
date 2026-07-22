@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -33,8 +35,9 @@ class ShellScreen extends StatelessWidget {
     final currentIndex = _locationToIndex(context);
     final theme = Theme.of(context);
     final navTheme = theme.bottomNavigationBarTheme;
-    final dividerColor = theme.dividerTheme.color ?? const Color(0xFF38383A);
+    final isDark = theme.brightness == Brightness.dark;
     return Scaffold(
+      extendBody: true,
       body: Stack(
         children: [
           child,
@@ -42,47 +45,60 @@ class ShellScreen extends StatelessWidget {
           const GlobalUploadProgressOverlay(),
         ],
       ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: dividerColor, width: 0.5)),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: currentIndex,
-          onTap: (i) => _onTap(context, i),
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: navTheme.backgroundColor,
-          selectedItemColor: navTheme.selectedItemColor,
-          unselectedItemColor: navTheme.unselectedItemColor,
-          selectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
-          unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
-          elevation: 0,
-          items: [
-            BottomNavigationBarItem(
-              icon: _TabIcon(asset: 'assets/icons/home_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/home.png', size: 24, active: true),
-              label: 'Home',
+      bottomNavigationBar: ClipRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.75),
+              border: Border(
+                top: BorderSide(
+                  color: isDark
+                      ? Colors.white.withValues(alpha: 0.12)
+                      : Colors.black.withValues(alpha: 0.10),
+                  width: 0.5,
+                ),
+              ),
             ),
-            BottomNavigationBarItem(
-              icon: _TabIcon(asset: 'assets/icons/explore_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/explore.png', size: 24, active: true),
-              label: 'Explore',
+            child: BottomNavigationBar(
+              currentIndex: currentIndex,
+              onTap: (i) => _onTap(context, i),
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.transparent,
+              selectedItemColor: navTheme.selectedItemColor,
+              unselectedItemColor: navTheme.unselectedItemColor,
+              selectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
+              unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
+              elevation: 0,
+              items: [
+                BottomNavigationBarItem(
+                  icon: _TabIcon(asset: 'assets/icons/home_stroke.png', size: 24),
+                  activeIcon: _TabIcon(asset: 'assets/icons/home.png', size: 24, active: true),
+                  label: 'Home',
+                ),
+                BottomNavigationBarItem(
+                  icon: _TabIcon(asset: 'assets/icons/explore_stroke.png', size: 24),
+                  activeIcon: _TabIcon(asset: 'assets/icons/explore.png', size: 24, active: true),
+                  label: 'Explore',
+                ),
+                BottomNavigationBarItem(
+                  icon: _TabIcon(asset: 'assets/icons/mic_stroke.png', size: 24),
+                  activeIcon: _TabIcon(asset: 'assets/icons/mic.png', size: 24, active: true),
+                  label: 'Adda',
+                ),
+                BottomNavigationBarItem(
+                  icon: _TabIcon(asset: 'assets/icons/chat_stroke.png', size: 24),
+                  activeIcon: _TabIcon(asset: 'assets/icons/chat.png', size: 24, active: true),
+                  label: 'Chat',
+                ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.menu, size: 27),
+                  activeIcon: Icon(Icons.menu, size: 27),
+                  label: 'Menu',
+                ),
+              ],
             ),
-            BottomNavigationBarItem(
-              icon: _TabIcon(asset: 'assets/icons/mic_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/mic.png', size: 24, active: true),
-              label: 'Adda',
-            ),
-            BottomNavigationBarItem(
-              icon: _TabIcon(asset: 'assets/icons/chat_stroke.png', size: 24),
-              activeIcon: _TabIcon(asset: 'assets/icons/chat.png', size: 24, active: true),
-              label: 'Chat',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.menu, size: 27),
-              activeIcon: Icon(Icons.menu, size: 27),
-              label: 'Menu',
-            ),
-          ],
+          ),
         ),
       ),
     );
