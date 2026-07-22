@@ -28,7 +28,7 @@ class ChatApiService {
       'user1_id': userId,
       'user2_id': otherUserId,
     });
-    return res.data as Map<String, dynamic>;
+    return Map<String, dynamic>.from(res.data as Map);
   }
 
   Future<void> acceptConversation(String conversationId, String userId) async {

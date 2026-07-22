@@ -6,7 +6,7 @@ import '../providers/location_provider.dart';
 import '../screens/auth/auth_screen.dart';
 import '../screens/onboarding/complete_profile_screen.dart';
 import '../screens/onboarding/purpose_interests_screen.dart';
-import '../screens/onboarding/tutorial_screen.dart';
+import '../screens/tutorial/tutorial_screen.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/home/post_detail_screen.dart';
 import '../screens/home/post_view_screen.dart';

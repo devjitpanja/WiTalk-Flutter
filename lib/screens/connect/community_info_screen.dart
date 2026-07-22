@@ -196,8 +196,8 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     return _haversine(
       pos.latitude,
       pos.longitude,
-      (g['location_lat'] as num).toDouble(),
-      (g['location_lng'] as num).toDouble(),
+      double.tryParse(g['location_lat'].toString()) ?? 0.0,
+      double.tryParse(g['location_lng'].toString()) ?? 0.0,
     );
   }
 
@@ -205,7 +205,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     final d = _distanceKm;
     final g = _group;
     if (d == null || g == null) return false;
-    return d <= (g['location_radius_km'] as num).toDouble();
+    return d <= (double.tryParse(g['location_radius_km'].toString()) ?? 0.0);
   }
 
   double _haversine(double lat1, double lng1, double lat2, double lng2) {
@@ -276,7 +276,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   bool get _hasTrial =>
       _group != null &&
       _group!['trial_free_hours'] != null &&
-      (_group!['trial_free_hours'] as num) > 0 &&
+      (double.tryParse(_group!['trial_free_hours'].toString()) ?? 0) > 0 &&
       _group!['trial_already_used'] != true;
   bool get _trialActive {
     final g = _group;

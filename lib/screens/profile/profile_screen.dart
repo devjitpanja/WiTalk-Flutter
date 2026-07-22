@@ -13,6 +13,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/verification_badge.dart';
 import '../../providers/follow_provider.dart';
+import '../../services/chat_api_service.dart';
 
 // ─── Level ring gradient colors ──────────────────────────────────────────────
 List<Color> _levelRingColors(int level) {
@@ -361,6 +362,40 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  Future<void> _openMessage({
+    required String otherUserId,
+    required String name,
+    required String username,
+    required String? profilePic,
+  }) async {
+    if (widget.viewerUid.isEmpty) return;
+    try {
+      final chatService = ChatApiService();
+      final res = await chatService.createConversation(
+        userId: widget.viewerUid,
+        otherUserId: otherUserId,
+      );
+      // Response shape: {success: true, data: {id: '...'}}
+      final dataMap = res['data'];
+      String? convId;
+      if (dataMap is Map) {
+        convId = dataMap['id']?.toString();
+      }
+      convId ??= res['id']?.toString();
+      if (convId == null || !mounted) return;
+      context.push('/chat/conversation/$convId', extra: {
+        'otherUser': {
+          'id': otherUserId,
+          'name': name,
+          'username': username,
+          'profile_pic': profilePic,
+        },
+      });
+    } catch (e) {
+      _showSnack('Could not open chat');
+    }
+  }
+
   Future<void> _shareProfile(String username) async {
     final url = 'https://witalk.in/$username';
     await SharePlus.instance.share(ShareParams(text: "Check out $username's profile on WiTalk: $url", subject: 'WiTalk Profile'));
@@ -588,14 +623,12 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
             onEditProfile: () => context.push('/edit-profile'),
             onShare: () => setState(() => _showQrModal = true),
             onFollow: () => _onFollowButtonPressed(isFollowing, name),
-            onMessage: () {
-              context.push('/chat/new', extra: {
-                'userId': profile['id'],
-                'name': name,
-                'username': username,
-                'profilePic': profilePic,
-              });
-            },
+            onMessage: () => _openMessage(
+              otherUserId: profile['id'] as String,
+              name: name,
+              username: username,
+              profilePic: profilePic,
+            ),
           )),
 
           // ── Tab bar (pinned) ───────────────────────────────────────────
@@ -694,10 +727,11 @@ class _HeroCard extends StatelessWidget {
                   padding: const EdgeInsets.all(3),
                   child: Container(
                     decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: colors.surface, width: 2)),
-                    clipBehavior: Clip.hardEdge,
-                    child: profilePic != null
-                        ? CachedNetworkImage(imageUrl: profilePic!, fit: BoxFit.cover, width: double.infinity, height: double.infinity, errorWidget: (_, __, ___) => _AvatarFallback(name: name, colors: colors))
-                        : _AvatarFallback(name: name, colors: colors),
+                    child: ClipOval(
+                      child: profilePic != null
+                          ? CachedNetworkImage(imageUrl: profilePic!, fit: BoxFit.cover, width: double.infinity, height: double.infinity, errorWidget: (_, __, ___) => _AvatarFallback(name: name, colors: colors))
+                          : _AvatarFallback(name: name, colors: colors),
+                    ),
                   ),
                 ),
                 // Avatar frame overlay
