@@ -70,6 +70,9 @@ import '../screens/connect/for_you_screen.dart';
 import '../screens/connect/for_you_tab.dart';
 import '../screens/connect/activities_screen.dart';
 import '../screens/connect/community_info_screen.dart';
+import '../screens/connect/community_adda_list_screen.dart';
+import '../screens/connect/adda_reviews_screen.dart';
+import '../screens/connect/adda_feedback.dart';
 import '../screens/onboarding/location_permission_screen.dart';
 import '../screens/calls/video_call_screen.dart';
 import '../screens/calls/voice_call_screen.dart';
@@ -264,6 +267,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       // Connect
       GoRoute(path: '/live-audio/:id', builder: (_, s) => LiveAudioRoomScreen(roomId: s.pathParameters['id']!)),
       GoRoute(path: '/create-audio-room', builder: (_, __) => const CreateAudioRoomScreen()),
+      GoRoute(path: '/community-adda-list/:id', builder: (_, s) => CommunityAddaListScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(path: '/adda-reviews', builder: (_, __) => const AddaReviewsScreen()),
+      GoRoute(path: '/adda-feedback', builder: (_, __) => const AddaFeedbackScreen()),
       GoRoute(path: '/nearby-people', builder: (_, __) => const NearbyPeopleScreen()),
       GoRoute(
         path: '/discover-all',

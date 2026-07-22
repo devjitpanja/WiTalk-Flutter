@@ -32,6 +32,26 @@ class AudioRoomService {
     }
   }
 
+  /// Get active audio rooms for a specific group
+  Future<Map<String, dynamic>> getGroupActiveRooms(String groupId, {
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final res = await dioClient.get(
+        '$baseUrl/group/$groupId',
+        queryParameters: {
+          'limit': limit,
+          'offset': offset,
+        },
+      );
+      return res.data as Map<String, dynamic>? ?? {'success': true, 'data': []};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] Error fetching group active rooms: $e');
+      return {'success': false, 'data': []};
+    }
+  }
+
   /// Get upcoming scheduled audio rooms
   Future<Map<String, dynamic>> getUpcomingRooms({
     int limit = 30,

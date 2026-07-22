@@ -27,6 +27,7 @@ class WiTalkHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final c = context.colors;
     return Container(
       decoration: BoxDecoration(
@@ -58,7 +59,7 @@ class WiTalkHeader extends StatelessWidget {
                       'assets/icons/add.png',
                       width: 24,
                       height: 24,
-                      color: c.text,
+                      color: isDark ? c.text : null,
                     ),
                   ),
               Row(
@@ -78,7 +79,7 @@ class WiTalkHeader extends StatelessWidget {
                             'assets/icons/bell.png',
                             width: 24,
                             height: 24,
-                            color: c.text,
+                            color: isDark ? c.text : null,
                           ),
                           if (unreadCount > 0)
                             Positioned(

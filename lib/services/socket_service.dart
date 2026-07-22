@@ -15,6 +15,7 @@ class SocketService {
 
   io.Socket? _socket;
   io.Socket? _groupSocket;
+  io.Socket? _audioRoomSocket;
 
   final _storage = const FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true));
@@ -25,6 +26,7 @@ class SocketService {
 
   io.Socket? get socket => _socket;
   io.Socket? get groupSocket => _groupSocket;
+  io.Socket? get audioRoomSocket => _audioRoomSocket;
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
 
@@ -51,6 +53,7 @@ class SocketService {
       final uid = await _storage.read(key: 'uid');
       final chatUrl = '${AppConfig.apiBaseUrl}/chat';
       final groupUrl = '${AppConfig.apiBaseUrl}/group-chat';
+      final audioRoomUrl = '${AppConfig.apiBaseUrl}/audio-room-chat';
 
       debugPrint('[SOCKET] Connecting to: $chatUrl');
       debugPrint('[SOCKET] uid from storage: $uid');
@@ -93,6 +96,25 @@ class SocketService {
       );
       _setupGroupLifecycleListeners(uid);
       _groupSocket!.connect();
+
+      // ── /audio-room-chat namespace ─────────────────────────────────────────
+      _audioRoomSocket?.dispose();
+      _audioRoomSocket = io.io(
+        audioRoomUrl,
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .setAuth({'token': token, 'userId': uid})
+            .enableReconnection()
+            .setReconnectionAttempts(99999)
+            .setReconnectionDelay(1000)
+            .setReconnectionDelayMax(10000)
+            .setRandomizationFactor(0.5)
+            .setTimeout(20000)
+            .disableAutoConnect()
+            .build(),
+      );
+      _setupAudioRoomLifecycleListeners(uid);
+      _audioRoomSocket!.connect();
 
       // Wait up to 10s for the /chat connection
       final timer = Timer(const Duration(seconds: 10), () {
@@ -199,6 +221,37 @@ class SocketService {
     });
   }
 
+  void _setupAudioRoomLifecycleListeners(String? uid) {
+    _audioRoomSocket?.on('connect', (_) {
+      debugPrint('[AUDIO-ROOM-SOCKET] ✅ Connected! id=${_audioRoomSocket?.id}');
+      if (uid != null) {
+        _audioRoomSocket?.emit('join', uid);
+        debugPrint('[AUDIO-ROOM-SOCKET] Emitting join uid=$uid');
+      }
+    });
+
+    _audioRoomSocket?.on('join_success', (data) {
+      debugPrint('[AUDIO-ROOM-SOCKET] ✅ join_success: $data');
+    });
+
+    _audioRoomSocket?.on('disconnect', (reason) {
+      debugPrint('[AUDIO-ROOM-SOCKET] ❌ Disconnected: $reason');
+    });
+
+    _audioRoomSocket?.on('connect_error', (error) {
+      debugPrint('[AUDIO-ROOM-SOCKET] ❌ connect_error: $error');
+    });
+
+    _audioRoomSocket?.on('error', (error) {
+      debugPrint('[AUDIO-ROOM-SOCKET] ❌ error: $error');
+    });
+
+    _audioRoomSocket?.on('reconnect', (_) {
+      debugPrint('[AUDIO-ROOM-SOCKET] 🔄 Reconnected — re-emitting join uid=$uid');
+      if (uid != null) _audioRoomSocket?.emit('join', uid);
+    });
+  }
+
   void _completeWaiters() {
     final waiters = List<Completer<void>>.from(_connectCompleter);
     _connectCompleter.clear();
@@ -215,6 +268,9 @@ class SocketService {
     _groupSocket?.disconnect();
     _groupSocket?.dispose();
     _groupSocket = null;
+    _audioRoomSocket?.disconnect();
+    _audioRoomSocket?.dispose();
+    _audioRoomSocket = null;
     _isConnected = false;
     _isConnecting = false;
   }
@@ -267,6 +323,23 @@ class SocketService {
       _groupSocket?.off(event, handler);
     } else {
       _groupSocket?.off(event);
+    }
+  }
+
+  // ── Emit helpers (/audio-room-chat namespace) ──────────────────────────────
+  void emitAudioRoom(String event, [dynamic data]) {
+    _audioRoomSocket?.emit(event, data);
+  }
+
+  void onAudioRoom(String event, Function(dynamic) handler) {
+    _audioRoomSocket?.on(event, handler);
+  }
+
+  void offAudioRoom(String event, [Function(dynamic)? handler]) {
+    if (handler != null) {
+      _audioRoomSocket?.off(event, handler);
+    } else {
+      _audioRoomSocket?.off(event);
     }
   }
 }

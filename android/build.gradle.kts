@@ -30,15 +30,9 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Force all subprojects to compile against SDK 36
-subprojects {
-    plugins.withId("com.android.library") {
-        extensions.findByType<com.android.build.gradle.BaseExtension>()?.compileSdkVersion(36)
-    }
-    plugins.withId("com.android.application") {
-        extensions.findByType<com.android.build.gradle.BaseExtension>()?.compileSdkVersion(36)
-    }
-}
+// flutter_webrtc 0.12.12+hotfix.1 hard-codes compileSdkVersion 31 in its
+// own build.gradle. It has been patched in the pub cache to use 36.
+// No subproject override needed here.
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)

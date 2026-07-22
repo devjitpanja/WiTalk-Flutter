@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../widgets/audio_room/audio_room_overlay.dart';
+
 class ShellScreen extends StatelessWidget {
   final Widget child;
   const ShellScreen({super.key, required this.child});
@@ -32,7 +34,12 @@ class ShellScreen extends StatelessWidget {
     final navTheme = theme.bottomNavigationBarTheme;
     final dividerColor = theme.dividerTheme.color ?? const Color(0xFF38383A);
     return Scaffold(
-      body: child,
+      body: Stack(
+        children: [
+          child,
+          const AudioRoomOverlay(),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           border: Border(top: BorderSide(color: dividerColor, width: 0.5)),
@@ -88,10 +95,12 @@ class _TabIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final navTheme = Theme.of(context).bottomNavigationBarTheme;
     final color = active
         ? (navTheme.selectedItemColor ?? Colors.white)
         : (navTheme.unselectedItemColor ?? const Color(0xFF8E8E93));
-    return Image.asset(asset, width: size, height: size, color: color);
+    final effectiveColor = isDark ? color : (color == const Color(0xFF000000) || color == Colors.black ? null : color);
+    return Image.asset(asset, width: size, height: size, color: effectiveColor);
   }
 }

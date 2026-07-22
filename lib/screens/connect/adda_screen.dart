@@ -6,6 +6,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/adda_provider.dart';
+import '../../providers/audio_room_provider.dart';
 import '../../widgets/common/witalk_header.dart';
 import '../../widgets/connect/community_adda_card.dart';
 import '../../widgets/connect/personal_adda_card.dart';
@@ -66,30 +67,65 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
     super.dispose();
   }
 
-  void _handleJoinRoom(Map<String, dynamic> room) {
+  void _handleJoinRoom(Map<String, dynamic> room) async {
+    final isHostCurrently = ref.read(audioRoomProvider).isHost;
+    final isActiveCurrently = ref.read(audioRoomProvider).isConnected;
+
+    if (isActiveCurrently && isHostCurrently) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("You're hosting an adda. Close it first before joining another one."),
+          backgroundColor: Color(0xFF074494),
+          duration: Duration(milliseconds: 3500),
+        ),
+      );
+      return;
+    }
+
     final groupId = room['group_id']?.toString();
     final isMember = room['is_group_member'] == true || room['is_group_member'] == 1;
     final isMonetized = room['group_is_monetized'] == true || room['group_is_monetized'] == 1;
     final inviteCode = room['group_invite_code']?.toString();
 
-    if (groupId != null && groupId.isNotEmpty && !isMember) {
-      if (isMonetized && inviteCode != null && inviteCode.isNotEmpty) {
+    if (groupId != null && groupId.isNotEmpty) {
+      if (!isMember) {
+        if (isMonetized && inviteCode != null && inviteCode.isNotEmpty) {
+          context.push('/community-info/$inviteCode');
+          return;
+        }
+        NotMemberBottomSheet.show(
+          context,
+          groupName: room['group_name']?.toString() ?? 'Community',
+          groupPicture: room['group_picture']?.toString(),
+          passRequired: room['group_pass_required'] == true || room['group_pass_required'] == 1,
+          inviteCode: inviteCode,
+        );
+        return;
+      }
+
+      final myJoinMethod = room['my_group_join_method']?.toString();
+      final trialEndsAtStr = room['my_group_trial_ends_at']?.toString();
+      bool trialExpired = false;
+      if (myJoinMethod == 'trial' && trialEndsAtStr != null && trialEndsAtStr.isNotEmpty) {
+        final trialEndsAt = DateTime.tryParse(trialEndsAtStr);
+        if (trialEndsAt != null && trialEndsAt.isBefore(DateTime.now())) {
+          trialExpired = true;
+        }
+      }
+
+      if (isMonetized && (myJoinMethod == 'free' || trialExpired) && inviteCode != null && inviteCode.isNotEmpty) {
         context.push('/community-info/$inviteCode');
         return;
       }
-      NotMemberBottomSheet.show(
-        context,
-        groupName: room['group_name']?.toString() ?? 'Community',
-        groupPicture: room['group_picture']?.toString(),
-        passRequired: room['group_pass_required'] == true || room['group_pass_required'] == 1,
-        inviteCode: inviteCode,
-      );
-      return;
     }
 
     final roomId = room['room_id']?.toString() ?? room['id']?.toString() ?? '';
     if (roomId.isNotEmpty) {
-      context.push('/live-audio/$roomId');
+      context.push('/live-audio/$roomId', extra: {
+        'room_name': room['room_name']?.toString() ?? 'WiTalk Adda',
+        'is_host': room['host_uid']?.toString() == ref.read(authProvider).uid,
+        'host_uid': room['host_uid']?.toString(),
+      });
     }
   }
 
