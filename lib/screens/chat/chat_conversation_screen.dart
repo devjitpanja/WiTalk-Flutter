@@ -605,7 +605,11 @@ class _ChatConversationScreenState
     setState(() => _uploadingMedia = true);
     try {
       final result =
-          await UploadService().uploadFile(File(picked.path), 'image');
+          await UploadService().uploadMedia(
+              file: File(picked.path),
+              mediaType: 'image',
+              fileName: picked.name,
+              userId: uid ?? '');
       final url = result['url'] as String?;
       if (url == null) return null;
 

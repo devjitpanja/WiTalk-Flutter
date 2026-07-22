@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:livekit_client/livekit_client.dart';
 
@@ -131,6 +133,9 @@ class LiveKitAudioManager {
           rtcConfiguration: rtcConfig,
         ),
       );
+
+      // Set up data channel listener for incoming roomCommand messages
+      _setupDataChannelListener(roomId);
 
       currentRoomId = roomId;
       currentUserId = userId;
@@ -381,17 +386,108 @@ class LiveKitAudioManager {
     currentSeatIndex = index;
   }
 
-  void sendRoomCommand(String command,
-      {String? targetUserId, Map<String, dynamic>? data}) {
+  /// Send a room command to all participants (or a specific target) via LiveKit data channel.
+  /// Mirrors RN LiveKitAudioManager.sendRoomCommand().
+  Future<void> sendRoomCommand(
+    String command, {
+    String? targetUserId,
+    Map<String, dynamic>? data,
+  }) async {
     if (kDebugMode) {
       print(
-          '[LiveKitAudioManager] Sent command: $command to $targetUserId with data $data');
+          '[LiveKitAudioManager] Sending command: $command to ${targetUserId ?? "everyone"} with data: $data');
     }
+
+    final payload = json.encode({
+      'type': 'roomCommand',
+      'command': command,
+      'senderID': currentUserId,
+      'targetUserID': targetUserId,
+      'data': data ?? {},
+    });
+
+    final bytes = Uint8List.fromList(utf8.encode(payload));
+
+    try {
+      if (_room?.localParticipant != null) {
+        await _room!.localParticipant!.publishData(
+          bytes,
+          // Reliable delivery for commands (ensures they arrive even on lossy networks)
+          reliable: true,
+          // If targetUserId is specified, send only to that participant;
+          // otherwise broadcast to all (destinationIdentities = null means everyone).
+          destinationIdentities: targetUserId != null ? [targetUserId] : null,
+          topic: 'roomCommand',
+        );
+      }
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] sendRoomCommand publish error: $e');
+    }
+
+    // Also emit locally so the sender's own UI can react to self-targeted commands
     _emit(LiveKitAudioEvents.roomCommand, {
       'command': command,
       'targetUserId': targetUserId,
       'senderId': currentUserId,
       'data': data,
+      'isSelfEmitted': true,
+    });
+  }
+
+  /// Listen for incoming data channel messages and decode roomCommand payloads.
+  void _setupDataChannelListener(String roomId) {
+    _roomEventsListener!.on<DataReceivedEvent>((event) {
+      try {
+        final raw = utf8.decode(event.data);
+        final decoded = json.decode(raw) as Map<String, dynamic>;
+        if (decoded['type'] == 'roomCommand') {
+          final command = decoded['command']?.toString() ?? '';
+          final senderID = decoded['senderID']?.toString();
+          final targetUserID = decoded['targetUserID']?.toString();
+          final data = decoded['data'] as Map<String, dynamic>?;
+
+          if (kDebugMode) {
+            print('[LiveKitAudioManager] Received roomCommand: $command from $senderID');
+          }
+
+          _emit(LiveKitAudioEvents.roomCommand, {
+            'command': command,
+            'senderId': senderID,
+            'targetUserId': targetUserID,
+            'data': data,
+            'isSelfEmitted': false,
+          });
+        }
+      } catch (e) {
+        // Ignore malformed data messages
+        if (kDebugMode) print('[LiveKitAudioManager] DataReceived parse error: $e');
+      }
+    });
+  }
+
+  /// Set audio output mode: 'speaker', 'earpiece', or 'bluetooth'.
+  Future<void> setAudioOutputMode(String mode) async {
+    audioOutputMode = mode;
+    try {
+      switch (mode) {
+        case 'speaker':
+          await Hardware.instance.setSpeakerphoneOn(true);
+          break;
+        case 'earpiece':
+          await Hardware.instance.setSpeakerphoneOn(false);
+          break;
+        case 'bluetooth':
+          // Bluetooth routing is handled by the OS — we just set speaker off
+          // and let the BT device take over.
+          await Hardware.instance.setSpeakerphoneOn(false);
+          break;
+      }
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] setAudioOutputMode error: $e');
+    }
+    _emit(LiveKitAudioEvents.speakerStateChanged, {
+      'enabled': mode == 'speaker',
+      'mode': mode,
     });
   }
 

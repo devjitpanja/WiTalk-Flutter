@@ -36,9 +36,10 @@ class WiTalkHeader extends StatelessWidget {
             ? Border(bottom: BorderSide(color: c.border, width: 0.7))
             : null,
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
       child: Stack(
         alignment: Alignment.center,
+        clipBehavior: Clip.none,
         children: [
           Text(
             title,

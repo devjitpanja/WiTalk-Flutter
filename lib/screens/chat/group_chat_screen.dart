@@ -439,7 +439,12 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     });
     try {
       final uploadSvc = UploadService();
-      final result = await uploadSvc.uploadFile(File(uri), 'audio');
+      final result = await uploadSvc.uploadMedia(
+        file: File(uri),
+        mediaType: 'audio',
+        fileName: uri.split('/').last,
+        userId: _currentUserId ?? '',
+      );
       final url = result['url'] as String?;
       if (url == null) return;
 
@@ -475,7 +480,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     try {
       final uploadSvc = UploadService();
       final result =
-          await uploadSvc.uploadFile(File(picked.path), 'image');
+          await uploadSvc.uploadMedia(
+              file: File(picked.path),
+              mediaType: 'image',
+              fileName: picked.name,
+              userId: uid ?? '');
       final url = result['url'] as String?;
       if (url == null) return null;
 

@@ -154,7 +154,22 @@ final routerProvider = Provider<GoRouter>((ref) {
           highlightCommentId: s.uri.queryParameters['commentId'],
         ),
       ),
-      GoRoute(path: '/create-post', builder: (_, __) => const CreatePostScreen()),
+      GoRoute(
+        path: '/create-post',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return CreatePostScreen(
+            isEditing: extra['isEditing'] as bool? ?? false,
+            postId: extra['postId'] as String?,
+            initialContent: extra['initialContent'] as String?,
+            capturedMedia: (extra['capturedMedia'] as List<dynamic>?)
+                ?.whereType<Map<String, dynamic>>()
+                .toList(),
+            fromCamera: extra['fromCamera'] as bool? ?? false,
+            thoughtsMode: extra['thoughtsMode'] as bool? ?? false,
+          );
+        },
+      ),
 
       // Explore
       GoRoute(path: '/search', builder: (_, __) => const SearchScreen()),
@@ -308,7 +323,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/bugs-suggestions', builder: (_, __) => const BugsSuggestionsScreen()),
 
       // Media
-      GoRoute(path: '/camera', builder: (_, __) => const CameraScreen()),
+      GoRoute(
+        path: '/camera',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final mode = extra['initialMode'] as String? ?? state.uri.queryParameters['mode'];
+          return CameraScreen(initialMode: mode);
+        },
+      ),
       GoRoute(path: '/fullscreen-video', builder: (_, s) => FullscreenVideoScreen(url: s.uri.queryParameters['url'] ?? '')),
       GoRoute(
         path: '/mini',

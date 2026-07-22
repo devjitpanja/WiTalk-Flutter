@@ -50,8 +50,8 @@ class AudioRoomBottomBar extends StatelessWidget {
       padding: EdgeInsets.only(
         left: 10,
         right: 10,
-        top: 12,
-        bottom: 12 + MediaQuery.of(context).padding.bottom,
+        top: 10,
+        bottom: 10 + MediaQuery.of(context).padding.bottom,
       ),
       decoration: const BoxDecoration(
         color: Color(0xFA0D1017),
@@ -108,7 +108,7 @@ class AudioRoomBottomBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // ── Chat input ────────────────────────────────────
+          // ── Chat input capsule (Dark translucent) ─────────
           Expanded(
             child: Container(
               height: 36,
@@ -136,6 +136,10 @@ class AudioRoomBottomBar extends StatelessWidget {
                           fontFamily: 'Outfit',
                         ),
                         border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        filled: false,
+                        fillColor: Colors.transparent,
                         contentPadding:
                             EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         isDense: true,
@@ -153,9 +157,9 @@ class AudioRoomBottomBar extends StatelessWidget {
                       return GestureDetector(
                         onTap: onSendMessage,
                         child: Container(
-                          width: 32,
-                          height: 32,
-                          margin: const EdgeInsets.only(right: 2),
+                          width: 30,
+                          height: 30,
+                          margin: const EdgeInsets.only(right: 3),
                           decoration: BoxDecoration(
                             color: const Color(0xFF0751DF),
                             shape: BoxShape.circle,
@@ -179,13 +183,13 @@ class AudioRoomBottomBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // ── Hand-raise (audience) OR Off-stage button ─────
+          // ── Hand-raise / Request stage button (audience) ──
           if (!isInSeat && stageRequestEnabled) ...[
             _buildHandRaiseButton(),
             const SizedBox(width: 8),
           ],
 
-          // ── More options ──────────────────────────────────
+          // ── More options (grid menu) ──────────────────────
           _buildIconButton(
             onTap: onMorePress,
             icon: Icons.grid_view_rounded,
@@ -194,7 +198,7 @@ class AudioRoomBottomBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // ── Leave / End room ─────────────────────────────
+          // ── Leave / End room button ──────────────────────
           _buildIconButton(
             onTap: onLeave,
             icon: Icons.exit_to_app,
@@ -247,8 +251,7 @@ class AudioRoomBottomBar extends StatelessWidget {
         HapticFeedback.lightImpact();
         onGoOnStage?.call();
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 250),
+      child: Container(
         width: 36,
         height: 36,
         decoration: BoxDecoration(
@@ -262,27 +265,15 @@ class AudioRoomBottomBar extends StatelessWidget {
                 : const Color(0x4D0751DF),
             width: 1.5,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: hasPendingRequest
-                  ? const Color(0x40FF9800)
-                  : const Color(0x400751DF),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
         ),
         alignment: Alignment.center,
-        child: hasPendingRequest
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Color(0xFFFF9800),
-                ),
-              )
-            : const Text('✋', style: TextStyle(fontSize: 16)),
+        child: Icon(
+          Icons.back_hand,
+          size: 18,
+          color: hasPendingRequest
+              ? const Color(0xFFFF9800)
+              : Colors.white,
+        ),
       ),
     );
   }

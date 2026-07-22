@@ -1,68 +1,150 @@
 import 'dart:io';
+import 'dart:math';
 import 'package:dio/dio.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
 
-// Canonical upload service — chat screens import this.
-// Thin wrapper around the existing api/upload_service.dart logic,
-// exposed as an instance so it can be injected/mocked.
 class UploadService {
-  static const _storage = FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  static final UploadService _instance = UploadService._internal();
+  factory UploadService() => _instance;
+  UploadService._internal();
 
-  Future<Map<String, dynamic>> uploadFile(File file, String type) async {
+  final _storage = const FlutterSecureStorage();
+
+  /// Helper to get validated access token
+  Future<String> _getAccessToken() async {
+    final token = await _storage.read(key: 'accessToken');
+    if (token == null || token.isEmpty) {
+      throw Exception('Authentication failed. Please log in again.');
+    }
+    return token;
+  }
+
+  /// Delete uploaded file from server for cleanup if post creation fails or user cancels
+  Future<void> deleteUploadedFile(String fileName) async {
     try {
-      final token = await _storage.read(key: 'accessToken');
-      final uid = await _storage.read(key: 'uid') ?? '';
+      final token = await _getAccessToken();
+      final url = '${AppConfig.apiBaseUrl}/v1/files/delete';
+      await Dio().delete(
+        url,
+        options: Options(headers: {'Authorization': 'Bearer $token'}),
+        data: {'name': fileName},
+      );
+    } catch (_) {}
+  }
+
+  /// Upload image or single media file using Multipart FormData
+  Future<Map<String, dynamic>> uploadMedia({
+    required File file,
+    required String mediaType, // 'image' | 'video'
+    required String fileName,
+    required String userId,
+    Function(double progress)? onProgress,
+    bool Function()? isCancelled,
+    int retryCount = 0,
+  }) async {
+    const maxRetries = 2;
+    if (isCancelled?.call() == true) {
+      throw Exception('Upload cancelled');
+    }
+
+    try {
+      final token = await _getAccessToken();
+      final uploadUrl = '${AppConfig.apiBaseUrl}/v1/files';
+
+      final mimeType = mediaType == 'video' ? 'video/mp4' : 'image/jpeg';
 
       final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(
           file.path,
-          filename: file.path.split('/').last,
+          filename: fileName,
+          contentType: DioMediaType.parse(mimeType),
         ),
-        'user_id': uid,
-        'type': type,
+        'user_id': userId,
       });
 
-      final res = await Dio().post(
-        AppConfig.filesApiUrl,
+      final dio = Dio(BaseOptions(
+        connectTimeout: const Duration(minutes: 5),
+        receiveTimeout: const Duration(minutes: 5),
+      ));
+
+      final response = await dio.post(
+        uploadUrl,
         data: formData,
         options: Options(
           headers: {
-            'Authorization': token != null ? 'Bearer $token' : '',
+            'Authorization': 'Bearer $token',
           },
         ),
+        onSendProgress: (sent, total) {
+          if (isCancelled?.call() == true) return;
+          if (total > 0 && onProgress != null) {
+            onProgress(sent / total * 100);
+          }
+        },
       );
 
-      final data = res.data;
-      if (data is Map) {
-        final fileData = data['file'] ?? data['data'];
-        if (fileData is Map) {
-          return Map<String, dynamic>.from(fileData);
-        }
-        return Map<String, dynamic>.from(data);
+      if (isCancelled?.call() == true) {
+        throw Exception('Upload cancelled');
       }
-      return {'url': null};
-    } catch (e) {
-      throw Exception('Upload failed: $e');
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data is Map ? response.data : {};
+        if (data['success'] == true && data['file'] != null) {
+          return Map<String, dynamic>.from(data['file']);
+        } else {
+          throw Exception(data['error'] ?? data['message'] ?? 'Upload failed on server');
+        }
+      } else {
+        throw Exception('Server returned HTTP ${response.statusCode}');
+      }
+    } catch (error) {
+      if (isCancelled?.call() == true) {
+        throw Exception('Upload cancelled');
+      }
+
+      final isServerError = error is DioException &&
+          error.response != null &&
+          (error.response!.statusCode == 502 ||
+              error.response!.statusCode == 503 ||
+              error.response!.statusCode == 504 ||
+              error.response!.statusCode == 500);
+
+      if (isServerError && retryCount < maxRetries) {
+        final waitSeconds = pow(2, retryCount + 1).toInt();
+        await Future.delayed(Duration(seconds: waitSeconds));
+        return uploadMedia(
+          file: file,
+          mediaType: mediaType,
+          fileName: fileName,
+          userId: userId,
+          onProgress: onProgress,
+          isCancelled: isCancelled,
+          retryCount: retryCount + 1,
+        );
+      }
+
+      rethrow;
     }
   }
 
-  Future<bool> deleteFile(String fileUrl) async {
-    try {
-      final token = await _storage.read(key: 'accessToken');
-      await Dio().delete(
-        AppConfig.filesDeleteUrl,
-        data: {'url': fileUrl},
-        options: Options(
-            headers: {
-              'Authorization': token != null ? 'Bearer $token' : ''
-            }),
-      );
-      return true;
-    } catch (_) {
-      return false;
-    }
+  /// Upload video in chunks or via streaming multipart with full progress callbacks
+  Future<Map<String, dynamic>> uploadVideoChunked({
+    required File file,
+    required String fileName,
+    required String userId,
+    Function(double chunkPercent)? onProgress,
+    bool Function()? isCancelled,
+  }) async {
+    return uploadMedia(
+      file: file,
+      mediaType: 'video',
+      fileName: fileName,
+      userId: userId,
+      onProgress: onProgress,
+      isCancelled: isCancelled,
+    );
   }
 }
+
+final uploadService = UploadService();

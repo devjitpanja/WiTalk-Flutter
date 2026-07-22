@@ -223,11 +223,11 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
         }
         context.push('/create-audio-room');
       },
-      child: SizedBox(
-        width: 44,
-        height: 44,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         child: Stack(
           alignment: Alignment.center,
+          clipBehavior: Clip.none,
           children: [
             if (canCreateAdda) ...[
               AnimatedBuilder(
@@ -237,11 +237,10 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
                   child: Transform.scale(
                     scale: _ring1Scale.value,
                     child: Container(
-                      width: 32,
-                      height: 32,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: c.primary, width: 2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: c.primary, width: 1.5),
                       ),
                     ),
                   ),
@@ -254,11 +253,10 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
                   child: Transform.scale(
                     scale: _ring2Scale.value,
                     child: Container(
-                      width: 32,
-                      height: 32,
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: c.primary, width: 2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: c.primary, width: 1.5),
                       ),
                     ),
                   ),
@@ -268,7 +266,7 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
             Opacity(
               opacity: canCreateAdda ? 1.0 : 0.45,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(20),
                   color: c.primary.withOpacity(0.12),

@@ -7,6 +7,7 @@ import '../../providers/audio_room_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/audio_room/grid_seating_layout.dart';
 import '../../widgets/audio_room/audio_room_bottom_bar.dart';
+import '../../widgets/audio_room/room_rules_banner.dart';
 
 const Color _kBg = Color(0xFF0D1017);
 const Color _kPrimary = Color(0xFF0751DF);
@@ -22,14 +23,13 @@ class LiveAudioRoomScreen extends ConsumerStatefulWidget {
 }
 
 class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final _chatCtrl = TextEditingController();
   final _chatFocus = FocusNode();
   final _scrollCtrl = ScrollController();
 
   // Floating reactions
   final List<_FloatingReaction> _reactions = [];
-  final _reactionEmojis = ['❤️', '👏', '😂', '🔥', '🎉', '🚀', '💯'];
 
   // Animation controllers
   late AnimationController _pulseCtrl;
@@ -39,6 +39,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _pulseCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
@@ -50,7 +51,22 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    final notifier = ref.read(audioRoomProvider.notifier);
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      // App going to background — keep audio alive (socket stays connected)
+      notifier.minimizeRoom();
+    } else if (state == AppLifecycleState.resumed) {
+      // App restored — re-request seat state to resync
+      notifier.restoreRoom();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chatCtrl.dispose();
     _chatFocus.dispose();
     _scrollCtrl.dispose();
@@ -58,30 +74,26 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     super.dispose();
   }
 
-  // ── Seat press handler ─────────────────────────────────────────────────────
   void _handleEmptySeatPress(int seatIndex) {
-    final state = ref.read(audioRoomProvider);
-    final isHost = state.isHost;
-    final isInSeat = state.isInSeat;
-    final stageReq = state.stageRequestEnabled;
+    final s = ref.read(audioRoomProvider);
+    final notifier = ref.read(audioRoomProvider.notifier);
 
-    // Already on stage → ignore
-    if (isInSeat && !isHost) return;
+    final isLocked = s.lockedSeats.contains(seatIndex);
+    final canBypassLock = s.isHost || s.isAdmin;
 
-    // Host can always take any seat
-    if (isHost) {
-      ref.read(audioRoomProvider.notifier).takeSeat(seatIndex);
+    if (isLocked && !canBypassLock) {
+      if (s.isHandRaised) {
+        _showSnack('You already have a pending seat request');
+      } else {
+        notifier.toggleHandRaise();
+        _showSnack('Seat request sent to the host');
+      }
       return;
     }
 
-    // Stage request mode → hand raise (confirmed via dialog)
-    if (stageReq) {
-      _showHandRaiseConfirm();
-      return;
-    }
-
-    // Open stage → take seat directly
-    ref.read(audioRoomProvider.notifier).takeSeat(seatIndex);
+    // Take seat directly (no bottom sheet modal)
+    notifier.takeSeat(seatIndex);
+    _showSnack('Joining stage...');
   }
 
   void _showHandRaiseConfirm() {
@@ -172,6 +184,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     });
   }
 
+  void _handleShareRoom() {
+    final s = ref.read(audioRoomProvider);
+    Clipboard.setData(
+        ClipboardData(text: 'Join my Adda "${s.roomName}": https://witalk.app/room/${widget.roomId}'));
+    _showSnack('Room link copied to clipboard!');
+  }
+
   void _triggerReaction(String emoji) {
     final rnd = math.Random();
     final id = DateTime.now().millisecondsSinceEpoch.toString();
@@ -179,8 +198,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       _reactions.add(_FloatingReaction(
         id: id,
         emoji: emoji,
-        x: 40 + rnd.nextDouble() * 280,
-        y: 280 + rnd.nextDouble() * 180,
+        x: 40 + rnd.nextDouble() * 240,
+        y: 260 + rnd.nextDouble() * 160,
       ));
     });
     Future.delayed(const Duration(seconds: 3), () {
@@ -253,6 +272,136 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
+  // ── Provider-driven alert dialog ───────────────────────────────────────────
+  void _showProviderAlertDialog(Map<String, dynamic> config) {
+    final title = config['title']?.toString() ?? '';
+    final message = config['message']?.toString() ?? '';
+    final confirmLabel = config['confirmLabel']?.toString() ?? 'OK';
+    final cancelLabel = config['cancelLabel']?.toString();
+    final onConfirm = config['onConfirm'] as void Function()?;
+    final onCancel = config['onCancel'] as void Function()?;
+
+    showDialog(
+      context: context,
+      barrierDismissible: cancelLabel != null,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2340),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          title,
+          style: const TextStyle(
+            color: Color(0xFFEBEBF5),
+            fontFamily: 'Outfit',
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
+        content: Text(
+          message,
+          style: const TextStyle(
+            color: Color(0x99EBEBF5),
+            fontFamily: 'Outfit',
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          if (cancelLabel != null)
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                onCancel?.call();
+                ref.read(audioRoomProvider.notifier).hideAlertDialog();
+              },
+              child: Text(
+                cancelLabel,
+                style: const TextStyle(
+                  color: Color(0x73EBEBF5),
+                  fontFamily: 'Outfit',
+                ),
+              ),
+            ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onConfirm?.call();
+              ref.read(audioRoomProvider.notifier).hideAlertDialog();
+            },
+            child: Text(
+              confirmLabel,
+              style: const TextStyle(
+                color: _kPrimary,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ).then((_) {
+      if (mounted) ref.read(audioRoomProvider.notifier).hideAlertDialog();
+    });
+  }
+
+  // ── Seat invite dialog ────────────────────────────────────────────────────
+  void _showSeatInviteDialog(Map<String, dynamic> invite) {
+    final seatIndex = invite['seatIndex'] as int? ?? -1;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF1A2340),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Stage Invitation',
+          style: TextStyle(
+            color: Color(0xFFEBEBF5),
+            fontFamily: 'Outfit',
+            fontWeight: FontWeight.w700,
+            fontSize: 18,
+          ),
+        ),
+        content: Text(
+          seatIndex >= 0
+              ? 'The host invited you to speak on seat ${seatIndex + 1}.'
+              : 'The host invited you to speak on stage.',
+          style: const TextStyle(
+            color: Color(0x99EBEBF5),
+            fontFamily: 'Outfit',
+            fontSize: 14,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ref.read(audioRoomProvider.notifier).declineSeatInvite();
+            },
+            child: const Text(
+              'Decline',
+              style: TextStyle(color: Color(0x73EBEBF5), fontFamily: 'Outfit'),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              ref.read(audioRoomProvider.notifier).acceptSeatInvite();
+            },
+            child: const Text(
+              'Accept',
+              style: TextStyle(
+                color: _kPrimary,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+
+
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -260,8 +409,10 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final myUid = ref.watch(authProvider).uid;
 
     // Auto-listen to state changes for room ended
+    // Auto-listen to state changes
     ref.listen<AudioRoomState>(audioRoomProvider, (prev, next) {
       if (!mounted) return;
+
       // Auto-scroll chat on new message
       if ((next.chatMessages.length) > (prev?.chatMessages.length ?? 0)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -273,6 +424,30 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             );
           }
         });
+      }
+
+      // Show alert dialog from provider state
+      if (next.showAlertDialog &&
+          !(prev?.showAlertDialog ?? false) &&
+          next.alertDialogConfig != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showProviderAlertDialog(next.alertDialogConfig!);
+        });
+      }
+
+      // Show seat invite dialog
+      if (next.incomingSeatInvite != null &&
+          prev?.incomingSeatInvite == null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showSeatInviteDialog(next.incomingSeatInvite!);
+        });
+      }
+
+      // Room ended screen
+      if (next.showRoomEndedScreen && !(prev?.showRoomEndedScreen ?? false)) {
+        setState(() => _isRoomEnded = true);
       }
     });
 
@@ -325,23 +500,48 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                             activeSpeakerUid: roomState.activeSpeakerUid,
                             stageRequestEnabled: roomState.stageRequestEnabled,
                             isHost: roomState.isHost,
-                            seatsInitialized: roomState.isConnected,
+                            seatsInitialized: roomState.seatsInitialized,
                             audience: roomState.audience,
                             onSpeakerTap: (speaker) =>
                                 _showParticipantSheet(speaker),
                             onEmptySeatTap: _handleEmptySeatPress,
+                            onEmptySeatLongPress: (idx) {
+                              if (roomState.isHost) {
+                                ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
+                              }
+                            },
                             onShowAudienceList: _showAudienceList,
                             onAudienceMemberTap: (m) =>
                                 _showParticipantSheet(m),
                           ),
 
+                          // Pinned Room Rules Banner (gold glass card)
+                          if (roomState.roomRules != null &&
+                              roomState.roomRules!.isNotEmpty &&
+                              !roomState.rulesDismissed)
+                            RoomRulesBanner(
+                              rulesText: roomState.roomRules!,
+                              onDismiss: () => ref
+                                  .read(audioRoomProvider.notifier)
+                                  .dismissRulesBanner(),
+                            ),
+
+                          // Chat section divider (ADDA CHAT)
+                          _buildAddaChatDivider(),
+
                           // Chat messages
-                          if (roomState.chatMessages.isNotEmpty)
-                            _buildChatMessages(roomState.chatMessages),
+                          _buildChatMessages(roomState.chatMessages),
 
                           const SizedBox(height: 16),
                         ],
                       ),
+                    ),
+
+                    // Vertical Emoji Reaction Strip on right side (always visible)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: _buildEmojiReactionStrip(),
                     ),
 
                     // Floating reactions overlay
@@ -379,10 +579,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader(AudioRoomState s) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: const BoxDecoration(
+        color: Color(0x0A0751DF), // rgba(7, 81, 223, 0.04)
+        border: Border(
+          bottom: BorderSide(color: Color(0x1F0751DF), width: 1), // rgba(7, 81, 223, 0.12)
+        ),
+      ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Back/minimize button
+          // Left: Minimize button
           GestureDetector(
             onTap: () {
               ref.read(audioRoomProvider.notifier).toggleMinimised();
@@ -393,160 +600,342 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               height: 36,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0x1AFFFFFF),
+                color: const Color(0x140751DF),
+                border: Border.all(color: const Color(0x330751DF), width: 1),
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.keyboard_arrow_down,
-                  color: Colors.white, size: 22),
+              child: const Icon(
+                Icons.keyboard_arrow_down,
+                color: _kPrimary,
+                size: 26,
+              ),
             ),
           ),
-          const SizedBox(width: 10),
 
-          // Room name + topic badge
+          // Center: Room name + badgeRow
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   s.roomName,
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
+                    color: Color(0xFFEBEBF5),
+                    fontSize: 17,
                     fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.w700,
+                    shadows: [
+                      Shadow(
+                        color: Color(0x590751DF),
+                        blurRadius: 6,
+                      ),
+                    ],
                   ),
+                  textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (s.topic != null && s.topic!.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: const Color(0x1A0751DF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0x330751DF)),
-                    ),
-                    child: Text(
-                      s.topic!,
-                      style: const TextStyle(
-                        color: _kGold,
-                        fontSize: 10,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w500,
+                const SizedBox(height: 3),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // • Community / • Personal tag
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0x26DC3C1E), // rgba(220, 60, 30, 0.15)
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0x66DC501E)), // rgba(220, 80, 30, 0.4)
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 5,
+                            height: 5,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Color(0xFFE84040),
+                            ),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            s.groupId != null ? 'Community' : 'Personal',
+                            style: const TextStyle(
+                              color: Color(0xFFFF7755),
+                              fontSize: 9,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 1.8,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ],
+
+                    // • REC badge (if recording)
+                    if (s.cloudRecordingActive) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0x26EF4444), // rgba(239, 68, 68, 0.15)
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0x66EF4444)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _BlinkingRecDot(),
+                            SizedBox(width: 5),
+                            Text(
+                              'REC',
+                              style: TextStyle(
+                                color: Color(0xFFEF4444),
+                                fontSize: 9,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Rating badge (if rating > 0)
+                    if (s.averageRating != null && s.averageRating! > 0) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0x1FFA726),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0x59FFA726)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.star, size: 9, color: Color(0xFFFFA726)),
+                            const SizedBox(width: 4),
+                            Text(
+                              s.averageRating!.toStringAsFixed(1),
+                              style: const TextStyle(
+                                color: Color(0xFFFFA726),
+                                fontSize: 9,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
               ],
             ),
           ),
 
-          // Audience count badge
+          // Right: Share button
           GestureDetector(
-            onTap: _showAudienceList,
+            onTap: _handleShareRoom,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
-                color: const Color(0x1A5B9AFF),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0x405B9AFF)),
+                shape: BoxShape.circle,
+                color: const Color(0x140751DF),
+                border: Border.all(color: const Color(0x330751DF), width: 1),
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.headphones, size: 14, color: _kGold),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${s.audience.length + s.speakers.length}',
-                    style: const TextStyle(
-                      color: _kGold,
-                      fontSize: 13,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.share,
+                color: _kPrimary,
+                size: 20,
               ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Section Divider: ADDA CHAT ──────────────────────────────────────────────
+  Widget _buildAddaChatDivider() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Container(height: 1, color: const Color(0x1F0751DF))),
+          const SizedBox(width: 6),
+          const Icon(
+            Icons.chat_bubble_outline,
+            size: 11,
+            color: Color(0x730751DF),
+          ),
+          const SizedBox(width: 4),
+          const Text(
+            'ADDA CHAT',
+            style: TextStyle(
+              fontSize: 10,
+              fontFamily: 'Outfit',
+              fontWeight: FontWeight.w600,
+              color: Color(0x8C828CF8),
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(child: Container(height: 1, color: const Color(0x1F0751DF))),
+        ],
+      ),
+    );
+  }
+
+  // ── Emoji Reaction Strip (Right Floating Column) ───────────────────────────
+  Widget _buildEmojiReactionStrip() {
+    final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 220),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+      decoration: BoxDecoration(
+        color: const Color(0x26000000),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        child: Column(
+          children: emojis.map((emoji) {
+            return GestureDetector(
+              onTap: () {
+                _triggerReaction(emoji);
+                ref.read(audioRoomProvider.notifier).sendReaction(emoji);
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(
+                  emoji,
+                  style: const TextStyle(fontSize: 20),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
 
   // ── Build seats list from state ────────────────────────────────────────────
   List<Map<String, dynamic>> _buildSeatsList(AudioRoomState s, String? myUid) {
-    final speakerMap = <String, Map<String, dynamic>>{};
-    for (final sp in s.speakers) {
-      final uid = sp['uid']?.toString();
-      if (uid != null) speakerMap[uid] = sp;
-    }
-
     return List.generate(s.maxSeats, (index) {
-      // Check if anyone occupies this seat index
       Map<String, dynamic>? occupant;
       for (final sp in s.speakers) {
-        if ((sp['seatIndex'] == index) ||
-            (index == 0 && sp['uid']?.toString() == s.hostUid)) {
-          occupant = sp;
-          break;
+        final spUid = sp['uid']?.toString().trim();
+        if (sp['isEmpty'] != true && spUid != null && spUid.isNotEmpty && spUid != 'null') {
+          if (sp['seatIndex'] == index || (index == 0 && spUid == s.hostUid)) {
+            occupant = sp;
+            break;
+          }
         }
       }
 
       if (occupant != null) {
         final uid = occupant['uid']?.toString() ?? '';
+        final avatar = occupant['profile_pic']?.toString() ?? occupant['avatar']?.toString();
         return {
           'isEmpty': false,
           'uid': uid,
           'name': occupant['name']?.toString() ?? uid,
-          'profile_pic': occupant['profile_pic']?.toString(),
-          'isHost': uid == s.hostUid,
+          'profile_pic': avatar,
+          'avatar': avatar,
+          'avatar_frame_url': occupant['avatar_frame_url']?.toString(),
+          'isHost': uid == s.hostUid || occupant['isHost'] == true,
+          'isAdmin': occupant['isAdmin'] == true,
+          'communityRole': occupant['communityRole']?.toString(),
+          'isVerified': occupant['isVerified'] == true,
           'isMuted': occupant['isMuted'] == true,
           'isSelf': uid == myUid,
           'seatIndex': index,
         };
       }
-      return {'isEmpty': true, 'seatIndex': index};
+
+      final isLocked = s.lockedSeats.contains(index);
+
+      return {
+        'isEmpty': true,
+        'seatIndex': index,
+        'isLocked': isLocked,
+      };
     });
   }
 
   // ── Chat messages ──────────────────────────────────────────────────────────
   Widget _buildChatMessages(List<Map<String, dynamic>> messages) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(10, 8, 10, 0),
+      margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(bottom: 6),
-            child: Row(
-              children: [
-                Text(
-                  'CHAT',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    color: Color(0x99828CF8),
-                    letterSpacing: 1.4,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Expanded(child: SizedBox(height: 1)),
-              ],
-            ),
-          ),
-          ...messages.take(50).map((msg) => _buildChatBubble(msg)),
-        ],
+        children: messages.take(50).map((msg) => _buildChatBubble(msg)).toList(),
       ),
     );
   }
 
   Widget _buildChatBubble(Map<String, dynamic> msg) {
+    final bool isSystem = msg['isSystem'] == true ||
+        msg['senderUid'] == 'system' ||
+        msg['type'] == 'system' ||
+        msg['senderName'] == 'System';
+    final text = msg['text']?.toString() ?? msg['content']?.toString() ?? '';
+
+    // System announcement bubble with Megaphone badge
+    if (isSystem) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0x260751DF),
+                border: Border.all(color: const Color(0x4D0751DF)),
+              ),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.campaign,
+                size: 16,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0x140751DF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0x260751DF)),
+                ),
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: Color(0xCCEBEBF5),
+                    fontSize: 12,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final sender = msg['senderName']?.toString() ?? 'User';
-    final text = msg['text']?.toString() ?? '';
     final ts = msg['timestamp'];
     String time = '';
     if (ts is int) {
@@ -729,6 +1118,49 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   }
 }
 
+// ── Blinking REC dot widget ──────────────────────────────────────────────────
+class _BlinkingRecDot extends StatefulWidget {
+  const _BlinkingRecDot();
+
+  @override
+  State<_BlinkingRecDot> createState() => _BlinkingRecDotState();
+}
+
+class _BlinkingRecDotState extends State<_BlinkingRecDot>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _ctrl,
+      child: Container(
+        width: 5,
+        height: 5,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFFEF4444),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Floating reaction data ─────────────────────────────────────────────────────
 class _FloatingReaction {
   final String id, emoji;
@@ -896,7 +1328,7 @@ class _MoreOptionsSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final emojis = ['❤️', '👏', '😂', '🔥', '🎉', '🚀', '💯'];
+    final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
     return Container(
       decoration: const BoxDecoration(
         color: Color(0xFF111827),

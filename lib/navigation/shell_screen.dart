@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../widgets/audio_room/audio_room_overlay.dart';
+import '../widgets/common/global_upload_progress.dart';
 
 class ShellScreen extends StatelessWidget {
   final Widget child;
@@ -38,6 +39,7 @@ class ShellScreen extends StatelessWidget {
         children: [
           child,
           const AudioRoomOverlay(),
+          const GlobalUploadProgressOverlay(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -101,6 +103,13 @@ class _TabIcon extends StatelessWidget {
         ? (navTheme.selectedItemColor ?? Colors.white)
         : (navTheme.unselectedItemColor ?? const Color(0xFF8E8E93));
     final effectiveColor = isDark ? color : (color == const Color(0xFF000000) || color == Colors.black ? null : color);
-    return Image.asset(asset, width: size, height: size, color: effectiveColor);
+    return Image.asset(
+      asset,
+      width: size,
+      height: size,
+      color: effectiveColor,
+      filterQuality: FilterQuality.medium,
+      isAntiAlias: true,
+    );
   }
 }
