@@ -966,6 +966,12 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
           state = state.copyWith(isMuted: !enabled);
           break;
 
+        // ── Active speaker changed ─────────────────────────────────────────
+        case LiveKitAudioEvents.activeSpeakerChanged:
+          final speakerUid = event['activeSpeakerUid'] as String?;
+          state = state.copyWith(activeSpeakerUid: speakerUid);
+          break;
+
         // ── LiveKit data channel roomCommands ──────────────────────────────
         case LiveKitAudioEvents.roomCommand:
           _handleRoomCommand(event, myUid);

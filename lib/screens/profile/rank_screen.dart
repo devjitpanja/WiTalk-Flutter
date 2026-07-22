@@ -80,14 +80,16 @@ class _RankScreenState extends ConsumerState<RankScreen>
   }
 
   void _initAnimations(Size size) {
-    // Equal podium bar height for all positions
-    final h = size.height * 0.08;
+    // Distinct podium bar heights for stepped layout matching original React Native UI
+    final h1 = size.height * 0.16; // Rank #1 (tallest)
+    final h2 = size.height * 0.11; // Rank #2 (medium)
+    final h3 = size.height * 0.085; // Rank #3 (shortest)
 
-    _firstHeightAnim = Tween<double>(begin: 0, end: h).animate(
+    _firstHeightAnim = Tween<double>(begin: 0, end: h1).animate(
         CurvedAnimation(parent: _firstAnimCtrl, curve: Curves.easeOut));
-    _secondHeightAnim = Tween<double>(begin: 0, end: h).animate(
+    _secondHeightAnim = Tween<double>(begin: 0, end: h2).animate(
         CurvedAnimation(parent: _secondAnimCtrl, curve: Curves.easeOut));
-    _thirdHeightAnim = Tween<double>(begin: 0, end: h).animate(
+    _thirdHeightAnim = Tween<double>(begin: 0, end: h3).animate(
         CurvedAnimation(parent: _thirdAnimCtrl, curve: Curves.easeOut));
 
     _firstOpacityAnim = Tween<double>(begin: 0, end: 1).animate(
@@ -197,7 +199,8 @@ class _RankScreenState extends ConsumerState<RankScreen>
         children: [
           // Header
           Container(
-            padding: EdgeInsets.fromLTRB(0, insets.top, 0, 16),
+            clipBehavior: Clip.antiAlias,
+            padding: EdgeInsets.fromLTRB(0, insets.top, 0, 0),
             decoration: const BoxDecoration(
               color: accentColor,
               borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
@@ -510,7 +513,7 @@ class _RankScreenState extends ConsumerState<RankScreen>
     }
 
     final profilePicUrl = getProfileImageUrl(user);
-    final avatarSize = size.width * 0.14;
+    final avatarSize = position == 1 ? size.width * 0.145 : size.width * 0.13;
 
     return Expanded(
       child: AnimatedBuilder(
@@ -521,7 +524,7 @@ class _RankScreenState extends ConsumerState<RankScreen>
             child: Opacity(
               opacity: opacityAnim.value.clamp(0.0, 1.0),
               child: Container(
-                margin: EdgeInsets.symmetric(horizontal: size.width * 0.01),
+                margin: EdgeInsets.symmetric(horizontal: size.width * 0.015),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   mainAxisSize: MainAxisSize.min,
@@ -602,16 +605,16 @@ class _RankScreenState extends ConsumerState<RankScreen>
                         ],
                       ),
                     ),
-                    // Podium bar (equal height for all positions)
+                    // Podium bar (distinct stepped height)
                     Container(
                       height: heightAnim.value,
                       width: double.infinity,
                       decoration: BoxDecoration(
                         color: isDark
                             ? Colors.white.withValues(alpha: 0.15)
-                            : Colors.white.withValues(alpha: 0.4),
+                            : Colors.white.withValues(alpha: 0.35),
                         borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(15)),
+                            top: Radius.circular(16)),
                         border: isDark
                             ? Border.all(
                                 color: Colors.white.withValues(alpha: 0.2), width: 1)

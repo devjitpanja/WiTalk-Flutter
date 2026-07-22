@@ -1,6 +1,9 @@
+import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'dart:math' as math;
+import 'package:go_router/go_router.dart';
+import '../../services/audio_room_service.dart';
 
 class UserProfileBottomSheet extends StatefulWidget {
   final Map<String, dynamic>? participant;
@@ -23,7 +26,7 @@ class UserProfileBottomSheet extends StatefulWidget {
   final bool actionsFrozen;
   final bool isCommunityAdda;
   final String? myCommunityRole;
-  final Map<String, String>? communityRolesMap;
+  final Map<String, dynamic>? communityRolesMap;
   final Function(Map<String, dynamic>, String?)? onCommunityKick;
   final Function(Map<String, dynamic>, String?)? onCommunityBan;
   final Function(Map<String, dynamic>, int)? onMoveToSeat;
@@ -87,11 +90,41 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
     _fetchUserProfile();
   }
   
+  int? _calcAge(String? birthday) {
+    if (birthday == null) return null;
+    try {
+      final birth = DateTime.parse(birthday);
+      final now = DateTime.now();
+      int age = now.year - birth.year;
+      if (now.month < birth.month || (now.month == birth.month && now.day < birth.day)) age--;
+      return age > 0 ? age : null;
+    } catch (_) { return null; }
+  }
+
+  String _getJoinedText(String createdAt) {
+    try {
+      final dt = DateTime.parse(createdAt);
+      final diff = DateTime.now().difference(dt).inDays;
+      if (diff == 0) return 'Joined today';
+      if (diff == 1) return 'Joined yesterday';
+      if (diff < 7) return 'Joined $diff days ago';
+      if (diff < 30) return 'Joined ${(diff / 7).floor()}w ago';
+      if (diff < 365) return 'Joined ${(diff / 30).floor()}mo ago';
+      return 'Joined ${(diff / 365).floor()}y ago';
+    } catch (_) { return 'Recently joined'; }
+  }
+
   void _fetchUserProfile() async {
-    // In a real implementation, you would call the API here to get the full profile data
-    // _initialLoading = true;
-    // ... API call
-    // _initialLoading = false;
+    final uid = widget.participant?['userID']?.toString();
+    if (uid == null || uid.isEmpty) return;
+    setState(() => _initialLoading = true);
+    try {
+      final data = await audioRoomService.getUserProfile(uid);
+      if (data != null && mounted) {
+        setState(() => _userProfileData = data);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _initialLoading = false);
   }
 
   void _handleFollowToggle() async {
@@ -112,9 +145,10 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
   }
 
   void _handleVisitProfile() {
-    if (widget.participant?['userID'] == null) return;
+    final uid = widget.participant?['userID']?.toString();
+    if (uid == null || uid.isEmpty) return;
     Navigator.pop(context);
-    // Navigation to user profile
+    Future.microtask(() => context.push('/user/$uid'));
   }
 
   @override
@@ -135,9 +169,67 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
 
     final displayName = _userProfileData?['name'] ?? _userProfileData?['username'] ?? participant['userName'] ?? 'User';
     final avatarUrl = participant['avatar'] ?? _userProfileData?['profile_pic_medium'] ?? _userProfileData?['profile_pic'];
+    final avatarFrameUrl = participant['avatar_frame_url']?.toString().isNotEmpty == true
+        ? participant['avatar_frame_url']
+        : (_userProfileData?['avatar_frame']?['image_url'] ?? _userProfileData?['avatar_frame_url']);
+
+    // Profile extras from API
+    final int? age = _calcAge(_userProfileData?['birthday']?.toString());
+    final String? gender = _userProfileData?['gender']?.toString().toLowerCase();
+    final String? joinedText = _userProfileData?['created_at'] != null
+        ? _getJoinedText(_userProfileData!['created_at'].toString())
+        : null;
+    final bool isVerified = _userProfileData?['is_verified'] == true;
+
+    List<String> interests = [];
+    try {
+      final raw = _userProfileData?['interests'];
+      if (raw is List) {
+        interests = raw.map((e) => e.toString()).toList();
+      } else if (raw is String && raw.isNotEmpty) {
+        // May be a JSON array string like '["Anime","Ceramics/Pottery"]'
+        try {
+          final decoded = json.decode(raw);
+          if (decoded is List) {
+            interests = decoded.map((e) => e.toString()).toList();
+          } else {
+            interests = [raw];
+          }
+        } catch (_) {
+          interests = raw.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+        }
+      }
+    } catch (_) {}
+
+    List<String> purposes = [];
+    try {
+      final raw = _userProfileData?['purpose'];
+      if (raw is List) {
+        purposes = raw.map((e) => e.toString()).toList();
+      } else if (raw is String && raw.isNotEmpty) {
+        try {
+          final decoded = json.decode(raw);
+          if (decoded is List) {
+            purposes = decoded.map((e) => e.toString()).toList();
+          } else {
+            purposes = [raw];
+          }
+        } catch (_) {
+          purposes = [raw];
+        }
+      }
+    } catch (_) {}
+
+    // Avatar constants — frame is drawn 1.4× the avatar size (same ratio as RN)
+    const double kAvatarSize = 72.0;
+    const double kFrameMult = 1.44; // frame bleeds ~22% on each side
+    final double kFrameBox = kAvatarSize * kFrameMult;
+    final hasFrame = avatarFrameUrl != null && avatarFrameUrl.toString().isNotEmpty;
 
     return Container(
-      height: MediaQuery.of(context).size.height * (widget.isHost || widget.isAdmin ? 0.88 : 0.68),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
+      ),
       decoration: const BoxDecoration(
         color: Color(0xFF141B26),
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
@@ -145,11 +237,12 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
       child: Stack(
         children: [
           Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               // Handle
               Center(
                 child: Container(
-                  margin: const EdgeInsets.only(top: 8, bottom: 8),
+                  margin: const EdgeInsets.only(top: 10, bottom: 4),
                   width: 36,
                   height: 4,
                   decoration: BoxDecoration(
@@ -159,118 +252,178 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                 ),
               ),
 
-              Expanded(
+              Flexible(
                 child: SingleChildScrollView(
                   padding: EdgeInsets.only(
                     left: 18,
                     right: 18,
-                    bottom: MediaQuery.of(context).padding.bottom + 16,
+                    bottom: MediaQuery.of(context).padding.bottom + 24,
                   ),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Profile Header
                       Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        padding: const EdgeInsets.only(top: 8, bottom: 16),
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            // Avatar
-                            Container(
-                              width: 72,
-                              height: 72,
-                              margin: const EdgeInsets.only(right: 14),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF4A90E2).withOpacity(0.12),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: const Color(0xFF4A90E2), width: 2.5),
+                            // Avatar with optional frame overlay (no margin inside Stack)
+                            SizedBox(
+                              width: hasFrame ? kFrameBox : kAvatarSize + 8,
+                              height: hasFrame ? kFrameBox : kAvatarSize + 8,
+                              child: Stack(
+                                alignment: Alignment.center,
+                                clipBehavior: Clip.none,
+                                children: [
+                                  // Avatar circle — no border when frame present
+                                  Container(
+                                    width: kAvatarSize,
+                                    height: kAvatarSize,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF4A90E2).withOpacity(0.12),
+                                      shape: BoxShape.circle,
+                                      border: !hasFrame
+                                          ? Border.all(color: const Color(0xFF4A90E2), width: 2.5)
+                                          : null,
+                                    ),
+                                    clipBehavior: Clip.antiAlias,
+                                    alignment: Alignment.center,
+                                    child: avatarUrl != null
+                                        ? CachedNetworkImage(
+                                            imageUrl: avatarUrl,
+                                            width: kAvatarSize,
+                                            height: kAvatarSize,
+                                            fit: BoxFit.cover,
+                                          )
+                                        : Icon(Icons.person, size: 36, color: Colors.white.withOpacity(0.5)),
+                                  ),
+                                  // Frame — fills the outer SizedBox, sits above avatar
+                                  if (hasFrame)
+                                    Positioned.fill(
+                                      child: CachedNetworkImage(
+                                        imageUrl: avatarFrameUrl!,
+                                        fit: BoxFit.contain,
+                                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                                      ),
+                                    ),
+                                  // Online dot — anchored to the avatar circle edge
+                                  Positioned(
+                                    bottom: hasFrame ? (kFrameBox - kAvatarSize) * 0.38 : 0,
+                                    right: hasFrame ? (kFrameBox - kAvatarSize) * 0.38 : 0,
+                                    child: Container(
+                                      width: 14,
+                                      height: 14,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: const Color(0xFF4CAF50),
+                                        border: Border.all(color: const Color(0xFF141B26), width: 2.5),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              clipBehavior: Clip.hardEdge,
-                              alignment: Alignment.center,
-                              child: avatarUrl != null
-                                  ? CachedNetworkImage(imageUrl: avatarUrl, width: 72, height: 72, fit: BoxFit.cover)
-                                  : Icon(Icons.person, size: 36, color: Colors.white.withOpacity(0.5)),
                             ),
+                            const SizedBox(width: 14),
 
                             // Info
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Row(
+                                  // Name + verification + age/gender
+                                  Wrap(
+                                    crossAxisAlignment: WrapCrossAlignment.center,
+                                    spacing: 6,
+                                    runSpacing: 4,
                                     children: [
-                                      Expanded(
-                                        child: Text(
-                                          displayName,
-                                          style: const TextStyle(
-                                            fontSize: 19,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
+                                      Text(
+                                        displayName,
+                                        style: const TextStyle(
+                                          fontSize: 19,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.white,
+                                          fontFamily: 'Outfit',
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 5),
-                                  Wrap(
-                                    children: [
-                                      if (participant['isHost'] == true || participant['isAdmin'] == true)
+                                      if (isVerified)
+                                        const Icon(Icons.verified_rounded, size: 16, color: Color(0xFF0751DF)),
+                                      if (age != null && gender != null && (gender == 'male' || gender == 'female'))
                                         Container(
-                                          margin: const EdgeInsets.only(right: 8, bottom: 4),
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                           decoration: BoxDecoration(
-                                            color: participant['isHost'] == true ? const Color(0xFFFFD700).withOpacity(0.12) : const Color(0xFF4A90E2).withOpacity(0.12),
+                                            color: gender == 'male'
+                                                ? const Color(0xFF003BA0).withOpacity(0.35)
+                                                : const Color(0xFFC80078).withOpacity(0.3),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
                                             children: [
-                                              Icon(participant['isHost'] == true ? Icons.star : Icons.shield, size: 10, color: participant['isHost'] == true ? const Color(0xFFFFD700) : const Color(0xFF4A90E2)),
-                                              const SizedBox(width: 3),
-                                              Text(
-                                                participant['isHost'] == true ? 'Host' : 'Admin',
-                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: participant['isHost'] == true ? const Color(0xFFFFD700) : const Color(0xFF4A90E2)),
+                                              Icon(
+                                                gender == 'male' ? Icons.male : Icons.female,
+                                                size: 11,
+                                                color: gender == 'male' ? const Color(0xFF5AABFF) : const Color(0xFFF062C0),
                                               ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (widget.isCommunityAdda && isParticipantCommunityOwner)
-                                        Container(
-                                          margin: const EdgeInsets.only(right: 8, bottom: 4),
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFDC2626).withOpacity(0.15),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.star, size: 10, color: Color(0xFFF87171)),
-                                              SizedBox(width: 3),
-                                              Text('Community Owner', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFF87171))),
-                                            ],
-                                          ),
-                                        ),
-                                      if (widget.isCommunityAdda && isParticipantCommunityAdmin)
-                                        Container(
-                                          margin: const EdgeInsets.only(right: 8, bottom: 4),
-                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFFEAB308).withOpacity(0.12),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Icon(Icons.star, size: 10, color: Color(0xFFEAB308)),
-                                              SizedBox(width: 3),
-                                              Text('Community Admin', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFFEAB308))),
+                                              const SizedBox(width: 2),
+                                              Text(
+                                                '$age',
+                                                style: TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontFamily: 'Outfit',
+                                                  color: gender == 'male' ? const Color(0xFF5AABFF) : const Color(0xFFF062C0),
+                                                ),
+                                              ),
                                             ],
                                           ),
                                         ),
                                     ],
                                   ),
+                                  const SizedBox(height: 5),
+                                  // Role badges
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      if (participant['isHost'] == true)
+                                        _rolePill(Icons.star, 'Host', const Color(0xFFFFD700)),
+                                      if (participant['isAdmin'] == true && participant['isHost'] != true)
+                                        _rolePill(Icons.shield, 'Admin', const Color(0xFF4A90E2)),
+                                      if (widget.isCommunityAdda && isParticipantCommunityOwner)
+                                        _rolePill(Icons.star, 'Community Owner', const Color(0xFFF87171)),
+                                      if (widget.isCommunityAdda && isParticipantCommunityAdmin)
+                                        _rolePill(Icons.star, 'Community Admin', const Color(0xFFEAB308)),
+                                    ],
+                                  ),
+                                  if (joinedText != null) ...[
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      joinedText,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontFamily: 'Outfit',
+                                        color: Color(0x66FFFFFF),
+                                      ),
+                                    ),
+                                  ],
+                                  // Purposes
+                                  if (purposes.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    Wrap(
+                                      spacing: 5,
+                                      runSpacing: 4,
+                                      children: purposes.map((p) => Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFF4A90E2).withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.25)),
+                                        ),
+                                        child: Text(p, style: const TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: Color(0xFF4A90E2))),
+                                      )).toList(),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -278,39 +431,77 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                         ),
                       ),
 
-                      // Quick Actions
-                      if (!isOwnProfile)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 14, bottom: 4),
-                          child: Row(
-                            children: [
-                              _buildQuickActionBtn(
-                                icon: _isFollowing ? Icons.check_circle : Icons.person_add,
-                                label: _isFollowing ? 'Following' : 'Follow',
-                                isActive: _isFollowing,
-                                onTap: _handleFollowToggle,
-                                isLoading: _followLoading || _initialLoading,
-                              ),
-                              const SizedBox(width: 8),
-                              _buildQuickActionBtn(
-                                icon: Icons.account_circle,
-                                label: 'Profile',
-                                onTap: _handleVisitProfile,
-                              ),
-                              const SizedBox(width: 8),
-                              if (!widget.isHost && !widget.isAdmin)
-                                _buildQuickActionBtn(
-                                  icon: Icons.flag,
-                                  label: 'Report',
-                                  iconColor: const Color(0xFFFF6B6B),
-                                  onTap: () {
-                                    Navigator.pop(context);
-                                    widget.onReportUser?.call(participant, false);
-                                  },
+                      // Interests horizontal scroll
+                      if (interests.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          height: 30,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: interests.length > 5 ? 6 : interests.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 6),
+                            itemBuilder: (_, i) {
+                              if (i == 5 && interests.length > 5) {
+                                return Center(
+                                  child: Text(
+                                    '+${interests.length - 5}',
+                                    style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', color: Color(0x59FFFFFF)),
+                                  ),
+                                );
+                              }
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
-                            ],
+                                child: Text(interests[i], style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: Color(0x99FFFFFF))),
+                              );
+                            },
                           ),
                         ),
+                      ],
+
+                      // Quick Actions — Follow | Profile | Volume | Report
+                      if (!isOwnProfile) ...[
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            _buildQuickActionBtn(
+                              icon: _isFollowing ? Icons.check_circle : Icons.person_add,
+                              label: _isFollowing ? 'Following' : 'Follow',
+                              isActive: _isFollowing,
+                              onTap: _handleFollowToggle,
+                              isLoading: _followLoading || _initialLoading,
+                            ),
+                            const SizedBox(width: 8),
+                            _buildQuickActionBtn(
+                              icon: Icons.account_circle,
+                              label: 'Profile',
+                              onTap: _handleVisitProfile,
+                            ),
+                            const SizedBox(width: 8),
+                            _buildQuickActionBtn(
+                              icon: _localVolume == 0 ? Icons.volume_off : _localVolume < 0.5 ? Icons.volume_down : Icons.volume_up,
+                              label: '${(_localVolume * 100).round()}%',
+                              onTap: null,
+                            ),
+                            // Report — only shown for non-host/admin viewers
+                            if (!widget.isHost && !widget.isAdmin) ...[
+                              const SizedBox(width: 8),
+                              _buildQuickActionBtn(
+                                icon: Icons.flag,
+                                label: 'Report',
+                                iconColor: const Color(0xFFFF6B6B),
+                                onTap: () {
+                                  Navigator.pop(context);
+                                  widget.onReportUser?.call(participant, false);
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
 
                       // Volume Control
                       if (!isOwnProfile)
@@ -594,6 +785,24 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
             
           if (_showActionReasonModal)
             _buildReasonModalOverlay(participant),
+        ],
+      ),
+    );
+  }
+
+  Widget _rolePill(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: color),
+          const SizedBox(width: 3),
+          Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, fontFamily: 'Outfit', color: color)),
         ],
       ),
     );
@@ -970,7 +1179,7 @@ Future<void> showUserProfileBottomSheet({
   bool actionsFrozen = false,
   bool isCommunityAdda = false,
   String? myCommunityRole,
-  Map<String, String>? communityRolesMap,
+  Map<String, dynamic>? communityRolesMap,
   Function(Map<String, dynamic>, String?)? onCommunityKick,
   Function(Map<String, dynamic>, String?)? onCommunityBan,
   Function(Map<String, dynamic>, int)? onMoveToSeat,

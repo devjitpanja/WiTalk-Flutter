@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -33,22 +34,41 @@ List<Map<String, String>> _getCurrentWeekDays() {
 List<String> _getLast7DayStrings() =>
     _getCurrentWeekDays().map((d) => d['date']!).toList();
 
+bool _isNonEmpty(dynamic val) {
+  if (val == null) return false;
+  if (val is String) return val.trim().isNotEmpty;
+  if (val is List) return val.isNotEmpty;
+  return true;
+}
+
+List<dynamic> _parseList(dynamic val) {
+  if (val == null) return [];
+  if (val is List) return val;
+  if (val is String && val.trim().isNotEmpty) {
+    try {
+      final parsed = jsonDecode(val);
+      if (parsed is List) return parsed;
+    } catch (_) {
+      return [val];
+    }
+  }
+  return [];
+}
+
 int _calcProfileCompletion(Map<String, dynamic>? user) {
   if (user == null) return 0;
   int score = 0;
-  if ((user['name'] as String? ?? '').trim().isNotEmpty) score++;
-  if ((user['username'] as String? ?? '').trim().isNotEmpty) score++;
-  if ((user['bio'] as String? ?? '').trim().isNotEmpty) score++;
-  if (user['profile_pic'] != null) score++;
-  if (user['gender'] != null) score++;
-  if ((user['city'] as String? ?? '').trim().isNotEmpty) score++;
-  if (user['occupation'] != null) score++;
-  if (user['country'] != null) score++;
-  if (user['birthday'] != null) score++;
-  final interests = user['interests'];
-  if (interests is List && interests.isNotEmpty) score++;
-  final purpose = user['purpose'];
-  if (purpose is List && purpose.isNotEmpty) score++;
+  if (_isNonEmpty(user['name'])) score++;
+  if (_isNonEmpty(user['username'])) score++;
+  if (_isNonEmpty(user['bio'])) score++;
+  if (_isNonEmpty(user['profile_pic'])) score++;
+  if (_isNonEmpty(user['gender'])) score++;
+  if (_isNonEmpty(user['city'])) score++;
+  if (_isNonEmpty(user['occupation'])) score++;
+  if (_isNonEmpty(user['country'])) score++;
+  if (_isNonEmpty(user['birthday'])) score++;
+  if (_parseList(user['interests']).isNotEmpty) score++;
+  if (_parseList(user['purpose']).isNotEmpty) score++;
   return ((score / 11) * 100).round();
 }
 
@@ -107,7 +127,8 @@ class _T {
   Color get streakSubColor => dark ? const Color(0xFFFF8F00) : const Color(0xFFBF360C);
   Color get logoutIconBg => dark ? const Color(0xFF1a1f2e) : const Color(0xFFFFF0F0);
   Color get listIconBg => primary.withAlpha(0x14);
-  Color get switchTrackFalse => const Color(0xFF767577);
+  Color get switchTrackFalse => dark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
+  Color get switchThumbFalse => dark ? const Color(0xFF8E8E93) : Colors.white;
 }
 
 // ─── Main screen ─────────────────────────────────────────────────────────────
@@ -216,6 +237,21 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
       final userRes = await dioClient.get('/v1/user/$uid');
       final user = Map<String, dynamic>.from(userRes.data['data'] as Map);
       if (user['username'] != null) await prefs.setString('username', user['username'].toString());
+
+      // Fallback check for purpose if backend returned empty purpose
+      dynamic purposeRaw = user['purpose'];
+      final purposeEmpty = purposeRaw == null ||
+          (purposeRaw is List && purposeRaw.isEmpty) ||
+          (purposeRaw is String && (purposeRaw.trim().isEmpty || purposeRaw == '[]'));
+      if (purposeEmpty) {
+        try {
+          final pRes = await dioClient.get('/v1/user/$uid/purpose-interests-check');
+          final pd = pRes.data;
+          if (pd?['statusCode'] == 200 && pd?['data']?['hasPurpose'] == true) {
+            user['purpose'] = pd['data']['purpose'];
+          }
+        } catch (_) {}
+      }
 
       Map<String, dynamic> levelData = {
         'currentLevel': 1,
@@ -353,7 +389,10 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('hasClickedAvatarProfile', true);
     } catch (_) {}
-    if (mounted) context.push('/edit-profile');
+    if (mounted) {
+      await context.push('/edit-profile');
+      _onRefresh();
+    }
   }
 
   Future<void> _handleContactSupport() async {
@@ -525,9 +564,17 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
     final levelPoints = (_userData?['levelPoints'] as num?)?.toInt() ?? 0;
     final maxLevelPoints = (_userData?['maxLevelPoints'] as num?)?.toInt() ?? 150;
     final completion = _calcProfileCompletion(_userData);
+    final isVerified = _isVerified || (_userData?['is_verified'] == true);
+    Map<String, dynamic>? badgeData;
+    if (_userData?['verification_badge'] is Map) {
+      badgeData = Map<String, dynamic>.from(_userData!['verification_badge'] as Map);
+    }
 
     return GestureDetector(
-      onTap: () => context.push('/profile'),
+      onTap: () async {
+        await context.push('/profile');
+        _onRefresh();
+      },
       child: Container(
         margin: const EdgeInsets.fromLTRB(12, 2, 12, 10),
         decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(18), border: Border.all(color: t.border)),
@@ -560,8 +607,10 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
                   Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 17, color: t.text))),
-                  const SizedBox(width: 4),
-                  VerificationBadge(size: 14),
+                  if (isVerified) ...[
+                    const SizedBox(width: 4),
+                    VerificationBadge(isVerified: isVerified, badge: badgeData, size: 14),
+                  ],
                   const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -812,7 +861,15 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
             const SizedBox(width: 4),
           ],
           if (isSwitch)
-            Switch(value: item.switchValue ?? false, onChanged: (_) => item.onSwitchToggle?.call(), activeThumbColor: Colors.white, activeTrackColor: t.primary, inactiveTrackColor: t.switchTrackFalse)
+            Switch(
+              value: item.switchValue ?? false,
+              onChanged: (_) => item.onSwitchToggle?.call(),
+              activeThumbColor: Colors.white,
+              activeTrackColor: t.primary,
+              inactiveTrackColor: t.switchTrackFalse,
+              inactiveThumbColor: t.switchThumbFalse,
+              trackOutlineColor: WidgetStateProperty.all(Colors.transparent),
+            )
           else
             Icon(Icons.chevron_right, size: 20, color: t.textTertiary),
         ]),

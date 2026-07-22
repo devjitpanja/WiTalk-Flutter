@@ -13,6 +13,7 @@ class LiveKitAudioEvents {
   static const String microphoneStateChanged = 'microphoneStateChanged';
   static const String speakerStateChanged = 'speakerStateChanged';
   static const String streamUpdate = 'streamUpdate';
+  static const String activeSpeakerChanged = 'activeSpeakerChanged';
 }
 
 class RoomUpdateType {
@@ -259,6 +260,14 @@ class LiveKitAudioManager {
       ..on<RoomReconnectingEvent>((_) {
         isConnected = false;
         _isReconnecting = true;
+      })
+      ..on<ActiveSpeakersChangedEvent>((event) {
+        // Emit the loudest active speaker (first in list, ordered by audio level)
+        final loudest = event.speakers.firstOrNull;
+        _emit(LiveKitAudioEvents.activeSpeakerChanged, {
+          'roomID': roomId,
+          'activeSpeakerUid': loudest?.identity,
+        });
       });
   }
 

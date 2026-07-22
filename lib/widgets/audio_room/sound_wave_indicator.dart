@@ -3,25 +3,34 @@ import 'package:flutter/material.dart';
 class SoundWaveIndicator extends StatefulWidget {
   final bool isSpeaking;
   final Color color;
+  final int barCount;
+  final double barWidth;
+  final double minHeight;
+  final double maxHeight;
 
   const SoundWaveIndicator({
     super.key,
     this.isSpeaking = false,
     this.color = const Color(0xFF007AFF),
+    this.barCount = 4,
+    this.barWidth = 3,
+    this.minHeight = 4,
+    this.maxHeight = 14,
   });
 
   @override
   State<SoundWaveIndicator> createState() => _SoundWaveIndicatorState();
 }
 
-class _SoundWaveIndicatorState extends State<SoundWaveIndicator> with TickerProviderStateMixin {
+class _SoundWaveIndicatorState extends State<SoundWaveIndicator>
+    with TickerProviderStateMixin {
   late final List<AnimationController> _controllers;
 
   @override
   void initState() {
     super.initState();
     _controllers = List.generate(
-      4,
+      widget.barCount,
       (i) => AnimationController(
         vsync: this,
         duration: Duration(milliseconds: 300 + i * 80),
@@ -31,9 +40,7 @@ class _SoundWaveIndicatorState extends State<SoundWaveIndicator> with TickerProv
 
   @override
   void dispose() {
-    for (final c in _controllers) {
-      c.dispose();
-    }
+    for (final c in _controllers) c.dispose();
     super.dispose();
   }
 
@@ -41,22 +48,22 @@ class _SoundWaveIndicatorState extends State<SoundWaveIndicator> with TickerProv
   Widget build(BuildContext context) {
     if (!widget.isSpeaking) return const SizedBox.shrink();
 
+    final range = widget.maxHeight - widget.minHeight;
     return Row(
       mainAxisSize: MainAxisSize.min,
-      children: List.generate(4, (i) {
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(widget.barCount, (i) {
         return AnimatedBuilder(
           animation: _controllers[i],
-          builder: (context, child) {
-            return Container(
-              width: 3,
-              height: 4 + _controllers[i].value * 12,
-              margin: const EdgeInsets.symmetric(horizontal: 1),
-              decoration: BoxDecoration(
-                color: widget.color,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            );
-          },
+          builder: (_, __) => Container(
+            width: widget.barWidth,
+            height: widget.minHeight + _controllers[i].value * range,
+            margin: const EdgeInsets.symmetric(horizontal: 1),
+            decoration: BoxDecoration(
+              color: widget.color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
         );
       }),
     );

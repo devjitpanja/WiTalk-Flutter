@@ -15,7 +15,7 @@ class VerificationBadge extends StatelessWidget {
 
   const VerificationBadge({
     super.key,
-    this.isVerified = true,
+    this.isVerified = false,
     this.badge,
     this.size = 16,
   });
@@ -25,7 +25,6 @@ class VerificationBadge extends StatelessWidget {
     if (!isVerified) return const SizedBox.shrink();
 
     const defaultColor = Color(0xFF0751DF);
-    const defaultIcon  = 'verified';
 
     final badgeColor = badge != null && badge!['color'] != null
         ? _parseColor(badge!['color'] as String, defaultColor)
@@ -37,18 +36,18 @@ class VerificationBadge extends StatelessWidget {
 
     if (isImageUrl) {
       return CachedNetworkImage(
-        imageUrl: iconUrl!,
+        imageUrl: iconUrl,
         width: size,
         height: size,
         color: badgeColor,
         colorBlendMode: BlendMode.srcIn,
         fit: BoxFit.contain,
-        errorWidget: (_, __, ___) =>
+        errorWidget: (context, url, error) =>
             Icon(Icons.verified, color: badgeColor, size: size),
       );
     }
 
-    if (isMaterialIcon && iconUrl != null) {
+    if (isMaterialIcon) {
       final iconData = _materialIconFromName(iconUrl);
       return Icon(iconData, color: badgeColor, size: size);
     }

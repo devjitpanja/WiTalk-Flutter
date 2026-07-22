@@ -8,6 +8,8 @@ import '../../providers/auth_provider.dart';
 import '../../widgets/audio_room/grid_seating_layout.dart';
 import '../../widgets/audio_room/audio_room_bottom_bar.dart';
 import '../../widgets/audio_room/room_rules_banner.dart';
+import '../../widgets/audio_room/user_profile_bottom_sheet.dart';
+import '../../widgets/audio_room/report_bottom_sheet.dart';
 
 const Color _kBg = Color(0xFF0D1017);
 const Color _kPrimary = Color(0xFF0751DF);
@@ -531,62 +533,60 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               // ── Header ───────────────────────────────────
               _buildHeader(roomState),
 
-              // ── Main scrollable content ───────────────────
+              // ── Fixed: stage grid + rules banner (never scrolls) ──
+              GridSeatingLayout(
+                seats: seatsList,
+                maxSeats: roomState.maxSeats,
+                hostUid: roomState.hostUid,
+                myUid: myUid,
+                activeSpeakerUid: roomState.activeSpeakerUid,
+                stageRequestEnabled: roomState.stageRequestEnabled,
+                isHost: roomState.isHost,
+                seatsInitialized: roomState.seatsInitialized,
+                audience: roomState.audience,
+                onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
+                onEmptySeatTap: _handleEmptySeatPress,
+                onEmptySeatLongPress: (idx) {
+                  if (roomState.isHost) {
+                    ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
+                  }
+                },
+                onShowAudienceList: _showAudienceList,
+                onAudienceMemberTap: (m) => _showParticipantSheet(m),
+              ),
+
+              if (roomState.roomRules != null &&
+                  roomState.roomRules!.isNotEmpty &&
+                  !roomState.rulesDismissed)
+                RoomRulesBanner(
+                  rulesText: roomState.roomRules!,
+                  onDismiss: () =>
+                      ref.read(audioRoomProvider.notifier).dismissRulesBanner(),
+                ),
+
+              // ── ADDA CHAT divider (fixed) ─────────────────────
+              _buildAddaChatDivider(),
+
+              // ── Scrollable chat + emoji strip ─────────────────
               Expanded(
                 child: Stack(
                   children: [
-                    SingleChildScrollView(
+                    ListView.builder(
                       controller: _scrollCtrl,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Stage grid
-                          GridSeatingLayout(
-                            seats: seatsList,
-                            maxSeats: roomState.maxSeats,
-                            hostUid: roomState.hostUid,
-                            myUid: myUid,
-                            activeSpeakerUid: roomState.activeSpeakerUid,
-                            stageRequestEnabled: roomState.stageRequestEnabled,
-                            isHost: roomState.isHost,
-                            seatsInitialized: roomState.seatsInitialized,
-                            audience: roomState.audience,
-                            onSpeakerTap: (speaker) =>
-                                _showParticipantSheet(speaker),
-                            onEmptySeatTap: _handleEmptySeatPress,
-                            onEmptySeatLongPress: (idx) {
-                              if (roomState.isHost) {
-                                ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
-                              }
-                            },
-                            onShowAudienceList: _showAudienceList,
-                            onAudienceMemberTap: (m) =>
-                                _showParticipantSheet(m),
-                          ),
-
-                          // Pinned Room Rules Banner (gold glass card)
-                          if (roomState.roomRules != null &&
-                              roomState.roomRules!.isNotEmpty &&
-                              !roomState.rulesDismissed)
-                            RoomRulesBanner(
-                              rulesText: roomState.roomRules!,
-                              onDismiss: () => ref
-                                  .read(audioRoomProvider.notifier)
-                                  .dismissRulesBanner(),
-                            ),
-
-                          // Chat section divider (ADDA CHAT)
-                          _buildAddaChatDivider(),
-
-                          // Chat messages
-                          _buildChatMessages(roomState.chatMessages),
-
-                          const SizedBox(height: 16),
-                        ],
-                      ),
+                      padding: const EdgeInsets.fromLTRB(10, 4, 56, 16),
+                      itemCount: roomState.chatMessages.length > 50
+                          ? 50
+                          : roomState.chatMessages.length,
+                      itemBuilder: (_, i) {
+                        final msgs = roomState.chatMessages.length > 50
+                            ? roomState.chatMessages.sublist(
+                                roomState.chatMessages.length - 50)
+                            : roomState.chatMessages;
+                        return _buildChatBubble(msgs[i]);
+                      },
                     ),
 
-                    // Vertical Emoji Reaction Strip on right side (always visible)
+                    // Vertical Emoji Reaction Strip on right side
                     Positioned(
                       right: 8,
                       bottom: 8,
@@ -898,7 +898,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           'name': occupant['name']?.toString() ?? uid,
           'profile_pic': avatar,
           'avatar': avatar,
-          'avatar_frame_url': occupant['avatar_frame_url']?.toString(),
+          'avatar_frame_url': (occupant['avatarFrameUrl'] ?? occupant['avatar_frame_url'])?.toString(),
           'isHost': uid == s.hostUid || occupant['isHost'] == true,
           'isAdmin': occupant['isAdmin'] == true,
           'communityRole': occupant['communityRole']?.toString(),
@@ -920,16 +920,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   }
 
   // ── Chat messages ──────────────────────────────────────────────────────────
-  Widget _buildChatMessages(List<Map<String, dynamic>> messages) {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(10, 4, 10, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: messages.take(50).map((msg) => _buildChatBubble(msg)).toList(),
-      ),
-    );
-  }
-
   Widget _buildChatBubble(Map<String, dynamic> msg) {
     final bool isSystem = msg['isSystem'] == true ||
         msg['senderUid'] == 'system' ||
@@ -984,11 +974,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       );
     }
 
-    final sender = (msg['senderName'] ??
+    final sender = (msg['sender_username'] ??
+            msg['senderName'] ??
             msg['sender_name'] ??
             msg['username'] ??
             msg['name'] ??
-            msg['user_name'] ??
             'User')
         .toString();
     final ts = msg['timestamp'];
@@ -998,7 +988,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     }
 
-    final senderPic = (msg['senderAvatar'] ??
+    final senderPic = (msg['sender_profile_picture'] ??
+            msg['senderAvatar'] ??
             msg['sender_avatar'] ??
             msg['profile_pic'] ??
             msg['avatar'])
@@ -1207,33 +1198,27 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   }
 
   // ── Participant profile sheet ───────────────────────────────────────────────
-  void _showParticipantSheet(Map<String, dynamic> participant) {
+  void _showParticipantSheet(Map<String, dynamic> seat) {
     final s = ref.read(audioRoomProvider);
     final myUid = ref.read(authProvider).uid;
-    final uid = participant['uid']?.toString() ?? '';
+    final uid = seat['uid']?.toString() ?? '';
     final isSelf = uid == myUid;
     final isAuthority = s.isHost || s.isAdmin || s.isCoHost;
 
-    // Ghost seat: user is in a seat but has no real profile data
-    // Host/admin see a "Remove from seat" option
-    final isGhost = participant['isEmpty'] != true &&
-        (participant['name'] == null ||
-            participant['name'] == 'User' ||
-            participant['name'] == uid);
+    // Ghost seat — host/admin can remove it
+    final isGhost = seat['isEmpty'] != true &&
+        (seat['name'] == null || seat['name'] == 'User' || seat['name'] == uid);
     if (isGhost && !isSelf && isAuthority) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: const Color(0xFF1A2340),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: const Text(
-            'Unknown User in Seat',
-            style: TextStyle(color: Color(0xFFEBEBF5), fontFamily: 'Outfit', fontWeight: FontWeight.w700),
-          ),
+          title: const Text('Unknown User in Seat',
+              style: TextStyle(color: Color(0xFFEBEBF5), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
           content: const Text(
-            'This seat has a disconnected user blocking the spot. Would you like to remove them?',
-            style: TextStyle(color: Color(0x99EBEBF5), fontFamily: 'Outfit', fontSize: 14),
-          ),
+              'This seat has a disconnected user blocking the spot. Would you like to remove them?',
+              style: TextStyle(color: Color(0x99EBEBF5), fontFamily: 'Outfit', fontSize: 14)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
@@ -1244,7 +1229,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 Navigator.pop(context);
                 ref.read(audioRoomProvider.notifier).removeGhostFromSeat(uid);
               },
-              child: const Text('Remove', style: TextStyle(color: Color(0xFFFF3B30), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+              child: const Text('Remove',
+                  style: TextStyle(color: Color(0xFFFF3B30), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -1252,23 +1238,83 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       return;
     }
 
-    showModalBottomSheet(
+    // Map seat data to the shape UserProfileBottomSheet expects
+    final participantData = {
+      'userID': uid,
+      'userName': seat['name']?.toString() ?? uid,
+      'avatar': seat['profile_pic']?.toString() ?? seat['avatar']?.toString(),
+      'avatar_frame_url': (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
+      'isHost': seat['isHost'] == true,
+      'isAdmin': seat['isAdmin'] == true,
+      'isMicOn': seat['isMuted'] != true,
+      'communityRole': seat['communityRole']?.toString(),
+      'isVerified': seat['isVerified'] == true,
+    };
+
+    final isParticipantInSeat = seat['isEmpty'] != true;
+
+    showUserProfileBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ParticipantSheet(
-        participant: participant,
-        isHost: isAuthority,
-        isSelf: isSelf,
-        onKick: !isSelf && isAuthority
-            ? () => ref.read(audioRoomProvider.notifier).kickParticipant(uid)
-            : null,
-        onMute: !isSelf && isAuthority
-            ? () => ref.read(audioRoomProvider.notifier).muteParticipant(uid)
-            : null,
-        onOffStage: !isSelf && isAuthority && participant['isInSeat'] == true
-            ? () => ref.read(audioRoomProvider.notifier).offStageParticipant(uid)
-            : null,
-      ),
+      participant: participantData,
+      isHost: isAuthority,
+      isAdmin: s.isAdmin,
+      currentUserId: myUid,
+      hostUid: s.hostUid,
+      isParticipantInSeat: isParticipantInSeat,
+      isCommunityAdda: s.groupId != null,
+      myCommunityRole: s.myCommunityRole,
+      communityRolesMap: s.communityRolesMap,
+      actionsFrozen: false,
+      maxSeats: s.maxSeats,
+      seatsState: s.speakers,
+      onFollowHost: () {},
+      onMute: !isSelf && isAuthority
+          ? (p) => ref.read(audioRoomProvider.notifier).muteParticipant(uid)
+          : null,
+      onUnmute: !isSelf && isAuthority
+          ? (p) => ref.read(audioRoomProvider.notifier).requestUnmute(uid)
+          : null,
+      onKick: !isSelf && isAuthority
+          ? (p) => ref.read(audioRoomProvider.notifier).kickParticipant(uid)
+          : null,
+      onOffStage: !isSelf && isAuthority && isParticipantInSeat
+          ? (p) => ref.read(audioRoomProvider.notifier).offStageParticipant(uid)
+          : null,
+      onInviteToSeat: !isSelf && isAuthority && !isParticipantInSeat
+          ? (p) => ref.read(audioRoomProvider.notifier).inviteToSeat(uid, -1)
+          : null,
+      onPromoteToAdmin: !isSelf && s.isHost
+          ? (p) => ref.read(audioRoomProvider.notifier).promoteAdmin(uid)
+          : null,
+      onDemoteAdmin: !isSelf && s.isHost
+          ? (p) => ref.read(audioRoomProvider.notifier).demoteAdmin(uid)
+          : null,
+      onMoveToSeat: !isSelf && isAuthority && isParticipantInSeat
+          ? (p, seatIdx) => ref.read(audioRoomProvider.notifier).moveParticipantToSeat(uid, seatIdx)
+          : null,
+      onReportUser: !isSelf
+          ? (p, canBan) {
+              showReportBottomSheet(
+                context: context,
+                participant: participantData,
+                canBan: canBan,
+                onBanUser: (p2, reason) =>
+                    ref.read(audioRoomProvider.notifier).banParticipant(uid),
+              );
+            }
+          : null,
+      onCommunityKick: !isSelf && isAuthority
+          ? (p, reason) {
+              final name = seat['name']?.toString() ?? uid;
+              ref.read(audioRoomProvider.notifier).communityKick(uid, name, reason: reason);
+            }
+          : null,
+      onCommunityBan: !isSelf && isAuthority
+          ? (p, reason) {
+              final name = seat['name']?.toString() ?? uid;
+              ref.read(audioRoomProvider.notifier).communityBan(uid, name, reason: reason);
+            }
+          : null,
     );
   }
 
@@ -1697,64 +1743,6 @@ class _AudienceListSheet extends StatelessWidget {
   }
 }
 
-class _ParticipantSheet extends StatelessWidget {
-  final Map<String, dynamic> participant;
-  final bool isHost;
-  final bool isSelf;
-  final VoidCallback? onKick;
-  final VoidCallback? onMute;
-  final VoidCallback? onOffStage;
-  const _ParticipantSheet({required this.participant, required this.isHost, required this.isSelf, this.onKick, this.onMute, this.onOffStage});
-
-  @override
-  Widget build(BuildContext context) {
-    final name = participant['name']?.toString() ?? 'User';
-    final pic = participant['profile_pic']?.toString();
-
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-          CircleAvatar(
-            radius: 32,
-            backgroundImage: (pic != null && pic.isNotEmpty) ? NetworkImage(pic) : null,
-            backgroundColor: const Color(0x1A0751DF),
-            child: (pic == null || pic.isEmpty) ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'U', style: const TextStyle(color: Colors.white, fontSize: 22, fontFamily: 'Outfit', fontWeight: FontWeight.w600)) : null,
-          ),
-          const SizedBox(height: 10),
-          Text(name, style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
-          const SizedBox(height: 16),
-          if (isHost && !isSelf) ...[
-            if (onMute != null) ListTile(
-              leading: const Icon(Icons.mic_off, color: Colors.white70),
-              title: const Text('Mute', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
-              onTap: () { Navigator.pop(context); onMute!(); },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (onOffStage != null) ListTile(
-              leading: const Icon(Icons.person_remove_outlined, color: Color(0xFFFF9800)),
-              title: const Text('Off Stage', style: TextStyle(color: Color(0xFFFF9800), fontFamily: 'Outfit')),
-              onTap: () { Navigator.pop(context); onOffStage!(); },
-              contentPadding: EdgeInsets.zero,
-            ),
-            if (onKick != null) ListTile(
-              leading: const Icon(Icons.block, color: Color(0xFFFF3B30)),
-              title: const Text('Kick from Room', style: TextStyle(color: Color(0xFFFF3B30), fontFamily: 'Outfit')),
-              onTap: () { Navigator.pop(context); onKick!(); },
-              contentPadding: EdgeInsets.zero,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
 
 class _AudioOutputSheet extends StatelessWidget {
   final String currentMode;

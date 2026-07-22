@@ -1,14 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'sound_wave_indicator.dart';
 
-/// Pixel-perfect Flutter port of RN ParticipantAvatar component.
-/// Renders:
-///  - Circular avatar with network image or initial letter fallback
-///  - Optional avatar frame overlay (when avatarFrameUrl is provided)
-///  - Host / Admin star badge next to username
-///  - Mic-off overlay/badge when muted
-///  - Speaking ring / border glow
-///  - Name label below avatar ("Hold to lock" or first name)
+/// Seat avatar for the audio room grid.
+///
+/// Speaking styles:
+///  • No frame  → animated glowing ring around the circle
+///  • Has frame → no ring (would clash with frame art); animated wave bars
+///               appear at the bottom edge of the frame instead
 class ParticipantAvatar extends StatelessWidget {
   final String? uid;
   final String? name;
@@ -59,6 +58,7 @@ class ParticipantAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final resolvedAvatarUrl = _normalizeUrl(avatarUrl);
     final resolvedFrameUrl = _normalizeUrl(avatarFrameUrl);
+    final hasFrame = resolvedFrameUrl != null && resolvedFrameUrl.isNotEmpty;
 
     final initial = (name?.isNotEmpty == true
             ? name![0]
@@ -72,38 +72,28 @@ class ParticipantAvatar extends StatelessWidget {
     final roleBadgeSize = (size * 0.27).clamp(12.0, 18.0);
     final nameFontSize = (size * 0.20).clamp(9.0, 11.0);
 
+    // Always use size * 1.5 so every seat cell is the same height regardless
+    // of whether a frame is present. The ring is drawn inside this box for
+    // non-framed avatars; the frame image fills it for framed avatars.
+    const double outerMult = 1.5;
+    final outerSize = size * outerMult;
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            width: size * 1.35,
-            height: size * 1.35,
+            width: outerSize,
+            height: outerSize,
             child: Stack(
               alignment: Alignment.center,
+              clipBehavior: Clip.none,
               children: [
-                // Speaking indicator glowing ring
-                if (isSpeaking)
-                  Container(
-                    width: size + 6,
-                    height: size + 6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF5B9AFF),
-                        width: 2.5,
-                      ),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Color(0x665B9AFF),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
-                      ],
-                    ),
-                  )
-                else if (isHost)
+                // ── Speaking ring (only when NO frame) ──────────────────────
+                if (isSpeaking && !hasFrame)
+                  _SpeakingRing(size: size)
+                else if (!hasFrame && isHost)
                   Container(
                     width: size + 4,
                     height: size + 4,
@@ -115,7 +105,7 @@ class ParticipantAvatar extends StatelessWidget {
                       ),
                     ),
                   )
-                else
+                else if (!hasFrame)
                   Container(
                     width: size + 4,
                     height: size + 4,
@@ -128,7 +118,7 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // Avatar image container
+                // ── Avatar circle ────────────────────────────────────────────
                 Container(
                   width: size,
                   height: size,
@@ -147,7 +137,7 @@ class ParticipantAvatar extends StatelessWidget {
                       : _buildInitialAvatar(initial),
                 ),
 
-                // Muted overlay icon
+                // ── Muted overlay ────────────────────────────────────────────
                 if (isMuted)
                   Container(
                     width: size,
@@ -164,13 +154,27 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // Avatar Frame Overlay (if provided)
-                if (resolvedFrameUrl != null && resolvedFrameUrl.isNotEmpty)
+                // ── Frame overlay (above avatar, clips to SizedBox) ──────────
+                if (hasFrame)
                   Positioned.fill(
                     child: CachedNetworkImage(
                       imageUrl: resolvedFrameUrl,
                       fit: BoxFit.contain,
                       errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+
+                // ── Wave bars for framed speaking (bottom edge) ───────────────
+                if (isSpeaking && hasFrame)
+                  Positioned(
+                    bottom: 0,
+                    child: SoundWaveIndicator(
+                      isSpeaking: true,
+                      color: const Color(0xFF5B9AFF),
+                      barCount: 4,
+                      barWidth: 2.5,
+                      minHeight: 4,
+                      maxHeight: 10,
                     ),
                   ),
               ],
@@ -182,7 +186,6 @@ class ParticipantAvatar extends StatelessWidget {
             Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Star / Role badge next to name
                 if (isHost) ...[
                   Container(
                     width: roleBadgeSize,
@@ -208,11 +211,7 @@ class ParticipantAvatar extends StatelessWidget {
                       color: Color(0xFFE84040),
                     ),
                     alignment: Alignment.center,
-                    child: Icon(
-                      Icons.star,
-                      size: roleBadgeSize * 0.7,
-                      color: Colors.white,
-                    ),
+                    child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
                   ),
                   const SizedBox(width: 3),
                 ] else if (communityRole == 'admin' || isAdmin) ...[
@@ -224,22 +223,16 @@ class ParticipantAvatar extends StatelessWidget {
                       color: Color(0xFFFFA726),
                     ),
                     alignment: Alignment.center,
-                    child: Icon(
-                      Icons.star,
-                      size: roleBadgeSize * 0.7,
-                      color: Colors.white,
-                    ),
+                    child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
                   ),
                   const SizedBox(width: 3),
                 ],
 
-                // Verified badge icon — only show when no role badge already present
                 if (isVerified && !isHost && communityRole != 'super_admin' && communityRole != 'admin' && !isAdmin) ...[
                   const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF0751DF)),
                   const SizedBox(width: 2),
                 ],
 
-                // Username text
                 Flexible(
                   child: Text(
                     firstName,
@@ -273,6 +266,64 @@ class ParticipantAvatar extends StatelessWidget {
           fontSize: size * 0.4,
           fontFamily: 'Outfit',
           fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Animated glowing ring (no-frame speaking indicator) ─────────────────────
+class _SpeakingRing extends StatefulWidget {
+  final double size;
+  const _SpeakingRing({required this.size});
+
+  @override
+  State<_SpeakingRing> createState() => _SpeakingRingState();
+}
+
+class _SpeakingRingState extends State<_SpeakingRing>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 1.0, end: 1.12).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _scale,
+      builder: (_, __) => Container(
+        width: (widget.size + 6) * _scale.value,
+        height: (widget.size + 6) * _scale.value,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFF5B9AFF),
+            width: 2.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0x665B9AFF),
+              blurRadius: 6 + 4 * _ctrl.value,
+              spreadRadius: 1 + 2 * _ctrl.value,
+            ),
+          ],
         ),
       ),
     );

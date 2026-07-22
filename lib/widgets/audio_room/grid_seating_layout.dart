@@ -52,6 +52,8 @@ class GridSeatingLayout extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final seatWidth = (screenWidth - _edgePadding * 2) / 4;
     final avatarSize = (seatWidth * 0.65).clamp(40.0, 64.0);
+    // Fixed row height: largest possible avatar box (frame = 1.5×) + name label
+    final seatHeight = avatarSize * 1.5 + 20.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -90,10 +92,10 @@ class GridSeatingLayout extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: _edgePadding, vertical: 8),
           child: Wrap(
             spacing: 0,
-            runSpacing: 10,
+            runSpacing: 4,
             children: List.generate(maxSeats, (index) {
               final seat = index < seats.length ? seats[index] : null;
-              return _buildSeat(context, seat, index, seatWidth, avatarSize);
+              return _buildSeat(context, seat, index, seatWidth, avatarSize, seatHeight);
             }),
           ),
         ),
@@ -105,7 +107,7 @@ class GridSeatingLayout extends StatelessWidget {
   }
 
   Widget _buildSeat(BuildContext context, Map<String, dynamic>? seat, int index,
-      double seatWidth, double avatarSize) {
+      double seatWidth, double avatarSize, double seatHeight) {
     final uidStr = seat?['uid']?.toString().trim();
     final bool isEmpty = seat == null ||
         seat['isEmpty'] == true ||
@@ -121,48 +123,50 @@ class GridSeatingLayout extends StatelessWidget {
 
       return SizedBox(
         width: seatWidth,
+        height: seatHeight,
         child: GestureDetector(
           onTap: () => onSpeakerTap?.call(seat),
-          child: ParticipantAvatar(
-            uid: uid,
-            name: seat['name']?.toString(),
-            avatarUrl: seat['profile_pic']?.toString(),
-            avatarFrameUrl: (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
-            isHost: isHostSeat,
-            isAdmin: seat['isAdmin'] == true,
-            communityRole: seat['communityRole']?.toString(),
-            isVerified: seat['isVerified'] == true,
-            isMuted: isMuted,
-            isSpeaking: isSpeaking,
-            isSelf: uid == myUid,
-            size: avatarSize,
+          child: Center(
+            child: ParticipantAvatar(
+              uid: uid,
+              name: seat['name']?.toString(),
+              avatarUrl: seat['profile_pic']?.toString(),
+              avatarFrameUrl: (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
+              isHost: isHostSeat,
+              isAdmin: seat['isAdmin'] == true,
+              communityRole: seat['communityRole']?.toString(),
+              isVerified: seat['isVerified'] == true,
+              isMuted: isMuted,
+              isSpeaking: isSpeaking,
+              isSelf: uid == myUid,
+              size: avatarSize,
+            ),
           ),
         ),
       );
     }
 
-    // Determine locked state
     final bool isLocked = seat?['isLocked'] == true;
-
     if (isLocked) {
-      return _buildLockedSeat(index, seatWidth, avatarSize);
+      return _buildLockedSeat(index, seatWidth, avatarSize, seatHeight);
     }
-
-    return _buildEmptySeat(index, seatWidth, avatarSize);
+    return _buildEmptySeat(index, seatWidth, avatarSize, seatHeight);
   }
 
-  Widget _buildEmptySeat(int index, double seatWidth, double avatarSize) {
+  Widget _buildEmptySeat(int index, double seatWidth, double avatarSize, double seatHeight) {
     final String seatText = seatsInitialized
         ? (isHost && index != 0 ? 'Hold to lock' : 'Hold to lock')
         : 'Syncing...';
 
     return SizedBox(
       width: seatWidth,
+      height: seatHeight,
       child: GestureDetector(
         onTap: seatsInitialized ? () => onEmptySeatTap?.call(index) : null,
         onLongPress: seatsInitialized ? () => onEmptySeatLongPress?.call(index) : null,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
               width: avatarSize,
@@ -216,16 +220,18 @@ class GridSeatingLayout extends StatelessWidget {
     );
   }
 
-  Widget _buildLockedSeat(int index, double seatWidth, double avatarSize) {
+  Widget _buildLockedSeat(int index, double seatWidth, double avatarSize, double seatHeight) {
     final String label = isHost && index != 0 ? 'Hold to unlock' : 'Seat ${index + 1}';
 
     return SizedBox(
       width: seatWidth,
+      height: seatHeight,
       child: GestureDetector(
         onTap: () => onLockedSeatTap?.call(index),
         onLongPress: () => onEmptySeatLongPress?.call(index),
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             SizedBox(
               width: avatarSize,

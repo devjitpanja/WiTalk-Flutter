@@ -1,19 +1,6 @@
 {
   "permissions": {
-    "allow": [
-      "Bash(ls \"/Users/dev/Documents/App Development/React Native/witalk\" 2>/dev/null || echo \"NOT FOUND\")",
-      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/**)",
-      "Bash(ls ~/Library/Android/sdk/ndk/ 2>/dev/null)",
-      "Read(//Users/dev/Library/Android/sdk/ndk/**)",
-      "Bash(/opt/homebrew/bin/flutter run *)",
-      "Bash(grep -r \"ndkVersion\\\\|ndk {\" \"/Users/dev/Documents/App Development/React Native/witalk/frontend/android/app/build.gradle\" 2>/dev/null)",
-      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/android/app/**)",
-      "Bash(find \"/Users/dev/Documents/App Development/React Native/witalk/frontend/src/theme\" -type f | sort 2>/dev/null; find \"/Users/dev/Documents/App Development/React Native/witalk/frontend/src/assets\" -mindepth 1 -maxdepth 2 | sort 2>/dev/null)",
-      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/src/theme/**)",
-      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/src/assets/**)",
-      "Bash(grep -r \"OneSignal\\\\|onesignal_app_id\\\\|setAppId\\\\|OneSignalAppId\" \"/Users/dev/Documents/App Development/React Native/witalk/frontend\" --include=\"*.js\" --include=\"*.jsx\" --include=\"*.ts\" --include=\"*.tsx\" -l 2>/dev/null | grep -v node_modules | grep -v \".git\")",
-      "Read(//Users/dev/Documents/App Development/React Native/WiTalk/frontend/**)",
-      "Bash(python3 -)"
-    ]
-  }
+    "defaultMode": "bypassPermissions"
+  },
+  "skipDangerousModePermissionPrompt": true
 }
