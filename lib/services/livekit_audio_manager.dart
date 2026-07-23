@@ -31,6 +31,9 @@ class LiveKitAudioManager {
   // ── State ──────────────────────────────────────────────────────────────────
   Room? _room;
 
+  /// Exposed for providers that need to read raw participant/track state.
+  Room? get room => _room;
+
   bool isInitialized = false;
   String? currentRoomId;
   String? currentUserId;
@@ -41,10 +44,13 @@ class LiveKitAudioManager {
   bool isMuted = true;
   int currentSeatIndex = -1;
   String audioOutputMode = 'speaker';
+  bool isBluetoothAvailable = false;
 
   bool _destroyed = false;
   bool _isTearingDown = false;
   bool _isReconnecting = false;
+
+  StreamSubscription<List<MediaDevice>>? _deviceChangeSub;
 
   EventsListener<RoomEvent>? _roomEventsListener;
 
@@ -63,6 +69,52 @@ class LiveKitAudioManager {
       print('[LiveKitAudioManager] Pre-warming LiveKit WS connection to $url');
     }
     // Dart SDK does not expose prepareConnection — no-op.
+  }
+
+  // ── Bluetooth detection ────────────────────────────────────────────────────
+  static bool _isBluetoothDevice(MediaDevice d) {
+    final label = d.label.toLowerCase();
+    return label.contains('bluetooth') || label.contains('bt ') || label.contains(' bt');
+  }
+
+  Future<void> refreshBluetoothAvailability() async {
+    try {
+      final devices = await Hardware.instance.enumerateDevices();
+      final hasBt = devices.any(_isBluetoothDevice);
+      if (hasBt != isBluetoothAvailable) {
+        isBluetoothAvailable = hasBt;
+        _emit(LiveKitAudioEvents.speakerStateChanged, {
+          'enabled': audioOutputMode == 'speaker',
+          'mode': audioOutputMode,
+          'bluetoothAvailable': hasBt,
+        });
+      }
+    } catch (_) {}
+  }
+
+  void startDeviceMonitoring() {
+    _deviceChangeSub?.cancel();
+    refreshBluetoothAvailability();
+    _deviceChangeSub = Hardware.instance.onDeviceChange.stream.listen((devices) {
+      final hasBt = devices.any(_isBluetoothDevice);
+      if (hasBt != isBluetoothAvailable) {
+        isBluetoothAvailable = hasBt;
+        // If BT disconnected while using BT mode, fall back to speaker
+        if (!hasBt && audioOutputMode == 'bluetooth') {
+          setAudioOutputMode('speaker');
+        }
+        _emit(LiveKitAudioEvents.speakerStateChanged, {
+          'enabled': audioOutputMode == 'speaker',
+          'mode': audioOutputMode,
+          'bluetoothAvailable': hasBt,
+        });
+      }
+    });
+  }
+
+  void stopDeviceMonitoring() {
+    _deviceChangeSub?.cancel();
+    _deviceChangeSub = null;
   }
 
   // ── joinRoom ───────────────────────────────────────────────────────────────
@@ -143,6 +195,22 @@ class LiveKitAudioManager {
       currentUserName = userName;
       isInitialized = true;
       isConnected = true;
+
+      // Start monitoring audio device changes (Bluetooth detection)
+      startDeviceMonitoring();
+
+      // Emit initial track states for already-subscribed remote participants
+      // (participants who were already in the room before we joined).
+      for (final entry in _room!.remoteParticipants.entries) {
+        final p = entry.value;
+        final pub = p.getTrackPublicationBySource(TrackSource.microphone);
+        if (pub != null) {
+          _emit(LiveKitAudioEvents.streamUpdate, {
+            'userID': p.identity,
+            'isMicOn': !pub.muted,
+          });
+        }
+      }
 
       if (kDebugMode) {
         print('[LiveKitAudioManager] Connected to room $roomId as $userId');
@@ -474,6 +542,16 @@ class LiveKitAudioManager {
     });
   }
 
+  /// Set the local playback volume (0.0–1.0) for a remote participant.
+  /// The Flutter LiveKit SDK does not expose per-track volume control —
+  /// this is a no-op that emits an event so the UI stays in sync.
+  void setParticipantVolume(String userId, double volume) {
+    _emit('participantVolumeChanged', {
+      'userID': userId,
+      'volume': volume.clamp(0.0, 1.0),
+    });
+  }
+
   /// Set audio output mode: 'speaker', 'earpiece', or 'bluetooth'.
   Future<void> setAudioOutputMode(String mode) async {
     audioOutputMode = mode;
@@ -524,6 +602,7 @@ class LiveKitAudioManager {
   }
 
   void dispose() {
+    stopDeviceMonitoring();
     _teardownRoom();
     _eventController.close();
   }

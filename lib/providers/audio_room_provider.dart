@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dio/dio.dart' show DioException;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:livekit_client/livekit_client.dart' show TrackSource;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/livekit_audio_manager.dart';
 import '../services/socket_service.dart';
@@ -59,6 +60,7 @@ class AudioRoomState {
   final String? activeSpeakerUid;
   final Map<String, double> soundLevels; // uid → 0.0-1.0
   final String audioOutputMode; // 'speaker' | 'earpiece' | 'bluetooth'
+  final bool isBluetoothAvailable;
 
   // ── Chat ───────────────────────────────────────────────────────────────────
   final List<Map<String, dynamic>> chatMessages;
@@ -159,6 +161,7 @@ class AudioRoomState {
     this.activeSpeakerUid,
     this.soundLevels = const {},
     this.audioOutputMode = 'speaker',
+    this.isBluetoothAvailable = false,
     this.chatMessages = const [],
     this.pinnedMessage,
     this.pinnedLocallyDismissed = false,
@@ -238,6 +241,7 @@ class AudioRoomState {
     Object? activeSpeakerUid = _sentinel,
     Map<String, double>? soundLevels,
     String? audioOutputMode,
+    bool? isBluetoothAvailable,
     List<Map<String, dynamic>>? chatMessages,
     Object? pinnedMessage = _sentinel,
     bool? pinnedLocallyDismissed,
@@ -320,6 +324,7 @@ class AudioRoomState {
           : activeSpeakerUid as String?,
       soundLevels: soundLevels ?? this.soundLevels,
       audioOutputMode: audioOutputMode ?? this.audioOutputMode,
+      isBluetoothAvailable: isBluetoothAvailable ?? this.isBluetoothAvailable,
       chatMessages: chatMessages ?? this.chatMessages,
       pinnedMessage: pinnedMessage == _sentinel
           ? this.pinnedMessage
@@ -970,6 +975,16 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         case LiveKitAudioEvents.activeSpeakerChanged:
           final speakerUid = event['activeSpeakerUid'] as String?;
           state = state.copyWith(activeSpeakerUid: speakerUid);
+          break;
+
+        // ── Speaker / Bluetooth state changed ─────────────────────────────
+        case LiveKitAudioEvents.speakerStateChanged:
+          final mode = event['mode']?.toString() ?? state.audioOutputMode;
+          final btAvail = event['bluetoothAvailable'] as bool?;
+          state = state.copyWith(
+            audioOutputMode: mode,
+            isBluetoothAvailable: btAvail ?? state.isBluetoothAvailable,
+          );
           break;
 
         // ── LiveKit data channel roomCommands ──────────────────────────────
@@ -1773,6 +1788,10 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     final seatedUids = newSeats.whereType<String>().toList();
     _participantManager.fetchMissingSeatedProfiles(seatedUids);
 
+    // Sync actual LiveKit track mute states into participant manager so
+    // the grid reflects reality (not the default isMuted=true from seed).
+    _syncLiveKitMicStates(myUid);
+
     state = state.copyWith(
       speakers: _buildSpeakersFromSeatManager(hostUid, myUid),
       audience: _buildAudienceFromProfiles(hostUid),
@@ -1786,6 +1805,30 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       participantProfiles: Map<String, Map<String, dynamic>>.from(
           _participantManager.profiles),
     );
+  }
+
+  // ── _syncLiveKitMicStates ─────────────────────────────────────────────────
+  /// Reads the actual muted state of every remote participant from the LiveKit
+  /// room and pushes it into the participant manager. Called after seat_state
+  /// to fix the "everyone shows muted" bug caused by isMuted=true defaults.
+  void _syncLiveKitMicStates(String myUid) {
+    final room = liveKitAudioManager.room;
+    if (room == null) return;
+    for (final entry in room.remoteParticipants.entries) {
+      final participant = entry.value;
+      final uid = participant.identity;
+      final pub = participant.getTrackPublicationBySource(TrackSource.microphone);
+      if (pub != null) {
+        final isMicOn = !pub.muted;
+        _participantManager.updateParticipantMic(uid, isMicOn);
+      }
+    }
+    // Also sync local (self)
+    final localPub = room.localParticipant?.getTrackPublicationBySource(TrackSource.microphone);
+    if (localPub != null) {
+      final isMicOn = !localPub.muted;
+      _participantManager.updateParticipantMic(myUid, isMicOn);
+    }
   }
 
   // ── _buildSpeakersFromSeatManager ─────────────────────────────────────────
@@ -2650,12 +2693,20 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   // ══════════════════════════════════════════════════════════════════
 
   Future<void> setAudioOutputMode(String mode) async {
-    state = state.copyWith(audioOutputMode: mode);
+    // Guard: don't switch to bluetooth if it's not actually available
+    final effectiveMode = (mode == 'bluetooth' && !liveKitAudioManager.isBluetoothAvailable)
+        ? 'speaker'
+        : mode;
+    state = state.copyWith(audioOutputMode: effectiveMode);
     try {
-      await liveKitAudioManager.setAudioOutputMode(mode);
+      await liveKitAudioManager.setAudioOutputMode(effectiveMode);
     } catch (e) {
       if (kDebugMode) print('[AudioRoomProvider] setAudioOutputMode error: $e');
     }
+  }
+
+  void setParticipantVolume(String userId, double volume) {
+    liveKitAudioManager.setParticipantVolume(userId, volume);
   }
 
   // ══════════════════════════════════════════════════════════════════

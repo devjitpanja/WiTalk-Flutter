@@ -107,6 +107,40 @@ class AudioRoomService {
     }
   }
 
+  /// Toggle follow/unfollow a user.
+  /// Returns { success, following } where following=true means now following.
+  Future<Map<String, dynamic>> toggleFollowUser(
+      String currentUserId, String targetUserId) async {
+    try {
+      final res = await dioClient.post(
+        '/v1/followers/toggle',
+        data: {'followerId': currentUserId, 'followingId': targetUserId},
+      );
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] toggleFollowUser error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get follow status of the current user towards a target user.
+  Future<bool> getFollowStatus(
+      String currentUserId, String targetUserId) async {
+    try {
+      final res = await dioClient.get(
+        '/v1/followers/$currentUserId/status/$targetUserId',
+      );
+      final d = res.data;
+      if (d is Map) {
+        return d['is_following'] == true || d['following'] == true;
+      }
+      return false;
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] getFollowStatus error: $e');
+      return false;
+    }
+  }
+
   /// Delete a scheduled room
   Future<Map<String, dynamic>> deleteScheduledRoom(String roomId) async {
     try {

@@ -183,71 +183,75 @@ class ParticipantAvatar extends StatelessWidget {
 
           if (showName) ...[
             const SizedBox(height: 3),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (isHost) ...[
-                  Container(
-                    width: roleBadgeSize,
-                    height: roleBadgeSize,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFF0751DF),
+            SizedBox(
+              width: outerSize,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (isHost) ...[
+                    Container(
+                      width: roleBadgeSize,
+                      height: roleBadgeSize,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF0751DF),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.stars,
+                        size: roleBadgeSize * 0.7,
+                        color: Colors.white,
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.stars,
-                      size: roleBadgeSize * 0.7,
-                      color: Colors.white,
+                    const SizedBox(width: 3),
+                  ] else if (communityRole == 'super_admin') ...[
+                    Container(
+                      width: roleBadgeSize,
+                      height: roleBadgeSize,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFE84040),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
                     ),
-                  ),
-                  const SizedBox(width: 3),
-                ] else if (communityRole == 'super_admin') ...[
-                  Container(
-                    width: roleBadgeSize,
-                    height: roleBadgeSize,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFFE84040),
+                    const SizedBox(width: 3),
+                  ] else if (communityRole == 'admin' || isAdmin) ...[
+                    Container(
+                      width: roleBadgeSize,
+                      height: roleBadgeSize,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFFFFA726),
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
                     ),
-                    alignment: Alignment.center,
-                    child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
-                  ),
-                  const SizedBox(width: 3),
-                ] else if (communityRole == 'admin' || isAdmin) ...[
-                  Container(
-                    width: roleBadgeSize,
-                    height: roleBadgeSize,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0xFFFFA726),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
-                  ),
-                  const SizedBox(width: 3),
-                ],
+                    const SizedBox(width: 3),
+                  ],
 
-                if (isVerified && !isHost && communityRole != 'super_admin' && communityRole != 'admin' && !isAdmin) ...[
-                  const Icon(Icons.verified_rounded, size: 12, color: Color(0xFF0751DF)),
-                  const SizedBox(width: 2),
-                ],
-
-                Flexible(
-                  child: Text(
-                    firstName,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: nameFontSize,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w600,
+                  Flexible(
+                    child: Text(
+                      firstName,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: nameFontSize,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
-                ),
-              ],
+
+                  if (isVerified && !isHost && communityRole != 'super_admin' && communityRole != 'admin' && !isAdmin) ...[
+                    const SizedBox(width: 2),
+                    const Icon(Icons.verified_rounded, size: 10, color: Color(0xFF0751DF)),
+                  ],
+                ],
+              ),
             ),
           ],
         ],

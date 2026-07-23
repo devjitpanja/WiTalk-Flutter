@@ -119,28 +119,70 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
     if (uid == null || uid.isEmpty) return;
     setState(() => _initialLoading = true);
     try {
-      final data = await audioRoomService.getUserProfile(uid);
-      if (data != null && mounted) {
-        setState(() => _userProfileData = data);
+      // Fetch profile and follow status in parallel
+      final futures = await Future.wait([
+        audioRoomService.getUserProfile(uid),
+        if (widget.currentUserId != null && widget.currentUserId!.isNotEmpty && widget.currentUserId != uid)
+          audioRoomService.getFollowStatus(widget.currentUserId!, uid)
+        else
+          Future.value(false),
+      ]);
+      if (mounted) {
+        final profileData = futures[0] as Map<String, dynamic>?;
+        final isFollowing = futures[1] as bool;
+        setState(() {
+          if (profileData != null) _userProfileData = profileData;
+          _isFollowing = isFollowing;
+        });
       }
     } catch (_) {}
     if (mounted) setState(() => _initialLoading = false);
   }
 
   void _handleFollowToggle() async {
-    if (widget.participant?['userID'] == null || widget.participant!['userID'] == widget.currentUserId) return;
-    setState(() => _followLoading = true);
-    
-    // Simulate API call
-    await Future.delayed(const Duration(milliseconds: 500));
-    
+    final targetUid = widget.participant?['userID']?.toString();
+    if (targetUid == null || targetUid.isEmpty || targetUid == widget.currentUserId) return;
+    if (widget.currentUserId == null || widget.currentUserId!.isEmpty) return;
+
+    // Optimistic update
+    final wasFollowing = _isFollowing;
     setState(() {
-      _isFollowing = !_isFollowing;
-      _followLoading = false;
+      _isFollowing = !wasFollowing;
+      _followLoading = true;
     });
-    
-    if (_isFollowing && widget.participant!['userID'] == widget.hostUid) {
-      widget.onFollowHost?.call();
+
+    try {
+      final result = await audioRoomService.toggleFollowUser(widget.currentUserId!, targetUid);
+      if (mounted) {
+        // Server may return explicit state; if not, keep the optimistic value
+        bool nowFollowing;
+        if (result.containsKey('following')) {
+          nowFollowing = result['following'] == true;
+        } else if (result.containsKey('is_following')) {
+          nowFollowing = result['is_following'] == true;
+        } else if (result.containsKey('data') && result['data'] is Map) {
+          final d = result['data'] as Map;
+          nowFollowing = d['following'] == true || d['is_following'] == true;
+        } else {
+          // No explicit field — keep the optimistic toggle
+          nowFollowing = !wasFollowing;
+        }
+        setState(() {
+          _isFollowing = nowFollowing;
+          _followLoading = false;
+        });
+        if (_isFollowing && targetUid == widget.hostUid) {
+          widget.onFollowHost?.call();
+        }
+      }
+    } catch (_) {
+      // Revert on error
+      if (mounted) {
+        setState(() {
+          _isFollowing = wasFollowing;
+          _followLoading = false;
+        });
+      }
     }
   }
 
@@ -527,7 +569,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                   onTap: widget.actionsFrozen ? null : () {
                                     final next = math.max(0.0, ((_localVolume - 0.1) * 10).roundToDouble() / 10);
                                     setState(() => _localVolume = next);
-                                    widget.onSetVolume?.call(participant['userID'], next);
+                                    widget.onSetVolume?.call(participant['userID']?.toString() ?? '', next);
                                   },
                                 ),
                                 const SizedBox(width: 8),
@@ -538,19 +580,23 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                     children: List.generate(10, (i) {
                                       final isFilled = i < (_localVolume * 10).round();
                                       return GestureDetector(
+                                        behavior: HitTestBehavior.opaque,
                                         onTap: widget.actionsFrozen ? null : () {
                                           final next = (i + 1) / 10.0;
                                           setState(() => _localVolume = next);
-                                          widget.onSetVolume?.call(participant['userID'], next);
+                                          widget.onSetVolume?.call(participant['userID']?.toString() ?? '', next);
                                         },
-                                        child: Container(
-                                          width: 8,
-                                          height: 8.0 + (i * 2.0),
-                                          decoration: BoxDecoration(
-                                            color: isFilled 
-                                                ? (widget.actionsFrozen ? const Color(0xFF4A90E2).withOpacity(0.25) : const Color(0xFF4A90E2))
-                                                : Colors.white.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(2),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 6),
+                                          child: Container(
+                                            width: 8,
+                                            height: 8.0 + (i * 2.0),
+                                            decoration: BoxDecoration(
+                                              color: isFilled
+                                                  ? (widget.actionsFrozen ? const Color(0xFF4A90E2).withOpacity(0.25) : const Color(0xFF4A90E2))
+                                                  : Colors.white.withOpacity(0.1),
+                                              borderRadius: BorderRadius.circular(2),
+                                            ),
                                           ),
                                         ),
                                       );
@@ -563,7 +609,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                   onTap: widget.actionsFrozen ? null : () {
                                     final next = math.min(1.0, ((_localVolume + 0.1) * 10).roundToDouble() / 10);
                                     setState(() => _localVolume = next);
-                                    widget.onSetVolume?.call(participant['userID'], next);
+                                    widget.onSetVolume?.call(participant['userID']?.toString() ?? '', next);
                                   },
                                 ),
                                 const SizedBox(width: 8),

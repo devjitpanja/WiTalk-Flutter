@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/audio_room_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/audio_room/grid_seating_layout.dart';
@@ -502,12 +503,27 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       }
     });
 
-    // Loading state
-    if (roomState.isLoading) {
+    // Loading state — either initial join or waiting for seat state sync
+    if (roomState.isLoading || (!roomState.seatsInitialized && roomState.isConnected && roomState.error == null)) {
       return Scaffold(
         backgroundColor: _kBg,
-        body: const Center(
-          child: CircularProgressIndicator(color: _kPrimary),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(color: _kPrimary),
+              const SizedBox(height: 20),
+              Text(
+                roomState.isLoading ? 'Joining Adda...' : 'Syncing stage...',
+                style: const TextStyle(
+                  color: Color(0xCCEBEBF5),
+                  fontSize: 16,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
         ),
       );
     }
@@ -882,7 +898,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       for (final sp in s.speakers) {
         final spUid = sp['uid']?.toString().trim();
         if (sp['isEmpty'] != true && spUid != null && spUid.isNotEmpty && spUid != 'null') {
-          if (sp['seatIndex'] == index || (index == 0 && spUid == s.hostUid)) {
+          if (sp['seatIndex'] == index) {
             occupant = sp;
             break;
           }
@@ -1013,8 +1029,10 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             ),
             clipBehavior: Clip.antiAlias,
             child: senderPic != null && senderPic.isNotEmpty
-                ? Image.network(senderPic, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Center(
+                ? CachedNetworkImage(
+                    imageUrl: senderPic,
+                    fit: BoxFit.cover,
+                    errorWidget: (_, __, ___) => Center(
                       child: Text(
                         sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
                         style: const TextStyle(
@@ -1024,7 +1042,19 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                           fontWeight: FontWeight.w600,
                         ),
                       ),
-                    ))
+                    ),
+                    placeholder: (_, __) => Center(
+                      child: Text(
+                        sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  )
                 : Center(
                     child: Text(
                       sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
@@ -1268,6 +1298,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       maxSeats: s.maxSeats,
       seatsState: s.speakers,
       onFollowHost: () {},
+      onSetVolume: (userId, volume) =>
+          ref.read(audioRoomProvider.notifier).setParticipantVolume(userId, volume),
       onMute: !isSelf && isAuthority
           ? (p) => ref.read(audioRoomProvider.notifier).muteParticipant(uid)
           : null,
@@ -1320,12 +1352,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   // ── Audio output options ───────────────────────────────────────────────────
   void _showAudioOutputOptions() {
-    final current = ref.read(audioRoomProvider).audioOutputMode;
+    final s = ref.read(audioRoomProvider);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _AudioOutputSheet(
-        currentMode: current,
+        currentMode: s.audioOutputMode,
+        bluetoothAvailable: s.isBluetoothAvailable,
         onSelect: (mode) {
           ref.read(audioRoomProvider.notifier).setAudioOutputMode(mode);
         },
@@ -1723,14 +1756,31 @@ class _AudienceListSheet extends StatelessWidget {
                   final pic = m['profile_pic']?.toString();
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: CircleAvatar(
-                      radius: 18,
-                      backgroundImage: (pic != null && pic.isNotEmpty) ? NetworkImage(pic) : null,
-                      backgroundColor: const Color(0x1A0751DF),
-                      child: (pic == null || pic.isEmpty)
-                          ? Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                              style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600))
-                          : null,
+                    leading: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0x1A0751DF),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: (pic != null && pic.isNotEmpty)
+                          ? CachedNetworkImage(
+                              imageUrl: pic,
+                              fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Center(
+                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                                    style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                              ),
+                              placeholder: (_, __) => Center(
+                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                                    style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                              ),
+                            )
+                          : Center(
+                              child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                                  style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                            ),
                     ),
                     title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),
                   );
@@ -1746,8 +1796,13 @@ class _AudienceListSheet extends StatelessWidget {
 
 class _AudioOutputSheet extends StatelessWidget {
   final String currentMode;
+  final bool bluetoothAvailable;
   final void Function(String mode) onSelect;
-  const _AudioOutputSheet({required this.currentMode, required this.onSelect});
+  const _AudioOutputSheet({
+    required this.currentMode,
+    required this.onSelect,
+    this.bluetoothAvailable = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1765,7 +1820,8 @@ class _AudioOutputSheet extends StatelessWidget {
           const SizedBox(height: 12),
           _audioOption(context, 'speaker', Icons.volume_up, 'Loudspeaker'),
           _audioOption(context, 'earpiece', Icons.hearing, 'Earpiece'),
-          _audioOption(context, 'bluetooth', Icons.bluetooth_audio, 'Bluetooth'),
+          if (bluetoothAvailable)
+            _audioOption(context, 'bluetooth', Icons.bluetooth_audio, 'Bluetooth'),
         ],
       ),
     );
