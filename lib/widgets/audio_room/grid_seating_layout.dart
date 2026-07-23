@@ -136,6 +136,7 @@ class GridSeatingLayout extends StatelessWidget {
               isAdmin: seat['isAdmin'] == true,
               communityRole: seat['communityRole']?.toString(),
               isVerified: seat['isVerified'] == true,
+              verificationBadge: seat['verificationBadge'] as Map<String, dynamic>?,
               isMuted: isMuted,
               isSpeaking: isSpeaking,
               isSelf: uid == myUid,
@@ -322,22 +323,27 @@ class GridSeatingLayout extends StatelessWidget {
           GestureDetector(
             onTap: onShowAudienceList,
             child: Container(
-              width: 32,
-              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                shape: BoxShape.circle,
                 color: const Color(0x334A90E2),
+                borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: const Color(0xFF4A90E2), width: 1.5),
               ),
-              alignment: Alignment.center,
-              child: Text(
-                '${audience.length}',
-                style: const TextStyle(
-                  color: Color(0xFF4A90E2),
-                  fontSize: 11,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700,
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.people, size: 14, color: Color(0xFF4A90E2)),
+                  const SizedBox(width: 4),
+                  Text(
+                    '${audience.length}',
+                    style: const TextStyle(
+                      color: Color(0xFF4A90E2),
+                      fontSize: 12,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

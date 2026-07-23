@@ -919,6 +919,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           'isAdmin': occupant['isAdmin'] == true,
           'communityRole': occupant['communityRole']?.toString(),
           'isVerified': occupant['isVerified'] == true,
+          'verificationBadge': occupant['verificationBadge'],
           'isMuted': occupant['isMuted'] == true,
           'isSelf': uid == myUid,
           'seatIndex': index,

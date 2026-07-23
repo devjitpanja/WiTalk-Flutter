@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'sound_wave_indicator.dart';
+import '../common/verification_badge.dart';
 
 /// Seat avatar for the audio room grid.
 ///
 /// Speaking styles:
-///  • No frame  → animated glowing ring around the circle
-///  • Has frame → no ring (would clash with frame art); animated wave bars
-///               appear at the bottom edge of the frame instead
+///  • No frame  → animated water-drop ripple rings around the circle
+///  • Has frame → wave bars appear at the bottom edge of the frame
+///
+/// Verification badge (if isVerified): green circle at 225° (bottom-left)
+/// of the avatar circle, overlapping the edge.
 class ParticipantAvatar extends StatelessWidget {
   final String? uid;
   final String? name;
@@ -17,6 +20,7 @@ class ParticipantAvatar extends StatelessWidget {
   final bool isAdmin;
   final String? communityRole;
   final bool isVerified;
+  final Map<String, dynamic>? verificationBadge;
   final bool isMuted;
   final bool isSpeaking;
   final bool isSelf;
@@ -34,6 +38,7 @@ class ParticipantAvatar extends StatelessWidget {
     this.isAdmin = false,
     this.communityRole,
     this.isVerified = false,
+    this.verificationBadge,
     this.isMuted = true,
     this.isSpeaking = false,
     this.isSelf = false,
@@ -72,9 +77,17 @@ class ParticipantAvatar extends StatelessWidget {
     final roleBadgeSize = (size * 0.27).clamp(12.0, 18.0);
     final nameFontSize = (size * 0.20).clamp(9.0, 11.0);
 
-    // Always use size * 1.5 so every seat cell is the same height regardless
-    // of whether a frame is present. The ring is drawn inside this box for
-    // non-framed avatars; the frame image fills it for framed avatars.
+    // Badge sits on the avatar circle edge at 225° (bottom-left).
+    // Avatar circle center in Stack coords: (outerSize/2, outerSize/2)
+    // At 225°: dx = dy = -size/2 * sin(45°) ≈ -0.3536 * size
+    // Badge center in stack:
+    //   left  = outerSize/2 + dx = size*0.75 - 0.3536*size*0.5 = ~0.573*size
+    //   bottom = outerSize/2 + dy (same)
+    // Positioned(left/bottom) = badgeCenter - badgeSize/2
+    final badgeSize = (size * 0.30).clamp(14.0, 20.0);
+    final badgeCenterFromEdge = size * 0.573;
+    final badgeOffset = badgeCenterFromEdge - badgeSize / 2;
+
     const double outerMult = 1.5;
     final outerSize = size * outerMult;
 
@@ -90,9 +103,9 @@ class ParticipantAvatar extends StatelessWidget {
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                // ── Speaking ring (only when NO frame) ──────────────────────
+                // ── Speaking ripple / border (only when NO frame) ─────────────
                 if (isSpeaking && !hasFrame)
-                  _SpeakingRing(size: size)
+                  _WaterDropRipple(size: size)
                 else if (!hasFrame && isHost)
                   Container(
                     width: size + 4,
@@ -118,7 +131,7 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // ── Avatar circle ────────────────────────────────────────────
+                // ── Avatar circle ─────────────────────────────────────────────
                 Container(
                   width: size,
                   height: size,
@@ -137,7 +150,7 @@ class ParticipantAvatar extends StatelessWidget {
                       : _buildInitialAvatar(initial),
                 ),
 
-                // ── Muted overlay ────────────────────────────────────────────
+                // ── Muted overlay ─────────────────────────────────────────────
                 if (isMuted)
                   Container(
                     width: size,
@@ -154,7 +167,7 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // ── Frame overlay (above avatar, clips to SizedBox) ──────────
+                // ── Frame overlay (above avatar) ──────────────────────────────
                 if (hasFrame)
                   Positioned.fill(
                     child: CachedNetworkImage(
@@ -175,6 +188,27 @@ class ParticipantAvatar extends StatelessWidget {
                       barWidth: 2.5,
                       minHeight: 4,
                       maxHeight: 10,
+                    ),
+                  ),
+
+                // ── Verification badge at 225° (bottom-left of avatar circle) ─
+                if (isVerified)
+                  Positioned(
+                    left: badgeOffset,
+                    bottom: badgeOffset,
+                    child: Container(
+                      width: badgeSize,
+                      height: badgeSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF0D1017),
+                      ),
+                      alignment: Alignment.center,
+                      child: VerificationBadge(
+                        isVerified: true,
+                        badge: verificationBadge,
+                        size: badgeSize * 0.85,
+                      ),
                     ),
                   ),
               ],
@@ -245,11 +279,6 @@ class ParticipantAvatar extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-
-                  if (isVerified && !isHost && communityRole != 'super_admin' && communityRole != 'admin' && !isAdmin) ...[
-                    const SizedBox(width: 2),
-                    const Icon(Icons.verified_rounded, size: 10, color: Color(0xFF0751DF)),
-                  ],
                 ],
               ),
             ),
@@ -276,30 +305,28 @@ class ParticipantAvatar extends StatelessWidget {
   }
 }
 
-// ── Animated glowing ring (no-frame speaking indicator) ─────────────────────
-class _SpeakingRing extends StatefulWidget {
+// ── Water-drop ripple speaking indicator (no-frame users) ────────────────────
+// Three staggered concentric rings that expand outward and fade, like a
+// water drop ripple effect.
+class _WaterDropRipple extends StatefulWidget {
   final double size;
-  const _SpeakingRing({required this.size});
+  const _WaterDropRipple({required this.size});
 
   @override
-  State<_SpeakingRing> createState() => _SpeakingRingState();
+  State<_WaterDropRipple> createState() => _WaterDropRippleState();
 }
 
-class _SpeakingRingState extends State<_SpeakingRing>
+class _WaterDropRippleState extends State<_WaterDropRipple>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
-  late final Animation<double> _scale;
 
   @override
   void initState() {
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..repeat(reverse: true);
-    _scale = Tween<double>(begin: 1.0, end: 1.12).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-    );
+      duration: const Duration(milliseconds: 1600),
+    )..repeat();
   }
 
   @override
@@ -310,26 +337,53 @@ class _SpeakingRingState extends State<_SpeakingRing>
 
   @override
   Widget build(BuildContext context) {
+    // Canvas size needs to accommodate the ripple spread beyond the avatar
+    final canvasSize = widget.size * 1.8;
     return AnimatedBuilder(
-      animation: _scale,
-      builder: (_, __) => Container(
-        width: (widget.size + 6) * _scale.value,
-        height: (widget.size + 6) * _scale.value,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: const Color(0xFF5B9AFF),
-            width: 2.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0x665B9AFF),
-              blurRadius: 6 + 4 * _ctrl.value,
-              spreadRadius: 1 + 2 * _ctrl.value,
-            ),
-          ],
+      animation: _ctrl,
+      builder: (_, __) => CustomPaint(
+        size: Size(canvasSize, canvasSize),
+        painter: _RipplePainter(
+          progress: _ctrl.value,
+          avatarRadius: widget.size / 2,
         ),
       ),
     );
   }
+}
+
+class _RipplePainter extends CustomPainter {
+  final double progress;
+  final double avatarRadius;
+
+  const _RipplePainter({required this.progress, required this.avatarRadius});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    const waves = 3;
+    // Maximum distance a wave travels beyond the avatar edge
+    final spread = avatarRadius * 0.5;
+
+    for (int i = 0; i < waves; i++) {
+      // Stagger each wave by 1/waves of the cycle
+      double t = (progress - i / waves) % 1.0;
+      if (t < 0) t += 1.0;
+
+      final r = avatarRadius + 2 + t * spread;
+      final opacity = (1.0 - t) * 0.65;
+
+      canvas.drawCircle(
+        center,
+        r,
+        Paint()
+          ..color = const Color(0xFF5B9AFF).withValues(alpha: opacity.clamp(0.0, 1.0))
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.2,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RipplePainter old) => old.progress != progress;
 }
