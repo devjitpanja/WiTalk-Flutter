@@ -13,6 +13,7 @@ import '../../api/dio_client.dart';
 import '../../services/post_view_tracking_service.dart';
 import '../../services/post_feedback_service.dart';
 import '../../services/global_video_settings.dart';
+import 'share_bottom_sheet.dart';
 import 'verification_badge.dart';
 
 // ─── Content parsing ────────────────────────────────────────────────────────
@@ -770,7 +771,13 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           iconColor: c.iconTint,
           count: (_p['shares'] ?? 0) as int,
           liked: false,
-          onTap: widget.isRemoved ? null : () {},
+          onTap: widget.isRemoved
+              ? null
+              : () => showShareBottomSheet(
+                    context,
+                    shareType: ShareType.post,
+                    postData: SharePostData.fromMap(_p),
+                  ),
           c: c,
         ),
       ]),

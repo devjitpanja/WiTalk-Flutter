@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:video_player/video_player.dart';
 import '../../api/dio_client.dart';
+import '../../widgets/common/share_bottom_sheet.dart';
 import '../../widgets/common/verification_badge.dart';
 
 // ─── Helper ──────────────────────────────────────────────────────────────────
@@ -612,7 +613,20 @@ class _MiniItemState extends State<_MiniItem> with SingleTickerProviderStateMixi
                 child: Image.asset('assets/icons/share.png', width: 26, height: 26,
                     color: Colors.white),
                 label: _formatCount(shares),
-                onTap: () {},
+                onTap: () => showShareBottomSheet(
+                  context,
+                  shareType: ShareType.post,
+                  postData: SharePostData(
+                    id: widget.post['id']?.toString(),
+                    suffix: widget.post['suffix']?.toString(),
+                    content: widget.post['content']?.toString(),
+                    userId: (widget.post['user_id'] ?? _user?['id'])?.toString(),
+                    user: _user,
+                    media: widget.post['media'],
+                    mediaType: 'video',
+                    isMini: true,
+                  ),
+                ),
               ),
             ]),
           ),

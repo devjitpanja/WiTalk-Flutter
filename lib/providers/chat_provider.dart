@@ -1313,6 +1313,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     if (_socket != null) {
       debugPrint('[CHAT] sendMessage — socket.connected=${_socket!.connected}  tempId=$tempId  convId=$conversationId');
+      // metadata and media_data must be JSON strings on the wire so that RN clients
+      // can JSON.parse() them — the server stores and echoes whatever it receives.
       _socket!.emit('send_message', {
         'conversation_id': conversationId,
         'sender_id': uid,
@@ -1320,9 +1322,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
         'content': content,
         'message_type': messageType,
         'media_url': mediaUrl,
-        'media_data': mediaData,
-        'metadata': metadata,
-        'link_preview': linkPreview,
+        'media_data': mediaData != null ? jsonEncode(mediaData) : null,
+        'metadata': metadata != null ? jsonEncode(metadata) : null,
+        'link_preview': linkPreview != null ? jsonEncode(linkPreview) : null,
         'reply_to_id': replyToId,
         'replyTo': replyTo,
         'temp_id': tempId,

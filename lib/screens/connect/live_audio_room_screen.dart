@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../providers/audio_room_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/audio_room/grid_seating_layout.dart';
+import '../../widgets/common/share_bottom_sheet.dart';
 import '../../widgets/audio_room/audio_room_bottom_bar.dart';
 import '../../widgets/audio_room/room_rules_banner.dart';
 import '../../widgets/audio_room/user_profile_bottom_sheet.dart';
@@ -182,9 +183,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   void _handleShareRoom() {
     final s = ref.read(audioRoomProvider);
-    Clipboard.setData(ClipboardData(
-        text: 'Join my Adda "${s.roomName}": https://witalk.app/room/${widget.roomId}'));
-    _showSnack('Room link copied to clipboard!');
+    showShareBottomSheet(
+      context,
+      shareType: ShareType.adda,
+      addaData: ShareAddaData(
+        roomId: widget.roomId,
+        roomName: s.roomName,
+        hostUid: s.hostUid,
+        inviteToken: s.roomInviteToken,
+        isPublic: s.isPublic,
+      ),
+    );
   }
 
   void _triggerReaction(String emoji) {
