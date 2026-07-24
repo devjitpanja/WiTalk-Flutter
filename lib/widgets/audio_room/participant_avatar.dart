@@ -78,16 +78,10 @@ class ParticipantAvatar extends StatelessWidget {
     final outerSize = size * outerMult;
     final nameFontSize = (size * 0.20).clamp(9.0, 11.0);
 
-    // Mic badge: positioned symmetrically to verification badge (315° vs 225°)
-    // Both badges use size * 0.573 as the center distance from stack edge
-    final micBadgeSize = (size * 0.28).clamp(12.0, 18.0);
-    final micBadgeCenterDist = size * 0.573;
-    final micBadgeOffset = micBadgeCenterDist - micBadgeSize / 2;
-
-    // Verification badge (225° bottom-left) — same formula as before
+    // Verification badge: anchored to the right edge of the avatar circle
     final verBadgeSize = (size * 0.30).clamp(14.0, 20.0);
-    final verBadgeCenterDist = size * 0.573;
-    final verBadgeOffset = verBadgeCenterDist - verBadgeSize / 2;
+    // distance from stack's right edge so badge center sits on avatar's right rim
+    final verBadgeRight = (size * 0.30 - verBadgeSize / 2).clamp(-verBadgeSize * 0.4, size * 0.25);
 
     // Role-based name color
     final Color nameColor;
@@ -123,27 +117,20 @@ class ParticipantAvatar extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFFFFB700),
-                        width: 2.0,
+                        color: Colors.white,
+                        width: 3.0,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFFFFB700).withValues(alpha: 0.30),
-                          blurRadius: 10,
-                          spreadRadius: 1,
-                        ),
-                      ],
                     ),
                   )
                 else if (!hasFrame)
                   Container(
-                    width: size + 4,
-                    height: size + 4,
+                    width: size + 6,
+                    height: size + 6,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.12),
-                        width: 1.5,
+                        color: Colors.white,
+                        width: 3.0,
                       ),
                     ),
                   ),
@@ -197,48 +184,37 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // ── Muted badge at bottom-right (315°) ───────────────────────
-                if (isMuted)
+                // ── Muted: black overlay (40%) + centered mic-off icon ────────
+                if (isMuted) ...[
                   Positioned(
-                    right: micBadgeOffset,
-                    bottom: micBadgeOffset,
-                    child: Container(
-                      width: micBadgeSize,
-                      height: micBadgeSize,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: const Color(0xFFEF4444),
-                        border: Border.all(
-                          color: const Color(0xFF090D18),
-                          width: 1.5,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFEF4444).withValues(alpha: 0.35),
-                            blurRadius: 4,
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.mic_off_rounded,
-                        size: micBadgeSize * 0.55,
-                        color: Colors.white,
+                    left: (outerSize - size) / 2,
+                    top: (outerSize - size) / 2,
+                    child: ClipOval(
+                      child: Container(
+                        width: size,
+                        height: size,
+                        color: Colors.black.withValues(alpha: 0.40),
                       ),
                     ),
                   ),
+                  Icon(
+                    Icons.mic_off_rounded,
+                    size: size * 0.38,
+                    color: Colors.white,
+                  ),
+                ],
 
-                // ── Verification badge at 225° (bottom-left) ─────────────────
-                if (isVerified)
+                // ── Verification badge: bottom-right, no badge when frame active
+                if (isVerified && !hasFrame)
                   Positioned(
-                    left: verBadgeOffset,
-                    bottom: verBadgeOffset,
+                    right: verBadgeRight,
+                    bottom: (outerSize - size) / 2 + verBadgeSize * 0.20,
                     child: Container(
                       width: verBadgeSize,
                       height: verBadgeSize,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0xFF090D18),
+                        color: Colors.white,
                       ),
                       alignment: Alignment.center,
                       child: VerificationBadge(
