@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
 import '../../api/dio_client.dart';
@@ -72,7 +74,7 @@ class MessageBubble extends StatelessWidget {
 
     Widget bubble = AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      color: isHighlighted ? c.primary.withOpacity(0.15) : Colors.transparent,
+      color: isHighlighted ? c.primary.withValues(alpha: 0.15) : Colors.transparent,
       padding: const EdgeInsets.only(bottom: 2),
       child: Column(
         crossAxisAlignment:
@@ -196,9 +198,13 @@ class _BubbleContent extends StatelessWidget {
 
   static final _addaRegex =
       RegExp(r'https?://witalk\.in/adda/([a-zA-Z0-9_-]+)', caseSensitive: false);
+  // Any witalk.in URL that is NOT an adda/post/mini/video link gets a card bubble
   static final _witalkRegex =
-      RegExp(r'https?://witalk\.in(/[^\s]*)', caseSensitive: false);
-  static const _witalkBubbleTypes = {'profile', 'userProfile', 'groupInvite', 'groupChat', 'group', 'community'};
+      RegExp(r'https?://witalk\.in/([^\s/?#]+)(?:/([^\s/?#]*))?', caseSensitive: false);
+  // These path prefixes are NOT entity links — skip card rendering for them
+  static const _witalkSkipPrefixes = {
+    'adda', 'p', 'm', 'post', 'video', 'mini',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -228,15 +234,16 @@ class _BubbleContent extends StatelessWidget {
         return _AudioBubble(
             message: message, isMyMessage: isMyMessage, c: c);
       case 'shared_post':
+      case 'shared_reel':
         return _SharedPostBubble(
             message: message, isMyMessage: isMyMessage, c: c);
       case 'shared_topic':
         return _SharedTopicBubble(
             message: message, isMyMessage: isMyMessage, c: c);
       default:
-        // Detect witalk.in adda links
         final content = message.content;
         if (content.isNotEmpty) {
+          // 1. Adda room links — dedicated invite card
           final addaMatch = _addaRegex.firstMatch(content);
           if (addaMatch != null) {
             return _AddaChatBubble(
@@ -246,18 +253,17 @@ class _BubbleContent extends StatelessWidget {
               c: c,
             );
           }
-          // Detect witalk.in profile/group/community links
+          // 2. Any other witalk.in URL → profile/group/community card
+          //    (username slugs, /group/code, /groupchat/id, etc.)
           final witalkMatch = _witalkRegex.firstMatch(content);
           if (witalkMatch != null) {
-            final path = witalkMatch.group(1) ?? '';
-            final segments = path.split('/').where((s) => s.isNotEmpty).toList();
-            final linkType = segments.isNotEmpty ? segments[0] : '';
-            if (_witalkBubbleTypes.contains(linkType)) {
+            final first = witalkMatch.group(1) ?? '';
+            if (!_witalkSkipPrefixes.contains(first.toLowerCase())) {
               return _WiTalkLinkBubble(
                 message: message,
                 isMyMessage: isMyMessage,
                 url: witalkMatch.group(0)!,
-                linkType: linkType,
+                linkType: first,
                 c: c,
               );
             }
@@ -361,13 +367,13 @@ class _TextBubble extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                       decoration: BoxDecoration(
                         color: _isOwner
-                            ? const Color(0xFFFFD700).withOpacity(0.2)
-                            : c.primary.withOpacity(0.15),
+                            ? const Color(0xFFFFD700).withValues(alpha: 0.2)
+                            : c.primary.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(4),
                         border: Border.all(
                           color: _isOwner
                               ? const Color(0xFFFFD700)
-                              : c.primary.withOpacity(0.4),
+                              : c.primary.withValues(alpha: 0.4),
                           width: 0.5,
                         ),
                       ),
@@ -434,22 +440,50 @@ class _RichText extends StatelessWidget {
     required this.c,
   });
 
-  static final _urlRegex = RegExp(r'(https?://[^\s]+)|(@\w+)');
+  static final _tokenRegex = RegExp(r'(https?://[^\s]+)|(@\w+)');
+
+  void _openUrl(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    // Route witalk.in deep links in-app
+    if (uri.host == 'witalk.in' || uri.host == 'www.witalk.in') {
+      final segs = uri.pathSegments.where((s) => s.isNotEmpty).toList();
+      if (segs.isNotEmpty) {
+        final first = segs[0];
+        if (first == 'adda' && segs.length >= 2) {
+          context.push('/live-audio/${segs[1]}');
+          return;
+        }
+        if (first == 'group' && segs.length >= 2) {
+          context.push('/chat/join-group', extra: {'inviteCode': segs[1]});
+          return;
+        }
+        if (first == 'groupchat' && segs.length >= 2) {
+          context.push('/chat/group/${segs[1]}');
+          return;
+        }
+        if (first == 'user' && segs.length >= 2) {
+          context.push('/user/${segs[1]}');
+          return;
+        }
+      }
+    }
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final matches = _urlRegex.allMatches(text);
+    final matches = _tokenRegex.allMatches(text);
     if (matches.isEmpty) {
       return Text(
         text,
-        style: TextStyle(
-            color: textColor,
-            fontSize: 15,
-            fontFamily: 'Outfit'),
+        style: TextStyle(color: textColor, fontSize: 15, fontFamily: 'Outfit'),
       );
     }
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     int last = 0;
     for (final match in matches) {
       if (match.start > last) {
@@ -459,28 +493,42 @@ class _RichText extends StatelessWidget {
       }
       final matched = match.group(0)!;
       if (matched.startsWith('@')) {
-        spans.add(TextSpan(
-          text: matched,
-          style: TextStyle(
-            color: isMyMessage
-                ? const Color(0xFF93C5FD)
-                : c.primary,
-            fontFamily: 'Outfit',
-            fontWeight: FontWeight.w600,
+        // @mention — navigate to user profile
+        final username = matched.substring(1);
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: GestureDetector(
+            onTap: () => context.push('/user/$username'),
+            child: Text(
+              matched,
+              style: TextStyle(
+                color: isMyMessage ? const Color(0xFF93C5FD) : c.primary,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+              ),
+            ),
           ),
-          recognizer: null,
         ));
       } else {
-        spans.add(TextSpan(
-          text: matched,
-          style: TextStyle(
-            color: isMyMessage
-                ? const Color(0xFFB8E0FF)
-                : c.primary,
-            fontFamily: 'Outfit',
-            decoration: TextDecoration.underline,
+        // URL — open in-app or external
+        final url = matched;
+        spans.add(WidgetSpan(
+          alignment: PlaceholderAlignment.baseline,
+          baseline: TextBaseline.alphabetic,
+          child: GestureDetector(
+            onTap: () => _openUrl(context, url),
+            child: Text(
+              url,
+              style: TextStyle(
+                color: isMyMessage ? const Color(0xFFB8E0FF) : c.primary,
+                fontFamily: 'Outfit',
+                fontSize: 15,
+                decoration: TextDecoration.underline,
+              ),
+            ),
           ),
-          recognizer: null,
         ));
       }
       last = match.end;
@@ -491,10 +539,7 @@ class _RichText extends StatelessWidget {
           style: TextStyle(color: textColor, fontFamily: 'Outfit')));
     }
 
-    return RichText(
-        text: TextSpan(
-            children: spans,
-            style: const TextStyle(fontSize: 15)));
+    return Text.rich(TextSpan(children: spans, style: const TextStyle(fontSize: 15)));
   }
 }
 
@@ -627,8 +672,8 @@ class _LinkPreviewCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         color: isMyMessage
-            ? Colors.white.withOpacity(0.12)
-            : c.border.withOpacity(0.3),
+            ? Colors.white.withValues(alpha: 0.12)
+            : c.border.withValues(alpha: 0.3),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -693,7 +738,7 @@ class _TimeStatus extends StatelessWidget {
   Widget build(BuildContext context) {
     final timeStr = _formatTime(message.createdAt);
     final color = isMyMessage
-        ? Colors.white.withOpacity(0.65)
+        ? Colors.white.withValues(alpha: 0.65)
         : c.textTertiary;
 
     return Row(
@@ -805,11 +850,11 @@ class _ImageBubble extends StatelessWidget {
             width: w,
             height: h,
             fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
+            placeholder: (ctx2, unused1) => Container(
                 width: w,
                 height: h,
                 color: c.surface),
-            errorWidget: (_, __, ___) => Container(
+            errorWidget: (ctx2, unused1, unused2) => Container(
               width: w,
               height: h,
               color: c.surface,
@@ -824,7 +869,7 @@ class _ImageBubble extends StatelessWidget {
               padding: const EdgeInsets.symmetric(
                   horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.45),
+                color: Colors.black.withValues(alpha: 0.45),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: _TimeStatus(
@@ -840,7 +885,7 @@ class _ImageBubble extends StatelessWidget {
               right: 0,
               child: Container(
                 padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-                color: Colors.black.withOpacity(0.4),
+                color: Colors.black.withValues(alpha: 0.4),
                 child: Text(
                   message.content,
                   maxLines: 3,
@@ -1154,6 +1199,9 @@ class _AudioBubble extends StatelessWidget {
 }
 
 // ── Shared Post Bubble ────────────────────────────────────────────────────────
+// Two layouts matching RN's SharedPostCard.jsx:
+//   - Reel/video (postType=='video'||'mini'): 4:5 portrait with header overlay + play button
+//   - Regular post: media image + header + caption below
 class _SharedPostBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isMyMessage;
@@ -1164,95 +1212,316 @@ class _SharedPostBubble extends StatelessWidget {
       required this.isMyMessage,
       required this.c});
 
+  void _navigate(BuildContext context) {
+    final meta = message.metadata;
+    if (meta == null) return;
+    final postType = meta['postType']?.toString() ?? meta['type']?.toString() ?? '';
+    final suffix = meta['suffix']?.toString();
+    final postId = meta['postId']?.toString() ?? meta['post_id']?.toString();
+
+    if (postType == 'video' || postType == 'mini') {
+      // Navigate to MiniScreen (reel viewer)
+      context.push('/mini', extra: {
+        'posts': [meta],
+        'initialIndex': 0,
+      });
+    } else if (suffix != null && suffix.isNotEmpty) {
+      context.push('/post-view/$suffix');
+    } else if (postId != null && postId.isNotEmpty) {
+      context.push('/post/$postId');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final meta = message.metadata;
-    final postImage = meta?['image'] ??
-        meta?['media_url'] ??
-        meta?['thumbnail'];
-    final postTitle =
-        meta?['caption'] ?? meta?['title'] ?? 'Shared Post';
-    final authorName = meta?['author_name'] ?? meta?['username'];
+    final postType = meta?['postType']?.toString() ?? '';
+    final isReel = postType == 'video' || postType == 'mini';
 
-    return Container(
-      constraints: const BoxConstraints(maxWidth: 280),
-      decoration: BoxDecoration(
-        color: isMyMessage ? c.primary : c.surface,
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(18),
-          topRight: const Radius.circular(18),
-          bottomLeft: Radius.circular(isMyMessage ? 18 : 4),
-          bottomRight: Radius.circular(isMyMessage ? 4 : 18),
+    // Media: prefer thumbnail for video, then media_url, then image
+    final mediaUrl = (meta?['thumbnail_url'] ?? meta?['media_url'] ?? meta?['image'])?.toString();
+    final videoUrl = (meta?['video_url'] ?? meta?['media_url'])?.toString();
+    final caption = (meta?['content'] ?? meta?['caption'] ?? meta?['title'] ?? '').toString();
+    final name = (meta?['name'])?.toString();
+    final username = (meta?['username'])?.toString();
+    final profilePic = (meta?['profile_pic'])?.toString();
+
+    if (isReel) {
+      return _buildReelLayout(context, mediaUrl, videoUrl, name, username, profilePic);
+    }
+    return _buildRegularLayout(context, mediaUrl, caption, name, username, profilePic);
+  }
+
+  // 4:5 portrait card matching RN's video/mini layout
+  Widget _buildReelLayout(BuildContext context, String? mediaUrl, String? videoUrl, String? name, String? username, String? profilePic) {
+    const width = 220.0;
+    const height = 275.0; // 4:5
+
+    return GestureDetector(
+      onTap: () => _navigate(context),
+      child: Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.black,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isMyMessage ? 18 : 4),
+            bottomRight: Radius.circular(isMyMessage ? 4 : 18),
+          ),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (postImage != null)
-            ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(18)),
-              child: CachedNetworkImage(
-                  imageUrl: postImage as String,
-                  height: 140,
-                  width: double.infinity,
-                  fit: BoxFit.cover),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(children: [
-                  Icon(Icons.article_outlined,
-                      size: 14,
-                      color: isMyMessage
-                          ? Colors.white70
-                          : c.textTertiary),
-                  const SizedBox(width: 4),
-                  Text('Shared Post',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontFamily: 'Outfit',
-                          color: isMyMessage
-                              ? Colors.white70
-                              : c.textSecondary)),
-                ]),
-                const SizedBox(height: 4),
-                Text(
-                  postTitle as String,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    color:
-                        isMyMessage ? Colors.white : c.text,
+        clipBehavior: Clip.hardEdge,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Thumbnail / media background
+            if (mediaUrl != null && mediaUrl.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: mediaUrl,
+                fit: BoxFit.cover,
+                placeholder: (ctx2, unused1) => Container(color: Colors.black26),
+                errorWidget: (ctx2, unused1, unused2) => Container(color: Colors.black26),
+              )
+            else
+              Container(color: Colors.black38),
+
+            // Dark gradient overlay (top + bottom)
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.45),
+                      Colors.transparent,
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.25),
+                    ],
+                    stops: const [0, 0.3, 0.7, 1],
                   ),
                 ),
-                if (authorName != null) ...[
-                  const SizedBox(height: 2),
-                  Text(authorName as String,
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontFamily: 'Outfit',
-                          color: isMyMessage
-                              ? Colors.white70
-                              : c.textSecondary)),
-                ],
-                const SizedBox(height: 6),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: _TimeStatus(
-                      message: message,
-                      isMyMessage: isMyMessage,
-                      c: c),
-                ),
-              ],
+              ),
             ),
+
+            // Header: avatar + username (top-left)
+            if (name != null || username != null)
+              Positioned(
+                top: 10,
+                left: 10,
+                right: 10,
+                child: Row(
+                  children: [
+                    if (profilePic != null)
+                      ClipOval(
+                        child: CachedNetworkImage(
+                          imageUrl: profilePic,
+                          width: 26, height: 26,
+                          fit: BoxFit.cover,
+                          errorWidget: (ctx2, unused1, unused2) => CircleAvatar(
+                            radius: 13,
+                            backgroundColor: Colors.white24,
+                            child: Text(
+                              (name ?? username ?? '?')[0].toUpperCase(),
+                              style: const TextStyle(color: Colors.white, fontSize: 11),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      CircleAvatar(
+                        radius: 13,
+                        backgroundColor: Colors.white24,
+                        child: Text(
+                          (name ?? username ?? '?')[0].toUpperCase(),
+                          style: const TextStyle(color: Colors.white, fontSize: 11),
+                        ),
+                      ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        name ?? '@${username ?? ''}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                          shadows: [Shadow(color: Colors.black45, blurRadius: 4)],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // Centered play button
+            Center(
+              child: Container(
+                width: 48, height: 48,
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.play_arrow, color: Colors.white, size: 28),
+              ),
+            ),
+
+            // Mini/reel icon — bottom left
+            const Positioned(
+              bottom: 8, left: 10,
+              child: Icon(Icons.video_collection, size: 15, color: Colors.white70),
+            ),
+
+            // Timestamp — bottom right
+            Positioned(
+              bottom: 6, right: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: _TimeStatus(message: message, isMyMessage: isMyMessage, c: c),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Regular post layout: media on top, header + caption below
+  Widget _buildRegularLayout(BuildContext context, String? mediaUrl, String caption, String? name, String? username, String? profilePic) {
+    final displayName = name ?? username;
+    return GestureDetector(
+      onTap: () => _navigate(context),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 280),
+        decoration: BoxDecoration(
+          color: isMyMessage ? c.primary : c.surface,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isMyMessage ? 18 : 4),
+            bottomRight: Radius.circular(isMyMessage ? 4 : 18),
           ),
-        ],
+          border: isMyMessage ? null : Border.all(color: c.border, width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Post media
+            if (mediaUrl != null && mediaUrl.isNotEmpty)
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                child: CachedNetworkImage(
+                  imageUrl: mediaUrl,
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  placeholder: (ctx2, unused1) => Container(height: 160, color: c.surface),
+                  errorWidget: (ctx2, unused1, unused2) => Container(
+                    height: 80,
+                    color: c.surface,
+                    child: Icon(Icons.image_not_supported_outlined, color: c.textTertiary),
+                  ),
+                ),
+              ),
+
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Sender header
+                  if (displayName != null)
+                    Row(
+                      children: [
+                        if (profilePic != null)
+                          ClipOval(
+                            child: CachedNetworkImage(
+                              imageUrl: profilePic,
+                              width: 20, height: 20,
+                              fit: BoxFit.cover,
+                              errorWidget: (ctx2, unused1, unused2) => CircleAvatar(
+                                radius: 10,
+                                backgroundColor: isMyMessage ? Colors.white24 : c.border,
+                                child: Text(displayName[0].toUpperCase(),
+                                    style: TextStyle(
+                                        color: isMyMessage ? Colors.white : c.text,
+                                        fontSize: 9)),
+                              ),
+                            ),
+                          )
+                        else
+                          CircleAvatar(
+                            radius: 10,
+                            backgroundColor: isMyMessage ? Colors.white24 : c.border,
+                            child: Text(displayName[0].toUpperCase(),
+                                style: TextStyle(
+                                    color: isMyMessage ? Colors.white : c.text,
+                                    fontSize: 9)),
+                          ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.w600,
+                              color: isMyMessage ? Colors.white : c.text,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+
+                  if (displayName != null) const SizedBox(height: 4),
+
+                  // "Shared Post" label
+                  Row(children: [
+                    Icon(Icons.article_outlined,
+                        size: 13,
+                        color: isMyMessage ? Colors.white70 : c.textTertiary),
+                    const SizedBox(width: 4),
+                    Text('Shared Post',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'Outfit',
+                            color: isMyMessage ? Colors.white70 : c.textSecondary)),
+                  ]),
+
+                  // Caption
+                  if (caption.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      caption,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontFamily: 'Outfit',
+                        color: isMyMessage ? Colors.white : c.text,
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: _TimeStatus(message: message, isMyMessage: isMyMessage, c: c),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1451,6 +1720,7 @@ class _AddaChatBubbleState extends State<_AddaChatBubble>
         : Colors.white.withValues(alpha: 0.65);
 
     return GestureDetector(
+      onTap: isLive ? () => context.push('/live-audio/${widget.addaId}') : null,
       onLongPress: null,
       child: Container(
         width: 240,
@@ -1492,7 +1762,7 @@ class _AddaChatBubbleState extends State<_AddaChatBubble>
                           child: isLive
                               ? AnimatedBuilder(
                                   animation: _waveAnim[i],
-                                  builder: (_, __) => Container(
+                                  builder: (ctx2, unused1) => Container(
                                     width: 3,
                                     height: 20 * _waveAnim[i].value,
                                     decoration: BoxDecoration(
@@ -1655,28 +1925,31 @@ class _AddaChatBubbleState extends State<_AddaChatBubble>
                         ],
                       ),
                     )
-                  : Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 9),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.volume_up, size: 15, color: accent),
-                          const SizedBox(width: 5),
-                          Text(
-                            isChecking ? 'Loading...' : 'Join Adda',
-                            style: TextStyle(
-                              color: accent,
-                              fontSize: 13,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w700,
+                  : GestureDetector(
+                      onTap: isLive ? () => context.push('/live-audio/${widget.addaId}') : null,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.volume_up, size: 15, color: accent),
+                            const SizedBox(width: 5),
+                            Text(
+                              isChecking ? 'Loading...' : 'Join Adda',
+                              style: TextStyle(
+                                color: accent,
+                                fontSize: 13,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     ),
             ),
@@ -1772,10 +2045,44 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
     }
   }
 
-  // Resolve the URL to a card data map: {kind, name, avatarUrl, metaLine, ctaLabel, ctaIcon}
+  void _handleCta(BuildContext context) {
+    final d = _data;
+    if (d == null) return;
+    final kind = d['kind'] as String? ?? '';
+    switch (kind) {
+      case 'profile':
+        final userId = d['userId'] as String?;
+        final username = d['username'] as String?;
+        if (userId != null && userId.isNotEmpty) {
+          context.push('/user/$userId');
+        } else if (username != null && username.isNotEmpty) {
+          context.push('/user/$username');
+        }
+        break;
+      case 'group':
+        final inviteCode = d['inviteCode'] as String?;
+        final groupId = d['groupId'] as String?;
+        if (inviteCode != null) {
+          context.push('/chat/join-group', extra: {'inviteCode': inviteCode});
+        } else if (groupId != null) {
+          context.push('/chat/group/$groupId');
+        }
+        break;
+      case 'groupchat':
+        final groupId = d['groupId'] as String?;
+        if (groupId != null) context.push('/chat/group/$groupId');
+        break;
+      case 'channel':
+        final channelId = d['channelId'] as String?;
+        if (channelId != null) context.push('/channel/$channelId');
+        break;
+    }
+  }
+
+  // Resolve any witalk.in URL to a typed card data map.
+  // Mirrors RN's fetchWiTalkLinkData + channelAPI.getByUsername flow exactly.
   static Future<Map<String, dynamic>?> _resolveWiTalkLink(
       String url, String linkType, String content) async {
-    // Parse the URL path to determine type and params
     final uri = Uri.tryParse(url);
     if (uri == null) return null;
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
@@ -1783,72 +2090,40 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
 
     final first = segments[0];
 
-    // witalk.in/group/{inviteCode}
+    // witalk.in/group/{inviteCode} — explicit group invite URL
     if (first == 'group' && segments.length >= 2) {
-      final inviteCode = segments[1];
-      try {
-        final res = await dioClient.get('/v1/groups/invite/$inviteCode');
-        final g = res.data?['data'] ?? res.data;
-        if (g == null || g['name'] == null) return null;
-        final memberCount = g['member_count'];
-        final isPrivate = g['is_private'] == true || g['group_type'] == 'private';
-        return {
-          'kind': 'group',
-          'name': g['name'] as String,
-          'avatarUrl': g['picture'] ?? g['image_url'] ?? g['avatar_url'],
-          'meta': [
-            if (memberCount != null) '${_fmtCount(memberCount)} members',
-            isPrivate ? 'Private' : 'Public',
-          ].join('  ·  '),
-          'bio': g['description'],
-          'isPrivate': isPrivate,
-          'ctaLabel': isPrivate ? 'Join Group' : 'Join Community',
-          'ctaIcon': Icons.group,
-          'badgeLabel': isPrivate ? 'GROUP' : 'COMMUNITY',
-          'badgeIcon': Icons.groups,
-        };
-      } catch (_) { return null; }
+      return _resolveGroupInvite(segments[1]);
     }
 
-    // witalk.in/groupchat/{groupId}
+    // witalk.in/groupchat/{groupId} — direct group chat link
     if (first == 'groupchat' && segments.length >= 2) {
-      final groupId = segments[1];
-      try {
-        final res = await dioClient.get('/v1/groups/$groupId');
-        final g = res.data?['data'] ?? res.data;
-        if (g == null || g['name'] == null) return null;
-        final memberCount = g['member_count'];
-        final isPrivate = g['is_private'] == true;
-        return {
-          'kind': 'group',
-          'name': g['name'] as String,
-          'avatarUrl': g['image_url'] ?? g['avatar_url'],
-          'meta': [
-            if (memberCount != null) '${_fmtCount(memberCount)} members',
-            isPrivate ? 'Private' : 'Public',
-          ].join('  ·  '),
-          'bio': g['description'],
-          'isPrivate': isPrivate,
-          'ctaLabel': 'Open Group',
-          'ctaIcon': Icons.group,
-          'badgeLabel': 'GROUP',
-          'badgeIcon': Icons.groups,
-        };
-      } catch (_) { return null; }
+      return _resolveGroupById(segments[1]);
     }
 
-    // witalk.in/{username} — try to resolve as user profile
-    if (segments.length == 1 && !['group', 'groupchat', 'adda', 'p', 'm', 'post', 'video', 'mini', 'user'].contains(first)) {
-      final username = first;
-      try {
-        final res = await dioClient.get('/v1/user/profile/$username');
+    // witalk.in/{slug} — could be username, group slug, or channel username.
+    // Use the resolve endpoint (mirrors channelAPI.getByUsername) to determine type.
+    final slug = first;
+    try {
+      final resolveRes = await dioClient.get(
+        '/v1/username/resolve',
+        queryParameters: {'username': slug},
+      );
+      final resolved = resolveRes.data?['data'] ?? resolveRes.data;
+      if (resolved == null) return null;
+
+      final resolvedType = resolved['type']?.toString();
+      final resolvedData = resolved['data'] as Map<String, dynamic>?;
+
+      if (resolvedType == 'user') {
+        // Fetch full user profile
+        final res = await dioClient.get('/v1/user/profile/${Uri.encodeComponent(slug)}');
         final u = res.data?['data']?['user'] ?? res.data?['data'] ?? res.data;
         if (u == null || u['name'] == null) return null;
         final stats = res.data?['data']?['stats'] ?? {};
         final followers = stats['followers_count'] ?? u['followers_count'];
         return {
           'kind': 'profile',
-          'name': u['name'] as String,
+          'name': u['name'].toString(),
           'avatarUrl': u['profile_pic'],
           'meta': [
             if (u['username'] != null) '@${u['username']}',
@@ -1860,11 +2135,103 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
           'ctaIcon': Icons.person,
           'badgeLabel': 'PROFILE',
           'badgeIcon': Icons.person,
+          'userId': u['id']?.toString(),
+          'username': u['username']?.toString() ?? slug,
         };
-      } catch (_) { return null; }
-    }
+      }
+
+      if (resolvedType == 'channel') {
+        final channelId = resolvedData?['id']?.toString();
+        if (channelId == null) return null;
+        final res = await dioClient.get('/v1/channels/$channelId');
+        final c = res.data?['channel'] ?? res.data?['data']?['channel'] ?? res.data?['data'] ?? res.data;
+        if (c == null || c['name'] == null) return null;
+        final subCount = c['subscriber_count'];
+        return {
+          'kind': 'channel',
+          'name': c['name'].toString(),
+          'avatarUrl': c['icon'] ?? c['avatar_url'],
+          'meta': [
+            if (c['username'] != null) '@${c['username']}',
+            if (subCount != null) '${_fmtCount(subCount)} subscribers',
+          ].join('  ·  '),
+          'bio': c['description'],
+          'isVerified': c['is_verified'] == true,
+          'ctaLabel': 'View Channel',
+          'ctaIcon': Icons.campaign,
+          'badgeLabel': 'CHANNEL',
+          'badgeIcon': Icons.campaign,
+          'channelId': channelId,
+        };
+      }
+
+      if (resolvedType == 'group') {
+        final inviteCode = resolvedData?['invite_code']?.toString();
+        if (inviteCode != null) return _resolveGroupInvite(inviteCode);
+        final groupId = resolvedData?['id']?.toString();
+        if (groupId != null) return _resolveGroupById(groupId);
+        return null;
+      }
+    } catch (_) {}
 
     return null;
+  }
+
+  static Future<Map<String, dynamic>?> _resolveGroupInvite(String inviteCode) async {
+    try {
+      final res = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(inviteCode)}');
+      final g = res.data?['data'] ?? res.data;
+      if (g == null || g['name'] == null) return null;
+      final memberCount = g['member_count'];
+      // Match RN isPrivate logic exactly
+      final isPrivate = g['entity_type'] != null
+          ? g['entity_type'] != 'community'
+          : (g['group_type'] != null ? g['group_type'] != 'public' : g['is_private'] == true);
+      final isCommunity = !isPrivate;
+      return {
+        'kind': 'group',
+        'name': g['name'].toString(),
+        'avatarUrl': g['picture'] ?? g['image_url'] ?? g['avatar_url'],
+        'meta': [
+          if (memberCount != null) '${_fmtCount(memberCount)} members',
+          isCommunity ? 'Public' : 'Private',
+        ].join('  ·  '),
+        'bio': g['description'],
+        'isPrivate': isPrivate,
+        'ctaLabel': isCommunity ? 'Join Community' : 'Join Group',
+        'ctaIcon': Icons.group,
+        'badgeLabel': isCommunity ? 'COMMUNITY' : 'GROUP',
+        'badgeIcon': Icons.groups,
+        'inviteCode': inviteCode,
+        'groupId': g['id']?.toString(),
+      };
+    } catch (_) { return null; }
+  }
+
+  static Future<Map<String, dynamic>?> _resolveGroupById(String groupId) async {
+    try {
+      final res = await dioClient.get('/v1/groups/$groupId');
+      final g = res.data?['data'] ?? res.data;
+      if (g == null || g['name'] == null) return null;
+      final memberCount = g['member_count'];
+      final isPrivate = g['is_private'] == true;
+      return {
+        'kind': 'groupchat',
+        'name': g['name'].toString(),
+        'avatarUrl': g['image_url'] ?? g['avatar_url'],
+        'meta': [
+          if (memberCount != null) '${_fmtCount(memberCount)} members',
+          isPrivate ? 'Private' : 'Public',
+        ].join('  ·  '),
+        'bio': g['description'],
+        'isPrivate': isPrivate,
+        'ctaLabel': 'Open Group',
+        'ctaIcon': Icons.group,
+        'badgeLabel': 'GROUP',
+        'badgeIcon': Icons.groups,
+        'groupId': groupId,
+      };
+    } catch (_) { return null; }
   }
 
   static String _fmtCount(dynamic n) {
@@ -2034,7 +2401,7 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
                       ? CachedNetworkImage(
                           imageUrl: avatarUrl,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => Center(
+                          errorWidget: (ctx2, unused1, unused2) => Center(
                             child: Text(initials,
                                 style: const TextStyle(
                                     color: Colors.white,
@@ -2109,25 +2476,28 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
           // CTA button
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 9),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(ctaIcon, size: 14, color: accent),
-                  const SizedBox(width: 5),
-                  Text(ctaLabel,
-                      style: TextStyle(
-                          color: accent,
-                          fontSize: 13,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w700)),
-                ],
+            child: GestureDetector(
+              onTap: () => _handleCta(context),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(ctaIcon, size: 14, color: accent),
+                    const SizedBox(width: 5),
+                    Text(ctaLabel,
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 13,
+                            fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w700)),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2201,7 +2571,7 @@ class _SystemMessage extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
         decoration: BoxDecoration(
-          color: c.surface.withOpacity(0.8),
+          color: c.surface.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Text(
@@ -2239,7 +2609,7 @@ class _DeletedMessage extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
-          color: c.surface.withOpacity(0.5),
+          color: c.surface.withValues(alpha: 0.5),
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -2249,7 +2619,7 @@ class _DeletedMessage extends StatelessWidget {
                 Radius.circular(isMyMessage ? 4 : 18),
           ),
           border: Border.all(
-              color: c.border.withOpacity(0.3)),
+              color: c.border.withValues(alpha: 0.3)),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.block,
@@ -2326,12 +2696,12 @@ class _ReactionsRow extends StatelessWidget {
                 horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
               color: iMine
-                  ? c.primary.withOpacity(0.15)
+                  ? c.primary.withValues(alpha: 0.15)
                   : c.surface,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
                 color: iMine
-                    ? c.primary.withOpacity(0.4)
+                    ? c.primary.withValues(alpha: 0.4)
                     : c.border,
                 width: 1,
               ),
@@ -2393,7 +2763,7 @@ class DateDivider extends StatelessWidget {
         padding:
             const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(
-          color: c.surface.withOpacity(0.8),
+          color: c.surface.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Text(label,
@@ -2438,16 +2808,29 @@ class _SwipeToReply extends StatefulWidget {
 class _SwipeToReplyState extends State<_SwipeToReply> {
   double _drag = 0;
   bool _triggered = false;
+  // Track whether this gesture is truly horizontal (set on first significant delta)
+  bool? _isHorizontalGesture;
 
-  static const _threshold = 30.0;
-  static const _maxDrag = 60.0;
+  static const _threshold = 48.0;  // raised to avoid accidental triggers
+  static const _maxDrag = 70.0;
 
   void _onHorizontalUpdate(DragUpdateDetails d) {
-    final delta = d.delta.dx;
-    if (delta < 0 && _drag == 0) return; // only swipe right
+    final dx = d.delta.dx;
+    final dy = d.delta.dy;
+
+    // On first movement, decide if horizontal or vertical
+    if (_isHorizontalGesture == null && (dx.abs() + dy.abs()) > 2) {
+      _isHorizontalGesture = dx.abs() > dy.abs() * 1.5;
+    }
+
+    // Reject vertical-dominant gestures (scrolling)
+    if (_isHorizontalGesture == false) return;
+
+    // Only swipe right (positive dx)
+    if (dx < 0 && _drag == 0) return;
 
     setState(() {
-      _drag = math.max(0.0, math.min(_maxDrag, _drag + delta));
+      _drag = math.max(0.0, math.min(_maxDrag, _drag + dx));
     });
 
     if (!_triggered && _drag >= _threshold) {
@@ -2455,11 +2838,14 @@ class _SwipeToReplyState extends State<_SwipeToReply> {
     }
   }
 
-  void _onHorizontalEnd(DragEndDetails _) {
-    if (_triggered) widget.onReply();
+  void _onHorizontalEnd(DragEndDetails d) {
+    // Also require minimum velocity to prevent accidental slow drags
+    final vx = d.velocity.pixelsPerSecond.dx.abs();
+    if (_triggered && vx > 80) widget.onReply();
     setState(() {
       _drag = 0;
       _triggered = false;
+      _isHorizontalGesture = null;
     });
   }
 

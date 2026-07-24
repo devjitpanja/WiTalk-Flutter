@@ -13,6 +13,7 @@ import 'providers/chat_provider.dart';
 import 'services/chat_api_service.dart';
 import 'services/message_sync_manager.dart';
 import 'services/global_video_settings.dart';
+import 'api/channel_api.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
 void main() async {
@@ -44,6 +45,28 @@ class WiTalkApp extends ConsumerStatefulWidget {
 
 class _WiTalkAppState extends ConsumerState<WiTalkApp> {
   bool _locationStartupDone = false;
+  bool _chatInitialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndInitChat();
+    });
+  }
+
+  void _checkAndInitChat() {
+    final auth = ref.read(authProvider);
+    if (auth.status == AuthStatus.authenticated && auth.uid != null && !_chatInitialized) {
+      _chatInitialized = true;
+      _initChatSystem(auth.uid!);
+      notificationService.setExternalUserId(auth.uid!);
+      if (!_locationStartupDone) {
+        _locationStartupDone = true;
+        _runLocationStartup(auth.uid!);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -52,18 +75,18 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
 
     // Connect Socket.IO, initialize chat provider & run location startup when authenticated
     ref.listen(authProvider, (prev, next) {
-      if (next.status == AuthStatus.authenticated &&
-          prev?.status != AuthStatus.authenticated) {
-        final uid = next.uid;
-        if (uid != null) {
-          _initChatSystem(uid);
-          notificationService.setExternalUserId(uid);
+      if (next.status == AuthStatus.authenticated && next.uid != null) {
+        if (!_chatInitialized) {
+          _chatInitialized = true;
+          _initChatSystem(next.uid!);
+          notificationService.setExternalUserId(next.uid!);
           if (!_locationStartupDone) {
             _locationStartupDone = true;
-            _runLocationStartup(uid);
+            _runLocationStartup(next.uid!);
           }
         }
       } else if (next.status == AuthStatus.unauthenticated) {
+        _chatInitialized = false;
         socketService.disconnect();
         messageSyncManager.cleanup();
         notificationService.logout();
@@ -82,28 +105,37 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
     );
   }
 
-  /// Wire socket → chatProvider → load initial conversations + groups.
+  /// Wire socket → chatProvider → load initial conversations + groups + channels.
   Future<void> _initChatSystem(String uid) async {
     try {
-      // 1. Connect socket (also starts /group-chat namespace connection)
+      // 1. Connect socket (also starts /group-chat and /channel namespace connections)
       final socket = await socketService.connect();
 
-      // 2. Wire both sockets into chatProvider so it receives all events
+      // 2. Wire all sockets into chatProvider so it receives all events
       ref.read(chatProvider.notifier).init(
         socket,
         uid,
         groupSocket: socketService.groupSocket,
+        channelSocket: socketService.channelSocket,
       );
 
       // 3. Initialize offline sync manager
       final db = ref.read(appDatabaseProvider);
       await messageSyncManager.initialize(socket, uid, db);
 
-      // 4. Load conversations + groups from API (parallel)
+      // 4. Load conversations + groups + channels from API (parallel)
       final apiService = chatApiService;
       final results = await Future.wait([
         apiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]),
         apiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]),
+        // Channels fetched via the dedicated ChannelApi
+        ChannelApi.getMy().then((res) {
+          final raw = res.data?['channels'];
+          return raw is List
+              ? List<Map<String, dynamic>>.from(
+                  raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)))
+              : <Map<String, dynamic>>[];
+        }).catchError((_) => <Map<String, dynamic>>[]),
       ]);
 
       final convs = (results[0] as List<Map<String, dynamic>>)
@@ -112,9 +144,11 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
       final groups = (results[1] as List<Map<String, dynamic>>)
           .map((e) => ChatConversation.fromJson(e))
           .toList();
+      final channels = results[2] as List<Map<String, dynamic>>;
 
       ref.read(chatProvider.notifier).setConversations(convs);
       ref.read(chatProvider.notifier).setGroups(groups);
+      ref.read(chatProvider.notifier).setChannels(channels);
 
       // 5. Sync any pending offline actions now that socket is ready
       messageSyncManager.onSocketReady();

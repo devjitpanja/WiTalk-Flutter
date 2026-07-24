@@ -9,12 +9,14 @@ import 'package:shimmer/shimmer.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../api/channel_api.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
 import '../../services/muted_chats_service.dart';
 import '../../services/muted_groups_service.dart';
 import '../../services/message_sync_manager.dart';
 import '../../services/chat_api_service.dart';
+import '../../services/socket_service.dart';
 import '../../widgets/common/verification_badge.dart';
 
 
@@ -219,8 +221,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 }
 
-// ── All Chats List ─────────────────────────────────────────────────────────────
-// Mirrors AllChatsList.jsx: merges private + groups + channels, sorted by last activity
+// ── All Chats List ─────────────────────────────────────────────────────────────────
 class _AllChatsList extends ConsumerStatefulWidget {
   final int tabIndex;
   const _AllChatsList({required this.tabIndex});
@@ -231,7 +232,6 @@ class _AllChatsList extends ConsumerStatefulWidget {
 
 class _AllChatsListState extends ConsumerState<_AllChatsList> {
   bool _initialLoading = true;
-  List<Map<String, dynamic>> _channels = [];
   Timer? _sortDebounce;
 
   @override
@@ -264,9 +264,29 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     }
     try {
       final chatNotifier = ref.read(chatProvider.notifier);
+
+      // Failsafe: ensure socket is connected and wired to provider
+      if (!socketService.isConnected) {
+        socketService.connect().then((socket) {
+          if (mounted) {
+            chatNotifier.init(
+              socket,
+              uid,
+              groupSocket: socketService.groupSocket,
+              channelSocket: socketService.channelSocket,
+            );
+          }
+        });
+      }
       final convsFuture = chatApiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]);
       final groupsFuture = chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]);
-      final channelsFuture = _fetchChannels();
+      final channelsFuture = ChannelApi.getMy().then((res) {
+        final raw = res.data?['channels'];
+        return raw is List
+            ? List<Map<String, dynamic>>.from(
+                raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)))
+            : <Map<String, dynamic>>[];
+      }).catchError((_) => <Map<String, dynamic>>[]);
       final mutedChatsFuture = _fetchMutedChats(uid);
       final mutedGroupsFuture = _fetchMutedGroups(uid);
 
@@ -281,24 +301,11 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
 
       chatNotifier.setConversations(convs);
       chatNotifier.setGroups(groups);
+      chatNotifier.setChannels(channels);
       chatNotifier.setMutedChats(mutedChats);
       chatNotifier.setMutedGroups(mutedGroups);
-
-      if (mounted) setState(() => _channels = channels);
     } catch (_) {}
     if (mounted) setState(() => _initialLoading = false);
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchChannels() async {
-    try {
-      final res = await dioClient.get(AppEndpoints.myChannels);
-      final data = res.data['data'];
-      if (data is Map && data['channels'] is List) {
-        return List<Map<String, dynamic>>.from(data['channels'] as List);
-      }
-      if (data is List) return List<Map<String, dynamic>>.from(data);
-    } catch (_) {}
-    return [];
   }
 
   Future<Set<String>> _fetchMutedChats(String uid) async {
@@ -379,6 +386,7 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     final uid = ref.watch(authProvider).uid ?? '';
     final conversations = ref.watch(chatProvider.select((s) => s.conversations));
     final groups = ref.watch(chatProvider.select((s) => s.groups));
+    final channels = ref.watch(chatProvider.select((s) => s.channels));
     final onlineUsers = ref.watch(chatProvider.select((s) => s.onlineUsers));
     final mutedChats = ref.watch(chatProvider.select((s) => s.mutedChats));
     final mutedGroups = ref.watch(chatProvider.select((s) => s.mutedGroups));
@@ -387,7 +395,7 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
         .where((c) => c.status == 'request_pending' && c.initiatorId != uid)
         .toList();
 
-    final combined = _buildCombinedList(conversations, groups, _channels, uid);
+    final combined = _buildCombinedList(conversations, groups, channels, uid);
 
     if (_initialLoading && combined.isEmpty) {
       return _buildSkeleton(c);
@@ -427,7 +435,6 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (ctx, i) {
-                // Message requests banner at top
                 if (pendingRequests.isNotEmpty && i == 0) {
                   return _MessageRequestsBanner(count: pendingRequests.length);
                 }
@@ -435,7 +442,12 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
 
                 if (item.type == 'channel') {
                   final ch = item.channelData!;
-                  return _ChannelTile(channelData: ch, currentUserId: uid);
+                  return _ChannelTile(
+                    channelData: ch,
+                    currentUserId: uid,
+                    onUnreadZeroed: (id) =>
+                        ref.read(chatProvider.notifier).updateChannelUnread(id, 0),
+                  );
                 }
 
                 if (item.type == 'group') {
@@ -450,7 +462,6 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
                   );
                 }
 
-                // private
                 final conv = item.conv!;
                 final theyBlockedMe = conv.theyBlockedMe;
                 final isOnline = !theyBlockedMe &&
@@ -518,7 +529,7 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
 }
 
 class _CombinedItem {
-  final String type; // 'private' | 'group' | 'channel'
+  final String type;
   final ChatConversation? conv;
   final Map<String, dynamic>? channelData;
   final int ts;
@@ -652,9 +663,9 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final uid = ref.watch(authProvider).uid ?? '';
     final groups = ref.watch(chatProvider.select((s) => s.groups));
     final mutedGroups = ref.watch(chatProvider.select((s) => s.mutedGroups));
+    final uid = ref.watch(authProvider).uid ?? '';
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
@@ -686,13 +697,12 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (ctx, i) {
-                final g = groups[i];
-                final isGroupMuted = mutedGroups[g.id] == 'muted';
+                final group = groups[i];
                 return _ChatTile(
-                  conv: g,
+                  conv: group,
                   isGroup: true,
                   isOnline: false,
-                  isMuted: isGroupMuted,
+                  isMuted: mutedGroups[group.id] == 'muted',
                   currentUserId: uid,
                 );
               },
@@ -711,52 +721,29 @@ class _ChannelChatList extends ConsumerStatefulWidget {
 }
 
 class _ChannelChatListState extends ConsumerState<_ChannelChatList> {
-  List<Map<String, dynamic>> _channels = [];
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _fetchChannels();
-  }
-
-  Future<void> _fetchChannels() async {
+  Future<void> _refresh() async {
     try {
-      final res = await dioClient.get(AppEndpoints.myChannels);
-      final data = res.data['data'];
-      List<Map<String, dynamic>> channels = [];
-      if (data is Map && data['channels'] is List) {
-        channels = List<Map<String, dynamic>>.from(data['channels'] as List);
-      } else if (data is List) {
-        channels = List<Map<String, dynamic>>.from(data);
-      }
-      if (mounted) {
-        setState(() {
-          _channels = channels;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+      final res = await ChannelApi.getMy();
+      final raw = res.data?['channels'];
+      final channels = raw is List
+          ? List<Map<String, dynamic>>.from(
+              raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)))
+          : <Map<String, dynamic>>[];
+      ref.read(chatProvider.notifier).setChannels(channels);
+    } catch (_) {}
   }
-
-  Future<void> _refresh() => _fetchChannels();
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final uid = ref.watch(authProvider).uid ?? '';
-
-    if (_loading) {
-      return Center(child: CircularProgressIndicator(color: c.primary));
-    }
+    final channels = ref.watch(chatProvider.select((s) => s.channels));
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
       slivers: [
         CupertinoSliverRefreshControl(onRefresh: _refresh),
-        if (_channels.isEmpty)
+        if (channels.isEmpty)
           SliverFillRemaining(
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -775,18 +762,12 @@ class _ChannelChatListState extends ConsumerState<_ChannelChatList> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (ctx, i) => _ChannelTile(
-                channelData: _channels[i],
+                channelData: channels[i],
                 currentUserId: uid,
-                onUnreadZeroed: (id) {
-                  setState(() {
-                    final idx = _channels.indexWhere((ch) => ch['id'].toString() == id);
-                    if (idx != -1) {
-                      _channels[idx] = {..._channels[idx], 'unread_count': 0};
-                    }
-                  });
-                },
+                onUnreadZeroed: (id) =>
+                    ref.read(chatProvider.notifier).updateChannelUnread(id, 0),
               ),
-              childCount: _channels.length,
+              childCount: channels.length,
             ),
           ),
       ],

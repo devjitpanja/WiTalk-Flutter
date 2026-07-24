@@ -1,47 +1,62 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../api/channel_api.dart';
+import '../../providers/chat_provider.dart';
 import '../../theme/theme_colors.dart';
 
-class ChannelListScreen extends StatefulWidget {
+// Standalone Channel List screen (reached via deep-link or bottom-nav).
+// Now a ConsumerStatefulWidget that watches chatProvider.channels for real-time
+// updates, mirroring how RN's ChannelListScreen subscribes to the /channel socket.
+// The provider is already kept in sync by the /channel socket wired in main.dart,
+// so this screen never needs its own socket connection.
+class ChannelListScreen extends ConsumerStatefulWidget {
   const ChannelListScreen({super.key});
 
   @override
-  State<ChannelListScreen> createState() => _ChannelListScreenState();
+  ConsumerState<ChannelListScreen> createState() => _ChannelListScreenState();
 }
 
-class _ChannelListScreenState extends State<ChannelListScreen> {
-  List<Map<String, dynamic>> _channels = [];
+class _ChannelListScreenState extends ConsumerState<ChannelListScreen> {
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadChannels();
+    // Show loading only if the provider has no channels yet (cold start).
+    // If the provider is already populated, skip the loading state.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final channels = ref.read(chatProvider).channels;
+      if (channels.isNotEmpty) {
+        if (mounted) setState(() => _loading = false);
+      } else {
+        _refresh();
+      }
+    });
   }
 
-  Future<void> _loadChannels() async {
+  // Pull-to-refresh: hits the API and feeds data into the provider so both this
+  // screen and the Channels tab in ChatScreen update simultaneously.
+  Future<void> _refresh() async {
     try {
       final res = await ChannelApi.getMy();
-      final list = List<Map<String, dynamic>>.from(res.data?['channels'] ?? []);
-      if (mounted) {
-        setState(() {
-          _channels = list;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+      final raw = res.data?['channels'];
+      final channels = raw is List
+          ? List<Map<String, dynamic>>.from(
+              raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)))
+          : <Map<String, dynamic>>[];
+      ref.read(chatProvider.notifier).setChannels(channels);
+    } catch (_) {}
+    if (mounted) setState(() => _loading = false);
   }
 
-  void _openExplore() {
-    context.push('/explore-channels');
-  }
+  void _openExplore() => context.push('/explore-channels');
 
   void _openChannel(Map<String, dynamic> channel) {
-    final String channelId = channel['id']?.toString() ?? '';
+    final channelId = channel['id']?.toString() ?? '';
+    // Zero the unread badge in the provider optimistically on tap
+    ref.read(chatProvider.notifier).updateChannelUnread(channelId, 0);
     context.push('/channel/$channelId', extra: {'channel': channel});
   }
 
@@ -63,15 +78,17 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
+    // Reactive — rebuilds on every channel_new_message socket event
+    final channels = ref.watch(chatProvider.select((s) => s.channels));
 
-    if (_loading) {
+    if (_loading && channels.isEmpty) {
       return Scaffold(
         backgroundColor: colors.background,
         body: Center(child: CircularProgressIndicator(color: colors.primary)),
       );
     }
 
-    if (_channels.isEmpty) {
+    if (channels.isEmpty) {
       return Scaffold(
         backgroundColor: colors.background,
         body: Center(
@@ -147,14 +164,13 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
         slivers: [
-          CupertinoSliverRefreshControl(
-            onRefresh: _loadChannels,
-          ),
+          CupertinoSliverRefreshControl(onRefresh: _refresh),
           SliverList.separated(
-            itemCount: _channels.length,
-            separatorBuilder: (_, __) => Divider(height: 1, indent: 80, color: colors.border.withOpacity(0.15)),
+            itemCount: channels.length,
+            separatorBuilder: (_, __) =>
+                Divider(height: 1, indent: 80, color: colors.border.withOpacity(0.15)),
             itemBuilder: (context, index) {
-              final item = _channels[index];
+              final item = channels[index];
               final name = item['name']?.toString() ?? 'Channel';
               final iconUrl = item['icon']?.toString();
               final isBanned = (item['is_banned'] == 1 || item['is_banned'] == true);
@@ -168,11 +184,17 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
                     CircleAvatar(
                       radius: 28,
                       backgroundColor: isBanned ? Colors.grey : colors.primary,
-                      backgroundImage: iconUrl != null && iconUrl.isNotEmpty ? NetworkImage(iconUrl) : null,
+                      backgroundImage: iconUrl != null && iconUrl.isNotEmpty
+                          ? NetworkImage(iconUrl)
+                          : null,
                       child: iconUrl == null || iconUrl.isEmpty
                           ? Text(
                               (name.isNotEmpty ? name[0] : 'C').toUpperCase(),
-                              style: const TextStyle(fontSize: 22, color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.bold),
+                              style: const TextStyle(
+                                  fontSize: 22,
+                                  color: Colors.white,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.bold),
                             )
                           : null,
                     ),
@@ -210,7 +232,9 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
                   ],
                 ),
                 subtitle: Text(
-                  isBanned ? 'This channel has been banned by the platform' : _getLastMessageText(item),
+                  isBanned
+                      ? 'This channel has been banned by the platform'
+                      : _getLastMessageText(item),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -229,7 +253,11 @@ class _ChannelListScreenState extends State<ChannelListScreen> {
                         ),
                         child: Text(
                           unreadCount > 99 ? '99+' : '$unreadCount',
-                          style: const TextStyle(fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.bold, color: Colors.white),
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontFamily: 'Outfit',
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white),
                         ),
                       )
                     : null,

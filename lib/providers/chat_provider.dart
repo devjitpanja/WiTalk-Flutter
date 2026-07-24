@@ -8,6 +8,7 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../database/app_database.dart';
 import '../api/dio_client.dart';
 import '../api/app_endpoints.dart';
+import '../services/chat_api_service.dart';
 import 'auth_provider.dart';
 
 // ── ChatMessage model ─────────────────────────────────────────────────────────
@@ -415,6 +416,9 @@ class ChatConversation {
 class ChatState {
   final List<ChatConversation> conversations;
   final List<ChatConversation> groups;
+  // Channel list — updated in real-time by the /channel socket namespace,
+  // mirroring how RN's AllChatsList + ChannelListScreen share a single socket.
+  final List<Map<String, dynamic>> channels;
   final Map<String, List<ChatMessage>> messages; // conversationId -> messages
   final Set<String> onlineUsers;
   final Map<String, Set<String>> typingUsers; // conversationId -> Set<userId>
@@ -429,6 +433,7 @@ class ChatState {
   const ChatState({
     this.conversations = const [],
     this.groups = const [],
+    this.channels = const [],
     this.messages = const {},
     this.onlineUsers = const {},
     this.typingUsers = const {},
@@ -444,6 +449,7 @@ class ChatState {
   ChatState copyWith({
     List<ChatConversation>? conversations,
     List<ChatConversation>? groups,
+    List<Map<String, dynamic>>? channels,
     Map<String, List<ChatMessage>>? messages,
     Set<String>? onlineUsers,
     Map<String, Set<String>>? typingUsers,
@@ -459,6 +465,7 @@ class ChatState {
       ChatState(
         conversations: conversations ?? this.conversations,
         groups: groups ?? this.groups,
+        channels: channels ?? this.channels,
         messages: messages ?? this.messages,
         onlineUsers: onlineUsers ?? this.onlineUsers,
         typingUsers: typingUsers ?? this.typingUsers,
@@ -482,6 +489,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   io.Socket? _socket;
   io.Socket? _groupSocket;
+  // /channel namespace socket — drives real-time channel list updates
+  // Mirrors RN's per-screen socket in ChannelListScreen.jsx + AllChatsList.jsx
+  io.Socket? _channelSocket;
   String? _currentUserId;
 
   // Reverse index: messageId -> conversationId (O(1) delete/patch)
@@ -508,12 +518,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
   String? get currentUserId => _currentUserId;
 
   // ── Init ────────────────────────────────────────────────────────────────────
-  Future<void> init(io.Socket socket, String userId, {io.Socket? groupSocket}) async {
+  Future<void> init(io.Socket socket, String userId,
+      {io.Socket? groupSocket, io.Socket? channelSocket}) async {
     _socket = socket;
     _groupSocket = groupSocket;
+    _channelSocket = channelSocket;
     _currentUserId = userId;
     _setupSocketListeners();
     if (groupSocket != null) _setupGroupSocketListeners(groupSocket);
+    if (channelSocket != null) _setupChannelSocketListeners(channelSocket);
     await _loadConversationsFromDb();
   }
 
@@ -587,8 +600,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
       _heartbeatTimer = null;
     });
 
+    // join_success — mirrors RN ChatContext.jsx: fetch conversations + groups
+    // from API so the list is always fresh after socket auth is confirmed.
     s.on('join_success', (data) {
       debugPrint('[CHAT NOTIFIER] ✅ join_success: $data');
+      if (data != null && data is Map) {
+        final onlineUsers = data['onlineUsers'];
+        if (onlineUsers is List) {
+          state = state.copyWith(
+              onlineUsers: onlineUsers.map((e) => e.toString()).toSet());
+        }
+      }
+      // Background-fetch fresh conversations + groups (non-blocking)
+      _fetchInitialData();
     });
 
     s.on('message_error', (data) {
@@ -625,7 +649,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('message_edited', (data) => _handleMessageEdited(data));
     s.on('message_read', (data) => _handleMessageRead(data));
     s.on('messages_read', (data) => _handleMessagesRead(data));
+    // Reaction events — RN fires reaction_added / reaction_removed separately;
+    // keep reaction_updated for backward compatibility with older server versions.
     s.on('reaction_updated', (data) => _handleReactionUpdated(data));
+    s.on('reaction_added', (data) => _handleReactionAdded(data));
+    s.on('reaction_removed', (data) => _handleReactionRemoved(data));
     // Backend emits 'user_typing' with is_typing bool (not separate start/stop events)
     s.on('user_typing', (data) {
       if (data == null) return;
@@ -639,6 +667,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('user_online', (data) => _handlePresence(data, true));
     s.on('user_offline', (data) => _handlePresence(data, false));
     s.on('conversation_deleted', (data) => _handleConversationDeleted(data));
+    // Conversation deleted events — mirrors RN ChatContext.jsx
+    s.on('conversation_deleted_for_everyone', (data) => _handleConversationDeletedForEveryone(data));
+    s.on('conversation_deleted_for_me', (data) => _handleConversationDeletedForMe(data));
     s.on('new_conversation', (data) => _handleNewConversation(data));
     s.on('conversation_accepted', (data) => _handleConversationAccepted(data));
 
@@ -653,6 +684,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('group_member_left', (_) => _refreshGroups());
     s.on('group_updated', (_) => _refreshGroups());
     s.on('group_dissolved', (data) => _handleGroupDissolved(data));
+    // Bulk message delete when a member is banned — mirrors RN ChatContext.jsx
+    s.on('group_messages_bulk_deleted', (data) => _handleGroupMessagesBulkDeleted(data));
     s.on('online_users', (data) => _handleOnlineUsersList(data));
   }
 
@@ -871,6 +904,97 @@ class ChatNotifier extends StateNotifier<ChatState> {
     });
   }
 
+  // Mirrors RN ChatContext: reaction_added — parse full reactions array,
+  // batch-update the message, and update the conversation list reaction metadata.
+  void _handleReactionAdded(dynamic data) {
+    if (data == null) return;
+    final d = Map<String, dynamic>.from(data as Map);
+    final msgId = d['message_id']?.toString();
+    final convId = d['conversation_id']?.toString() ?? _messageOwnerMap[msgId ?? ''];
+    if (msgId == null || convId == null) return;
+
+    List<Map<String, dynamic>> parsedReactions = [];
+    final raw = d['reactions'];
+    if (raw is List) {
+      parsedReactions = raw
+          .whereType<Map>()
+          .map((e) {
+            final m = Map<String, dynamic>.from(e);
+            if (m['avatar'] == null) m['avatar'] = m['profile_pic'];
+            return m;
+          })
+          .toList();
+    }
+
+    // Buffer into batch (33ms cadence)
+    _pendingReactions.putIfAbsent(convId, () => {})[msgId] = parsedReactions;
+    _reactionBatchTimers[convId]?.cancel();
+    _reactionBatchTimers[convId] = Timer(const Duration(milliseconds: 33), () {
+      final pending = _pendingReactions.remove(convId);
+      if (pending == null) return;
+      _reactionBatchTimers.remove(convId);
+      final msgs = state.messages[convId];
+      if (msgs == null) return;
+      final updated =
+          msgs.map((m) {
+            final r = pending[m.id];
+            if (r != null) return m.copyWith(reactions: r);
+            return m;
+          }).toList();
+      state = state.copyWith(messages: {...state.messages, convId: updated});
+    });
+
+    // Update conversation list reaction metadata (lastReactionEmoji etc.)
+    final lastReactionAt = d['last_reaction_at']?.toString();
+    final lastReactionEmoji = d['last_reaction_emoji']?.toString();
+    final lastReactionUserId = d['last_reaction_user_id']?.toString();
+    final lastReactionMsgContent = d['last_reaction_message_content']?.toString();
+    if (lastReactionAt != null) {
+      final idx = state.conversations.indexWhere((c) => c.id == convId);
+      if (idx != -1) {
+        final convs = List<ChatConversation>.from(state.conversations);
+        convs[idx] = convs[idx].copyWith(
+          lastReactionAt: lastReactionAt,
+          lastReactionEmoji: lastReactionEmoji,
+          lastReactionUserId: lastReactionUserId,
+          lastReactionMessageContent: lastReactionMsgContent,
+        );
+        state = state.copyWith(conversations: convs);
+      }
+    }
+  }
+
+  // Mirrors RN ChatContext: reaction_removed — same batch mechanism as reaction_added.
+  void _handleReactionRemoved(dynamic data) {
+    if (data == null) return;
+    final d = Map<String, dynamic>.from(data as Map);
+    final msgId = d['message_id']?.toString();
+    final convId = d['conversation_id']?.toString() ?? _messageOwnerMap[msgId ?? ''];
+    if (msgId == null || convId == null) return;
+
+    final raw = d['reactions'];
+    final reactions = raw is List
+        ? raw.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList()
+        : <Map<String, dynamic>>[];
+
+    _pendingReactions.putIfAbsent(convId, () => {})[msgId] = reactions;
+    _reactionBatchTimers[convId]?.cancel();
+    _reactionBatchTimers[convId] = Timer(const Duration(milliseconds: 33), () {
+      final pending = _pendingReactions.remove(convId);
+      if (pending == null) return;
+      _reactionBatchTimers.remove(convId);
+      final msgs = state.messages[convId];
+      if (msgs == null) return;
+      final updated =
+          msgs.map((m) {
+            final r = pending[m.id];
+            if (r != null) return m.copyWith(reactions: r);
+            return m;
+          }).toList();
+      state = state.copyWith(messages: {...state.messages, convId: updated});
+    });
+  }
+
   void _handleTyping(dynamic data, bool isTyping) {
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
@@ -924,6 +1048,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _removeConversation(convId);
   }
 
+  // Mirrors RN: conversation_deleted_for_everyone → remove conv + clear messages
+  void _handleConversationDeletedForEveryone(dynamic data) {
+    if (data == null) return;
+    final d = Map<String, dynamic>.from(data as Map);
+    final convId = d['conversation_id']?.toString();
+    if (convId == null) return;
+    _removeConversation(convId);
+    final msgs = Map<String, List<ChatMessage>>.from(state.messages);
+    msgs.remove(convId);
+    state = state.copyWith(messages: msgs);
+  }
+
+  // Mirrors RN: conversation_deleted_for_me → clear messages only (not the conv)
+  void _handleConversationDeletedForMe(dynamic data) {
+    if (data == null) return;
+    final d = Map<String, dynamic>.from(data as Map);
+    final convId = d['conversation_id']?.toString();
+    if (convId == null) return;
+    final msgs = Map<String, List<ChatMessage>>.from(state.messages);
+    msgs.remove(convId);
+    state = state.copyWith(messages: msgs);
+  }
+
   void _handleNewConversation(dynamic data) {
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
@@ -939,7 +1086,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final idx = state.conversations.indexWhere((c) => c.id == convId);
     if (idx == -1) return;
     final updated = List<ChatConversation>.from(state.conversations);
-    updated[idx] = updated[idx].copyWith(status: 'active');
+    // Clear initiatorId so it is no longer treated as pending by the UI
+    updated[idx] = updated[idx].copyWith(status: 'active', initiatorId: '');
     state = state.copyWith(conversations: updated);
   }
 
@@ -990,18 +1138,89 @@ class ChatNotifier extends StateNotifier<ChatState> {
     state = state.copyWith(groups: updated);
   }
 
+  // Mirrors RN: group_messages_bulk_deleted — fired when a member is banned;
+  // filters that user's messages from the in-memory cache and updates last message.
+  void _handleGroupMessagesBulkDeleted(dynamic data) {
+    if (data == null) return;
+    final d = Map<String, dynamic>.from(data as Map);
+    final groupId = d['group_id']?.toString();
+    final bannedUserId = d['banned_user_id']?.toString();
+    if (groupId == null) return;
+
+    // Remove banned user's messages from in-memory list
+    if (bannedUserId != null) {
+      final msgs = state.messages[groupId];
+      if (msgs != null) {
+        final filtered =
+            msgs.where((m) => m.senderId != bannedUserId).toList();
+        state = state.copyWith(
+            messages: {...state.messages, groupId: filtered});
+      }
+    }
+
+    // Update last message metadata on the group tile
+    final lastMsg = d['last_message'];
+    if (lastMsg is Map) {
+      final idx = state.groups.indexWhere((g) => g.id == groupId);
+      if (idx != -1) {
+        final updated = List<ChatConversation>.from(state.groups);
+        updated[idx] = updated[idx].copyWith(
+          lastMessage: lastMsg['content']?.toString(),
+          lastMessageType: lastMsg['message_type']?.toString(),
+          lastMessageSenderId: lastMsg['sender_id']?.toString(),
+          lastMessageTime: lastMsg['created_at']?.toString(),
+        );
+        state = state.copyWith(groups: updated);
+      }
+    }
+  }
+
+  // ── Background initial data fetch (called from join_success) ─────────────────
+  // Mirrors RN ChatContext.jsx join_success handler: fetches conversations +
+  // groups from the API so the list is authoritative after socket auth.
+  Future<void> _fetchInitialData() async {
+    final uid = _currentUserId;
+    if (uid == null) return;
+    try {
+      final results = await Future.wait([
+        chatApiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]),
+        chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]),
+      ]);
+
+      final convsList = results[0];
+      final convs = convsList
+          .map((e) => ChatConversation.fromJson(e))
+          .toList();
+      if (convs.isNotEmpty) {
+        setConversations(convs);
+        debugPrint('[CHAT NOTIFIER] join_success: loaded ${convs.length} conversations');
+      }
+
+      final groupsList = results[1];
+      final groups = groupsList
+          .map((e) => ChatConversation.fromJson(e))
+          .toList();
+      if (groups.isNotEmpty) {
+        setGroups(groups);
+        debugPrint('[CHAT NOTIFIER] join_success: loaded ${groups.length} groups');
+      }
+    } catch (e) {
+      debugPrint('[CHAT NOTIFIER] _fetchInitialData error: $e');
+    }
+  }
+
   Future<void> _refreshGroups() async {
     final uid = _currentUserId;
     if (uid == null) return;
     try {
-      final res = await dioClient.get(AppEndpoints.userGroups(uid));
-      final data = res.data['data'];
-      final list = data is List ? data : (data is Map ? data['groups'] as List? ?? [] : []);
-      final groups = (list as List)
-          .map((e) => ChatConversation.fromJson(Map<String, dynamic>.from(e as Map)))
+      final groupsList = await chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]);
+      final groups = groupsList
+          .map((e) => ChatConversation.fromJson(e))
           .toList();
-      state = state.copyWith(groups: groups);
-    } catch (_) {}
+      setGroups(groups);
+    } catch (e) {
+      debugPrint('[CHAT NOTIFIER] _refreshGroups error: $e');
+    }
   }
 
   // ── Message helpers ───────────────────────────────────────────────────────────
@@ -1185,6 +1404,67 @@ class ChatNotifier extends StateNotifier<ChatState> {
         isPinned: Value(msg.isPinned),
       );
 
+  // ── /channel namespace socket listeners ──────────────────────────────────────
+  // Mirrors RN ChannelListScreen.jsx + AllChatsList.jsx: subscribes to the
+  // /channel namespace and updates the channels list in real-time.
+  void _setupChannelSocketListeners(io.Socket cs) {
+    cs.on('connect', (_) {
+      debugPrint('[CHANNEL-SOCKET NOTIFIER] connected');
+    });
+
+    cs.on('channel_new_message', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final channelId = d['channelId']?.toString();
+      final message = d['message'];
+      if (channelId == null || message == null) return;
+      final msg = Map<String, dynamic>.from(message as Map);
+
+      final isMine = msg['sender_id']?.toString() == _currentUserId;
+      final currentChannels = List<Map<String, dynamic>>.from(state.channels);
+      final idx = currentChannels.indexWhere(
+          (ch) => ch['id']?.toString() == channelId);
+      if (idx == -1) return;
+
+      final oldCh = currentChannels[idx];
+      final oldUnread = (oldCh['unread_count'] as num?)?.toInt() ?? 0;
+      currentChannels[idx] = {
+        ...oldCh,
+        'last_message': msg['content'],
+        'last_message_at': msg['created_at'],
+        'last_message_type': msg['message_type'],
+        // Own messages don't increment unread — mirrors RN isMine check
+        'unread_count': isMine ? 0 : oldUnread + 1,
+      };
+
+      // Re-sort so newest-message channel floats to top — mirrors RN sort
+      currentChannels.sort((a, b) {
+        final tA = a['last_message_at'] != null
+            ? (DateTime.tryParse(a['last_message_at'].toString())
+                    ?.millisecondsSinceEpoch ??
+                0)
+            : 0;
+        final tB = b['last_message_at'] != null
+            ? (DateTime.tryParse(b['last_message_at'].toString())
+                    ?.millisecondsSinceEpoch ??
+                0)
+            : 0;
+        return tB.compareTo(tA);
+      });
+
+      state = state.copyWith(channels: currentChannels);
+      debugPrint('[CHANNEL-SOCKET NOTIFIER] channel_new_message channelId=$channelId');
+    });
+
+    cs.on('disconnect', (reason) {
+      debugPrint('[CHANNEL-SOCKET NOTIFIER] disconnected: $reason');
+    });
+
+    cs.on('error', (e) {
+      debugPrint('[CHANNEL-SOCKET NOTIFIER] error: $e');
+    });
+  }
+
   // ── Public API (called by screens) ───────────────────────────────────────────
 
   void setConversations(List<ChatConversation> convs) {
@@ -1219,6 +1499,37 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void setGroups(List<ChatConversation> groups) {
     state = state.copyWith(groups: groups);
+  }
+
+  // Set the full channels list — called from _initChatSystem in main.dart
+  // after the initial HTTP fetch, and reactively updated by the channel socket.
+  void setChannels(List<Map<String, dynamic>> channels) {
+    // Sort descending by last_message_at on initial set
+    final sorted = List<Map<String, dynamic>>.from(channels);
+    sorted.sort((a, b) {
+      final tA = a['last_message_at'] != null
+          ? (DateTime.tryParse(a['last_message_at'].toString())
+                  ?.millisecondsSinceEpoch ??
+              0)
+          : 0;
+      final tB = b['last_message_at'] != null
+          ? (DateTime.tryParse(b['last_message_at'].toString())
+                  ?.millisecondsSinceEpoch ??
+              0)
+          : 0;
+      return tB.compareTo(tA);
+    });
+    state = state.copyWith(channels: sorted);
+  }
+
+  // Optimistically zero (or set) the unread count for a channel — called when
+  // the user taps into a channel so the badge disappears immediately.
+  void updateChannelUnread(String channelId, int count) {
+    final channels = List<Map<String, dynamic>>.from(state.channels);
+    final idx = channels.indexWhere((ch) => ch['id']?.toString() == channelId);
+    if (idx == -1) return;
+    channels[idx] = {...channels[idx], 'unread_count': count};
+    state = state.copyWith(channels: channels);
   }
 
   void setMessages(String convId, List<ChatMessage> msgs) {

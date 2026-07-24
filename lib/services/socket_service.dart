@@ -3,11 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
+import '../utils/storage.dart';
 
 // Full socket service — manages the Socket.IO connection lifecycle.
-// Two namespaces mirror the RN architecture:
-//   /chat       — private DMs, presence, conversations
-//   /group-chat — all group messaging events
+// Three namespaces mirror the RN architecture:
+//   /chat            — private DMs, presence, conversations
+//   /group-chat      — all group messaging events
+//   /channel         — channel real-time updates (channel_new_message)
+//   /audio-room-chat — audio room events
 class SocketService {
   static final SocketService _instance = SocketService._internal();
   factory SocketService() => _instance;
@@ -15,10 +18,14 @@ class SocketService {
 
   io.Socket? _socket;
   io.Socket? _groupSocket;
+  io.Socket? _channelSocket;
   io.Socket? _audioRoomSocket;
 
   // Stored audio-room join params — re-emitted on every reconnect
   Map<String, dynamic>? _audioRoomJoinParams;
+
+  // Stored channel join params — re-emitted on every reconnect
+  Map<String, dynamic>? _channelJoinParams;
 
   final _storage = const FlutterSecureStorage(
       aOptions: AndroidOptions(encryptedSharedPreferences: true));
@@ -29,6 +36,7 @@ class SocketService {
 
   io.Socket? get socket => _socket;
   io.Socket? get groupSocket => _groupSocket;
+  io.Socket? get channelSocket => _channelSocket;
   io.Socket? get audioRoomSocket => _audioRoomSocket;
   bool get isConnected => _isConnected;
   bool get isConnecting => _isConnecting;
@@ -52,15 +60,20 @@ class SocketService {
 
     _isConnecting = true;
     try {
-      final token = await _storage.read(key: 'accessToken');
-      final uid = await _storage.read(key: 'uid');
+      final token = await AppStorage.getAccessToken();
+      final rawUid = await AppStorage.get('uid');
+      final uid = rawUid?.toString();
       final chatUrl = '${AppConfig.apiBaseUrl}/chat';
       final groupUrl = '${AppConfig.apiBaseUrl}/group-chat';
+      final channelUrl = '${AppConfig.apiBaseUrl}/channel';
       final audioRoomUrl = '${AppConfig.apiBaseUrl}/audio-room-chat';
 
       debugPrint('[SOCKET] Connecting to: $chatUrl');
-      debugPrint('[SOCKET] uid from storage: $uid');
+      debugPrint('[SOCKET] uid from AppStorage: $uid');
       debugPrint('[SOCKET] token present: ${token != null && token.isNotEmpty}');
+
+      // Store channel join params so they can be re-emitted on reconnect
+      _channelJoinParams = {'userId': uid, 'token': token};
 
       // ── /chat namespace ──────────────────────────────────────────────────
       _socket?.dispose();
@@ -99,6 +112,24 @@ class SocketService {
       );
       _setupGroupLifecycleListeners(uid);
       _groupSocket!.connect();
+
+      // ── /channel namespace ──────────────────────────────────────────────
+      _channelSocket?.dispose();
+      _channelSocket = io.io(
+        channelUrl,
+        io.OptionBuilder()
+            .setTransports(['websocket'])
+            .enableReconnection()
+            .setReconnectionAttempts(99999)
+            .setReconnectionDelay(1000)
+            .setReconnectionDelayMax(10000)
+            .setRandomizationFactor(0.5)
+            .setTimeout(20000)
+            .disableAutoConnect()
+            .build(),
+      );
+      _setupChannelLifecycleListeners(uid, token);
+      _channelSocket!.connect();
 
       // ── /audio-room-chat namespace ─────────────────────────────────────────
       _audioRoomSocket?.dispose();
@@ -224,6 +255,42 @@ class SocketService {
     });
   }
 
+  // ── /channel namespace lifecycle ───────────────────────────────────────────
+  // Mirrors RN ChannelListScreen + AllChatsList: connects to /channel namespace,
+  // emits `channel_join` on connect (and reconnect), re-using stored params.
+  void _setupChannelLifecycleListeners(String? uid, String? token) {
+    _channelSocket?.on('connect', (_) {
+      debugPrint('[CHANNEL-SOCKET] ✅ Connected! id=${_channelSocket?.id}');
+      final params = _channelJoinParams;
+      if (params != null) {
+        _channelSocket?.emit('channel_join', params);
+        debugPrint('[CHANNEL-SOCKET] Emitting channel_join userId=${params['userId']}');
+      } else if (uid != null) {
+        _channelSocket?.emit('channel_join', {'userId': uid, 'token': token});
+      }
+    });
+
+    _channelSocket?.on('disconnect', (reason) {
+      debugPrint('[CHANNEL-SOCKET] ❌ Disconnected: $reason');
+    });
+
+    _channelSocket?.on('connect_error', (error) {
+      debugPrint('[CHANNEL-SOCKET] ❌ connect_error: $error');
+    });
+
+    _channelSocket?.on('error', (error) {
+      debugPrint('[CHANNEL-SOCKET] ❌ error: $error');
+    });
+
+    _channelSocket?.on('reconnect', (_) {
+      debugPrint('[CHANNEL-SOCKET] 🔄 Reconnected — re-emitting channel_join uid=$uid');
+      final params = _channelJoinParams;
+      if (params != null) {
+        _channelSocket?.emit('channel_join', params);
+      }
+    });
+  }
+
   void _setupAudioRoomLifecycleListeners(String? uid) {
     _audioRoomSocket?.on('connect', (_) {
       debugPrint('[AUDIO-ROOM-SOCKET] ✅ Connected! id=${_audioRoomSocket?.id}');
@@ -276,6 +343,9 @@ class SocketService {
     _groupSocket?.disconnect();
     _groupSocket?.dispose();
     _groupSocket = null;
+    _channelSocket?.disconnect();
+    _channelSocket?.dispose();
+    _channelSocket = null;
     _audioRoomSocket?.disconnect();
     _audioRoomSocket?.dispose();
     _audioRoomSocket = null;
@@ -331,6 +401,23 @@ class SocketService {
       _groupSocket?.off(event, handler);
     } else {
       _groupSocket?.off(event);
+    }
+  }
+
+  // ── Emit helpers (/channel namespace) ────────────────────────────────────
+  void emitChannel(String event, [dynamic data]) {
+    _channelSocket?.emit(event, data);
+  }
+
+  void onChannel(String event, Function(dynamic) handler) {
+    _channelSocket?.on(event, handler);
+  }
+
+  void offChannel(String event, [Function(dynamic)? handler]) {
+    if (handler != null) {
+      _channelSocket?.off(event, handler);
+    } else {
+      _channelSocket?.off(event);
     }
   }
 
