@@ -104,6 +104,7 @@ dependencies:
   youtube_player_flutter: ^9.0.3
   crypto: ^3.0.6
   livekit_client: ^2.3.1+hotfix.1
+  flutter_webrtc: ^0.12.12
 
 dev_dependencies:
   flutter_test:

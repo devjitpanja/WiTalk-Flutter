@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
 import 'package:livekit_client/livekit_client.dart';
 
 /// Event names emitted by LiveKitAudioManager
@@ -543,12 +544,36 @@ class LiveKitAudioManager {
   }
 
   /// Set the local playback volume (0.0–1.0) for a remote participant.
-  /// The Flutter LiveKit SDK does not expose per-track volume control —
-  /// this is a no-op that emits an event so the UI stays in sync.
+  /// Finds the participant by identity and applies volume to their audio track.
   void setParticipantVolume(String userId, double volume) {
+    final clampedVolume = volume.clamp(0.0, 1.0);
+
+    if (kDebugMode) print('[VOL] setParticipantVolume called: userId=$userId volume=$clampedVolume room=${_room != null ? "exists" : "NULL"}');
+
+    if (_room != null) {
+      if (kDebugMode) print('[VOL] remoteParticipants keys: ${_room!.remoteParticipants.keys.toList()}');
+      final participant = _room!.remoteParticipants[userId];
+      if (kDebugMode) print('[VOL] participant found: ${participant != null}');
+      if (participant != null) {
+        if (kDebugMode) print('[VOL] audioTrackPublications count: ${participant.audioTrackPublications.length}');
+        for (final pub in participant.audioTrackPublications) {
+          final track = pub.track;
+          if (kDebugMode) print('[VOL] pub.sid=${pub.sid} track=${track != null ? "exists" : "NULL"} subscribed=${pub.subscribed}');
+          if (track != null) {
+            try {
+              rtc.Helper.setVolume(clampedVolume, track.mediaStreamTrack);
+              if (kDebugMode) print('[VOL] setVolume SUCCESS for track ${pub.sid}');
+            } catch (e) {
+              if (kDebugMode) print('[VOL] setVolume ERROR: $e');
+            }
+          }
+        }
+      }
+    }
+
     _emit('participantVolumeChanged', {
       'userID': userId,
-      'volume': volume.clamp(0.0, 1.0),
+      'volume': clampedVolume,
     });
   }
 
