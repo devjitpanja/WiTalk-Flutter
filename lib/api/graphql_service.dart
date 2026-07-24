@@ -1,18 +1,9 @@
-import 'package:dio/dio.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'dio_client.dart';
-import '../config/app_config.dart';
 
 class GraphQLService {
   static final GraphQLService _instance = GraphQLService._internal();
   factory GraphQLService() => _instance;
   GraphQLService._internal();
-
-  final _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
-
-  bool _isRefreshing = false;
 
   /// Execute GraphQL query or mutation with automatic token refresh on auth errors.
   Future<Map<String, dynamic>> query({
@@ -70,47 +61,10 @@ class GraphQLService {
     throw Exception('GraphQL query failed after retries');
   }
 
-  /// Manually refresh access token if needed
+  /// Refresh access token using centralized DioClient refresh mechanism
   Future<bool> refreshToken() async {
-    if (_isRefreshing) return false;
-    _isRefreshing = true;
-    try {
-      final refreshToken = await _storage.read(key: 'refreshToken');
-      if (refreshToken != null) {
-        final res = await Dio().post(
-          '${AppConfig.apiBaseUrl}/v1/auth/refresh',
-          data: {'refreshToken': refreshToken},
-        );
-        final data = res.data['data'];
-        if (data != null && data['accessToken'] != null) {
-          await _storage.write(key: 'accessToken', value: data['accessToken'] as String);
-          if (data['refreshToken'] != null) {
-            await _storage.write(key: 'refreshToken', value: data['refreshToken'] as String);
-          }
-          _isRefreshing = false;
-          return true;
-        }
-      }
-
-      final uid = await _storage.read(key: 'uid');
-      if (uid != null) {
-        final res = await Dio().post(
-          '${AppConfig.apiBaseUrl}/v1/auth/generate-tokens',
-          data: {'userId': uid},
-        );
-        final data = res.data['data'];
-        if (data != null && data['accessToken'] != null) {
-          await _storage.write(key: 'accessToken', value: data['accessToken'] as String);
-          if (data['refreshToken'] != null) {
-            await _storage.write(key: 'refreshToken', value: data['refreshToken'] as String);
-          }
-          _isRefreshing = false;
-          return true;
-        }
-      }
-    } catch (_) {}
-    _isRefreshing = false;
-    return false;
+    final result = await performTokenRefresh();
+    return result.success;
   }
 }
 

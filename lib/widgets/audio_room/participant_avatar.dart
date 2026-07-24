@@ -3,14 +3,14 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'sound_wave_indicator.dart';
 import '../common/verification_badge.dart';
 
-/// Seat avatar for the audio room grid.
+/// Premium redesigned seat avatar for the audio room grid.
 ///
-/// Speaking styles:
-///  • No frame  → animated water-drop ripple rings around the circle
-///  • Has frame → wave bars appear at the bottom edge of the frame
-///
-/// Verification badge (if isVerified): green circle at 225° (bottom-left)
-/// of the avatar circle, overlapping the edge.
+/// Visual improvements:
+///  • Muted: small red badge at bottom-right instead of full dark overlay
+///  • Speaking: vibrant ripple rings with host-aware color (gold vs sky-blue)
+///  • Host ring: gold glow border (static) or gold ripple (speaking)
+///  • Name: color-coded by role, single Text (no Row+Flexible overflow)
+///  • Avatar background: subtle gradient instead of flat blue
 class ParticipantAvatar extends StatelessWidget {
   final String? uid;
   final String? name;
@@ -74,22 +74,32 @@ class ParticipantAvatar extends StatelessWidget {
         ? 'You'
         : (name?.isNotEmpty == true ? name!.split(' ')[0] : (uid ?? 'User'));
 
-    final roleBadgeSize = (size * 0.27).clamp(12.0, 18.0);
-    final nameFontSize = (size * 0.20).clamp(9.0, 11.0);
-
-    // Badge sits on the avatar circle edge at 225° (bottom-left).
-    // Avatar circle center in Stack coords: (outerSize/2, outerSize/2)
-    // At 225°: dx = dy = -size/2 * sin(45°) ≈ -0.3536 * size
-    // Badge center in stack:
-    //   left  = outerSize/2 + dx = size*0.75 - 0.3536*size*0.5 = ~0.573*size
-    //   bottom = outerSize/2 + dy (same)
-    // Positioned(left/bottom) = badgeCenter - badgeSize/2
-    final badgeSize = (size * 0.30).clamp(14.0, 20.0);
-    final badgeCenterFromEdge = size * 0.573;
-    final badgeOffset = badgeCenterFromEdge - badgeSize / 2;
-
     const double outerMult = 1.5;
     final outerSize = size * outerMult;
+    final nameFontSize = (size * 0.20).clamp(9.0, 11.0);
+
+    // Mic badge: positioned symmetrically to verification badge (315° vs 225°)
+    // Both badges use size * 0.573 as the center distance from stack edge
+    final micBadgeSize = (size * 0.28).clamp(12.0, 18.0);
+    final micBadgeCenterDist = size * 0.573;
+    final micBadgeOffset = micBadgeCenterDist - micBadgeSize / 2;
+
+    // Verification badge (225° bottom-left) — same formula as before
+    final verBadgeSize = (size * 0.30).clamp(14.0, 20.0);
+    final verBadgeCenterDist = size * 0.573;
+    final verBadgeOffset = verBadgeCenterDist - verBadgeSize / 2;
+
+    // Role-based name color
+    final Color nameColor;
+    if (isHost) {
+      nameColor = const Color(0xFFFFB700);
+    } else if (communityRole == 'super_admin') {
+      nameColor = const Color(0xFFE84040);
+    } else if (communityRole == 'admin' || isAdmin) {
+      nameColor = const Color(0xFFFFA726);
+    } else {
+      nameColor = const Color(0xFFDDE3F0);
+    }
 
     return GestureDetector(
       onTap: onTap,
@@ -103,19 +113,26 @@ class ParticipantAvatar extends StatelessWidget {
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                // ── Speaking ripple / border (only when NO frame) ─────────────
+                // ── Speaking ripple / host ring / default border ───────────────
                 if (isSpeaking && !hasFrame)
-                  _WaterDropRipple(size: size)
+                  _PremiumRipple(size: size, isHost: isHost)
                 else if (!hasFrame && isHost)
                   Container(
-                    width: size + 4,
-                    height: size + 4,
+                    width: size + 6,
+                    height: size + 6,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFFFFA726),
+                        color: const Color(0xFFFFB700),
                         width: 2.0,
                       ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFFFB700).withValues(alpha: 0.30),
+                          blurRadius: 10,
+                          spreadRadius: 1,
+                        ),
+                      ],
                     ),
                   )
                 else if (!hasFrame)
@@ -125,19 +142,23 @@ class ParticipantAvatar extends StatelessWidget {
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: Colors.white38,
+                        color: Colors.white.withValues(alpha: 0.12),
                         width: 1.5,
                       ),
                     ),
                   ),
 
-                // ── Avatar circle ─────────────────────────────────────────────
+                // ── Avatar circle with gradient background ────────────────────
                 Container(
                   width: size,
                   height: size,
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0xFF5A9BD5),
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)],
+                    ),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: resolvedAvatarUrl != null && resolvedAvatarUrl.isNotEmpty
@@ -150,25 +171,9 @@ class ParticipantAvatar extends StatelessWidget {
                       : _buildInitialAvatar(initial),
                 ),
 
-                // ── Muted overlay ─────────────────────────────────────────────
-                if (isMuted)
-                  Container(
-                    width: size,
-                    height: size,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Color(0x73000000),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.mic_off,
-                      size: (size * 0.28).clamp(12.0, 18.0),
-                      color: Colors.white,
-                    ),
-                  ),
-
                 // ── Frame overlay (above avatar) ──────────────────────────────
-                if (hasFrame)
+                if (hasFrame) ...[
+                  if (isSpeaking) _PremiumRipple(size: size, isHost: isHost),
                   Positioned.fill(
                     child: CachedNetworkImage(
                       imageUrl: resolvedFrameUrl,
@@ -176,6 +181,7 @@ class ParticipantAvatar extends StatelessWidget {
                       errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
+                ],
 
                 // ── Wave bars for framed speaking (bottom edge) ───────────────
                 if (isSpeaking && hasFrame)
@@ -183,7 +189,7 @@ class ParticipantAvatar extends StatelessWidget {
                     bottom: 0,
                     child: SoundWaveIndicator(
                       isSpeaking: true,
-                      color: const Color(0xFF5B9AFF),
+                      color: const Color(0xFF38BDF8),
                       barCount: 4,
                       barWidth: 2.5,
                       minHeight: 4,
@@ -191,23 +197,54 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // ── Verification badge at 225° (bottom-left of avatar circle) ─
-                if (isVerified)
+                // ── Muted badge at bottom-right (315°) ───────────────────────
+                if (isMuted)
                   Positioned(
-                    left: badgeOffset,
-                    bottom: badgeOffset,
+                    right: micBadgeOffset,
+                    bottom: micBadgeOffset,
                     child: Container(
-                      width: badgeSize,
-                      height: badgeSize,
+                      width: micBadgeSize,
+                      height: micBadgeSize,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(0xFF0D1017),
+                        color: const Color(0xFFEF4444),
+                        border: Border.all(
+                          color: const Color(0xFF090D18),
+                          width: 1.5,
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                            blurRadius: 4,
+                          ),
+                        ],
+                      ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.mic_off_rounded,
+                        size: micBadgeSize * 0.55,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+
+                // ── Verification badge at 225° (bottom-left) ─────────────────
+                if (isVerified)
+                  Positioned(
+                    left: verBadgeOffset,
+                    bottom: verBadgeOffset,
+                    child: Container(
+                      width: verBadgeSize,
+                      height: verBadgeSize,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Color(0xFF090D18),
                       ),
                       alignment: Alignment.center,
                       child: VerificationBadge(
                         isVerified: true,
                         badge: verificationBadge,
-                        size: badgeSize * 0.85,
+                        size: verBadgeSize * 0.85,
                       ),
                     ),
                   ),
@@ -215,71 +252,30 @@ class ParticipantAvatar extends StatelessWidget {
             ),
           ),
 
+          // ── Name label (single Text — no overflow) ────────────────────────
           if (showName) ...[
-            const SizedBox(height: 3),
+            const SizedBox(height: 4),
             SizedBox(
               width: outerSize,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  if (isHost) ...[
-                    Container(
-                      width: roleBadgeSize,
-                      height: roleBadgeSize,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFF0751DF),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(
-                        Icons.stars,
-                        size: roleBadgeSize * 0.7,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: 3),
-                  ] else if (communityRole == 'super_admin') ...[
-                    Container(
-                      width: roleBadgeSize,
-                      height: roleBadgeSize,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFFE84040),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
-                    ),
-                    const SizedBox(width: 3),
-                  ] else if (communityRole == 'admin' || isAdmin) ...[
-                    Container(
-                      width: roleBadgeSize,
-                      height: roleBadgeSize,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Color(0xFFFFA726),
-                      ),
-                      alignment: Alignment.center,
-                      child: Icon(Icons.star, size: roleBadgeSize * 0.7, color: Colors.white),
-                    ),
-                    const SizedBox(width: 3),
-                  ],
-
-                  Flexible(
-                    child: Text(
-                      firstName,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: nameFontSize,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w600,
-                      ),
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
+              child: Text(
+                firstName,
+                style: TextStyle(
+                  color: nameColor,
+                  fontSize: nameFontSize,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600,
+                  shadows: isHost
+                      ? [
+                          Shadow(
+                            color: const Color(0xFFFFB700).withValues(alpha: 0.5),
+                            blurRadius: 6,
+                          ),
+                        ]
+                      : null,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ],
@@ -290,13 +286,12 @@ class ParticipantAvatar extends StatelessWidget {
 
   Widget _buildInitialAvatar(String initial) {
     return Container(
-      color: const Color(0xFF5A9BD5),
       alignment: Alignment.center,
       child: Text(
         initial,
         style: TextStyle(
           color: Colors.white,
-          fontSize: size * 0.4,
+          fontSize: size * 0.40,
           fontFamily: 'Outfit',
           fontWeight: FontWeight.w700,
         ),
@@ -305,18 +300,17 @@ class ParticipantAvatar extends StatelessWidget {
   }
 }
 
-// ── Water-drop ripple speaking indicator (no-frame users) ────────────────────
-// Three staggered concentric rings that expand outward and fade, like a
-// water drop ripple effect.
-class _WaterDropRipple extends StatefulWidget {
+// ── Premium speaking ripple with host-aware color ─────────────────────────────
+class _PremiumRipple extends StatefulWidget {
   final double size;
-  const _WaterDropRipple({required this.size});
+  final bool isHost;
+  const _PremiumRipple({required this.size, this.isHost = false});
 
   @override
-  State<_WaterDropRipple> createState() => _WaterDropRippleState();
+  State<_PremiumRipple> createState() => _PremiumRippleState();
 }
 
-class _WaterDropRippleState extends State<_WaterDropRipple>
+class _PremiumRippleState extends State<_PremiumRipple>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -325,7 +319,7 @@ class _WaterDropRippleState extends State<_WaterDropRipple>
     super.initState();
     _ctrl = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 1400),
     )..repeat();
   }
 
@@ -337,8 +331,7 @@ class _WaterDropRippleState extends State<_WaterDropRipple>
 
   @override
   Widget build(BuildContext context) {
-    // Canvas size needs to accommodate the ripple spread beyond the avatar
-    final canvasSize = widget.size * 1.8;
+    final canvasSize = widget.size * 1.9;
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (_, __) => CustomPaint(
@@ -346,6 +339,7 @@ class _WaterDropRippleState extends State<_WaterDropRipple>
         painter: _RipplePainter(
           progress: _ctrl.value,
           avatarRadius: widget.size / 2,
+          isHost: widget.isHost,
         ),
       ),
     );
@@ -355,35 +349,41 @@ class _WaterDropRippleState extends State<_WaterDropRipple>
 class _RipplePainter extends CustomPainter {
   final double progress;
   final double avatarRadius;
+  final bool isHost;
 
-  const _RipplePainter({required this.progress, required this.avatarRadius});
+  const _RipplePainter({
+    required this.progress,
+    required this.avatarRadius,
+    required this.isHost,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     const waves = 3;
-    // Maximum distance a wave travels beyond the avatar edge
-    final spread = avatarRadius * 0.5;
+    final spread = avatarRadius * 0.65;
+    final baseColor =
+        isHost ? const Color(0xFFFFB700) : const Color(0xFF38BDF8);
 
     for (int i = 0; i < waves; i++) {
-      // Stagger each wave by 1/waves of the cycle
       double t = (progress - i / waves) % 1.0;
       if (t < 0) t += 1.0;
 
       final r = avatarRadius + 2 + t * spread;
-      final opacity = (1.0 - t) * 0.65;
+      final opacity = (1.0 - t) * 0.80;
 
       canvas.drawCircle(
         center,
         r,
         Paint()
-          ..color = const Color(0xFF5B9AFF).withValues(alpha: opacity.clamp(0.0, 1.0))
+          ..color = baseColor.withValues(alpha: opacity.clamp(0.0, 1.0))
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.2,
+          ..strokeWidth = 2.5,
       );
     }
   }
 
   @override
-  bool shouldRepaint(_RipplePainter old) => old.progress != progress;
+  bool shouldRepaint(_RipplePainter old) =>
+      old.progress != progress || old.isHost != isHost;
 }

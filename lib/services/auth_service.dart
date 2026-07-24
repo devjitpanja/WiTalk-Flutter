@@ -1,10 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../api/dio_client.dart';
 import '../config/app_config.dart';
+import '../utils/storage.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'dart:io';
@@ -28,7 +28,6 @@ class AuthResult {
 class AuthService {
   static final _googleSignIn = GoogleSignIn(serverClientId: _webClientId);
   static final _firebaseAuth = FirebaseAuth.instance;
-  static const _storage = FlutterSecureStorage();
 
   static Future<AuthResult> signInWithGoogle() async {
     try {
@@ -72,14 +71,20 @@ class AuthService {
         );
         final tokens = tokenRes.data['data'];
         if (tokens != null) {
-          await _storage.write(key: 'accessToken', value: tokens['accessToken'] as String);
-          await _storage.write(key: 'refreshToken', value: tokens['refreshToken'] as String);
-          if (tokens['expiresIn'] != null) {
-            final expiry = DateTime.now().millisecondsSinceEpoch + (tokens['expiresIn'] as int) * 1000;
-            await _storage.write(key: 'tokenExpiry', value: expiry.toString());
-          }
-          // Store uid in secure storage so DioClient can use it for token regeneration
-          await _storage.write(key: 'uid', value: user.uid);
+          final accessToken = tokens['accessToken'] as String;
+          final refreshToken = tokens['refreshToken'] as String;
+          final expiresIn = (tokens['expiresIn'] as int?) ?? 900;
+          final refreshExpiresIn = (tokens['refreshExpiresIn'] as int?) ?? (30 * 24 * 60 * 60);
+
+          await AppStorage.setAuthTokens(
+            accessToken,
+            refreshToken,
+            expiresIn: expiresIn,
+            refreshExpiresIn: refreshExpiresIn,
+          );
+          await AppStorage.set('uid', user.uid);
+          clearTokenCache();
+          markTokensAsReady();
         }
 
         // Check onboarding state
@@ -126,9 +131,9 @@ class AuthService {
 
   static Future<void> _clearAuth() async {
     await _firebaseAuth.signOut();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    await _storage.deleteAll();
+    await AppStorage.clear();
+    clearTokenCache();
+    resetTokenGate();
   }
 
   static Future<Map<String, dynamic>> _getDeviceInfo() async {

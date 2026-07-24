@@ -12,9 +12,12 @@ import '../../widgets/audio_room/room_rules_banner.dart';
 import '../../widgets/audio_room/user_profile_bottom_sheet.dart';
 import '../../widgets/audio_room/report_bottom_sheet.dart';
 
-const Color _kBg = Color(0xFF0D1017);
-const Color _kPrimary = Color(0xFF0751DF);
-const Color _kGold = Color(0xFF5B9AFF);
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const Color _kBg = Color(0xFF090D18);
+const Color _kSurface = Color(0xFF0F1521);
+const Color _kCard = Color(0xFF141B2D);
+const Color _kPrimary = Color(0xFF2563EB);
+const Color _kPrimaryGlow = Color(0x332563EB);
 
 class LiveAudioRoomScreen extends ConsumerStatefulWidget {
   final String roomId;
@@ -31,12 +34,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   final _chatFocus = FocusNode();
   final _scrollCtrl = ScrollController();
 
-  // Floating reactions
   final List<_FloatingReaction> _reactions = [];
-
-  // Animation controllers
   late AnimationController _pulseCtrl;
-
   bool _isRoomEnded = false;
 
   @override
@@ -59,10 +58,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final notifier = ref.read(audioRoomProvider.notifier);
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.detached) {
-      // App going to background — keep audio alive (socket stays connected)
       notifier.minimizeRoom();
     } else if (state == AppLifecycleState.resumed) {
-      // App restored — re-request seat state to resync
       notifier.restoreRoom();
     }
   }
@@ -77,17 +74,16 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     super.dispose();
   }
 
+  // ── Business logic — unchanged ─────────────────────────────────────────────
+
   void _handleEmptySeatPress(int seatIndex) {
     final s = ref.read(audioRoomProvider);
     final notifier = ref.read(audioRoomProvider.notifier);
 
-    // Guard: seats not initialized yet
     if (!s.seatsInitialized) {
       _showSnack('Seats are still loading, please wait...');
       return;
     }
-
-    // Guard: no permission to take seats
     if (!s.canTakeAddaSeat) {
       _showSnack("You don't have permission to take a seat.");
       return;
@@ -108,37 +104,14 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       return;
     }
 
-    // If already in a different seat, switch seats
     if (s.isInSeat && s.currentSeatIndex != seatIndex) {
       notifier.changeSeat(s.currentSeatIndex, seatIndex);
       _showSnack('Moving to Seat #${seatIndex + 1}...');
       return;
     }
 
-    // Take seat directly (no bottom sheet modal)
     notifier.takeSeat(seatIndex);
     _showSnack('Joining stage...');
-  }
-
-  void _showHandRaiseConfirm() {
-    final s = ref.read(audioRoomProvider);
-    if (s.isHandRaised) {
-      // Already requested → cancel
-      ref.read(audioRoomProvider.notifier).toggleHandRaise();
-      _showSnack('Seat request cancelled');
-      return;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _GoOnStageSheet(
-        onConfirm: () {
-          ref.read(audioRoomProvider.notifier).toggleHandRaise();
-          _showSnack('Seat request sent');
-        },
-      ),
-    );
   }
 
   void _handleGoOnStage() {
@@ -160,7 +133,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         title: 'Leave Stage?',
         message: 'You will stop speaking and move to the audience.',
         confirmText: 'Leave Stage',
-        confirmColor: const Color(0xFFFF6B6B),
+        confirmColor: const Color(0xFFEF4444),
         onConfirm: () => ref.read(audioRoomProvider.notifier).leaveSeat(),
       ),
     );
@@ -177,7 +150,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             ? 'Ending the room will disconnect all participants.'
             : 'Are you sure you want to leave?',
         confirmText: isHost ? 'End Room' : 'Leave',
-        confirmColor: const Color(0xFFFF6B6B),
+        confirmColor: const Color(0xFFEF4444),
         onConfirm: () async {
           if (isHost) {
             ref.read(audioRoomProvider.notifier).endRoom();
@@ -196,7 +169,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     ref.read(audioRoomProvider.notifier).sendChatMessage(text);
     _chatCtrl.clear();
     _chatFocus.unfocus();
-    // Auto-scroll to bottom
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
@@ -210,8 +182,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   void _handleShareRoom() {
     final s = ref.read(audioRoomProvider);
-    Clipboard.setData(
-        ClipboardData(text: 'Join my Adda "${s.roomName}": https://witalk.app/room/${widget.roomId}'));
+    Clipboard.setData(ClipboardData(
+        text: 'Join my Adda "${s.roomName}": https://witalk.app/room/${widget.roomId}'));
     _showSnack('Room link copied to clipboard!');
   }
 
@@ -222,8 +194,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       _reactions.add(_FloatingReaction(
         id: id,
         emoji: emoji,
-        x: 40 + rnd.nextDouble() * 240,
-        y: 260 + rnd.nextDouble() * 160,
+        x: 40 + rnd.nextDouble() * 220,
+        y: 240 + rnd.nextDouble() * 140,
       ));
     });
     Future.delayed(const Duration(seconds: 3), () {
@@ -236,7 +208,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       SnackBar(
         content: Text(msg, style: const TextStyle(fontFamily: 'Outfit')),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF1A2340),
+        backgroundColor: _kCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -296,7 +269,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  // ── Provider-driven alert dialog ───────────────────────────────────────────
   void _showProviderAlertDialog(Map<String, dynamic> config) {
     final title = config['title']?.toString() ?? '';
     final message = config['message']?.toString() ?? '';
@@ -309,7 +281,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       context: context,
       barrierDismissible: cancelLabel != null,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2340),
+        backgroundColor: _kCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           title,
@@ -339,9 +311,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               child: Text(
                 cancelLabel,
                 style: const TextStyle(
-                  color: Color(0x73EBEBF5),
-                  fontFamily: 'Outfit',
-                ),
+                    color: Color(0x73EBEBF5), fontFamily: 'Outfit'),
               ),
             ),
           TextButton(
@@ -353,10 +323,9 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             child: Text(
               confirmLabel,
               style: const TextStyle(
-                color: _kPrimary,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w700,
-              ),
+                  color: _kPrimary,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700),
             ),
           ),
         ],
@@ -366,14 +335,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     });
   }
 
-  // ── Seat invite dialog ────────────────────────────────────────────────────
   void _showSeatInviteDialog(Map<String, dynamic> invite) {
     final seatIndex = invite['seatIndex'] as int? ?? -1;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF1A2340),
+        backgroundColor: _kCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Stage Invitation',
@@ -389,10 +357,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               ? 'The host invited you to speak on seat ${seatIndex + 1}.'
               : 'The host invited you to speak on stage.',
           style: const TextStyle(
-            color: Color(0x99EBEBF5),
-            fontFamily: 'Outfit',
-            fontSize: 14,
-          ),
+              color: Color(0x99EBEBF5), fontFamily: 'Outfit', fontSize: 14),
         ),
         actions: [
           TextButton(
@@ -400,31 +365,25 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               Navigator.pop(context);
               ref.read(audioRoomProvider.notifier).declineSeatInvite();
             },
-            child: const Text(
-              'Decline',
-              style: TextStyle(color: Color(0x73EBEBF5), fontFamily: 'Outfit'),
-            ),
+            child: const Text('Decline',
+                style: TextStyle(
+                    color: Color(0x73EBEBF5), fontFamily: 'Outfit')),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               ref.read(audioRoomProvider.notifier).acceptSeatInvite();
             },
-            child: const Text(
-              'Accept',
-              style: TextStyle(
-                color: _kPrimary,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+            child: const Text('Accept',
+                style: TextStyle(
+                    color: _kPrimary,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
   }
-
-
 
   // ── Build ──────────────────────────────────────────────────────────────────
   @override
@@ -432,11 +391,9 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final roomState = ref.watch(audioRoomProvider);
     final myUid = ref.watch(authProvider).uid;
 
-    // Auto-listen to state changes
     ref.listen<AudioRoomState>(audioRoomProvider, (prev, next) {
       if (!mounted) return;
 
-      // Auto-scroll chat on new message
       if ((next.chatMessages.length) > (prev?.chatMessages.length ?? 0)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (_scrollCtrl.hasClients) {
@@ -449,7 +406,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         });
       }
 
-      // Show alert dialog from provider state
       if (next.showAlertDialog &&
           !(prev?.showAlertDialog ?? false) &&
           next.alertDialogConfig != null) {
@@ -459,28 +415,23 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         });
       }
 
-      // Show seat invite dialog
-      if (next.incomingSeatInvite != null &&
-          prev?.incomingSeatInvite == null) {
+      if (next.incomingSeatInvite != null && prev?.incomingSeatInvite == null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _showSeatInviteDialog(next.incomingSeatInvite!);
         });
       }
 
-      // Room ended screen (non-host)
       if (next.showRoomEndedScreen && !(prev?.showRoomEndedScreen ?? false)) {
         setState(() => _isRoomEnded = true);
       }
 
-      // Host ended own room → just navigate back
       if (next.shouldNavigateBack && !(prev?.shouldNavigateBack ?? false)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) context.pop();
         });
       }
 
-      // Kicked from room — show toast then navigate back
       if (next.kickedFromRoom && !(prev?.kickedFromRoom ?? false)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -491,7 +442,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         });
       }
 
-      // Banned from room — show toast then navigate back
       if (next.bannedFromRoom && !(prev?.bannedFromRoom ?? false)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
@@ -503,21 +453,31 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       }
     });
 
-    // Loading state — either initial join or waiting for seat state sync
-    if (roomState.isLoading || (!roomState.seatsInitialized && roomState.isConnected && roomState.error == null)) {
+    // ── Loading state ──────────────────────────────────────────────────────
+    if (roomState.isLoading ||
+        (!roomState.seatsInitialized &&
+            roomState.isConnected &&
+            roomState.error == null)) {
       return Scaffold(
         backgroundColor: _kBg,
         body: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const CircularProgressIndicator(color: _kPrimary),
+              const SizedBox(
+                width: 44,
+                height: 44,
+                child: CircularProgressIndicator(
+                  color: _kPrimary,
+                  strokeWidth: 2.5,
+                ),
+              ),
               const SizedBox(height: 20),
               Text(
                 roomState.isLoading ? 'Joining Adda...' : 'Syncing stage...',
                 style: const TextStyle(
-                  color: Color(0xCCEBEBF5),
-                  fontSize: 16,
+                  color: Color(0xAAEBEBF5),
+                  fontSize: 15,
                   fontFamily: 'Outfit',
                   fontWeight: FontWeight.w600,
                 ),
@@ -528,12 +488,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       );
     }
 
-    // Error / room ended state
+    // ── Error / Ended ──────────────────────────────────────────────────────
     if (roomState.error != null || _isRoomEnded) {
       return _buildErrorScreen(roomState);
     }
 
-    // Build the seats list from state
     final seatsList = _buildSeatsList(roomState, myUid);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -544,12 +503,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       child: Scaffold(
         backgroundColor: _kBg,
         body: SafeArea(
+          bottom: false,
           child: Column(
             children: [
-              // ── Header ───────────────────────────────────
+              // ── Header ─────────────────────────────────────
               _buildHeader(roomState),
 
-              // ── Fixed: stage grid + rules banner (never scrolls) ──
+              // ── Stage + rules (fixed) ───────────────────────
               GridSeatingLayout(
                 seats: seatsList,
                 maxSeats: roomState.maxSeats,
@@ -580,42 +540,40 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       ref.read(audioRoomProvider.notifier).dismissRulesBanner(),
                 ),
 
-              // ── ADDA CHAT divider (fixed) ─────────────────────
-              _buildAddaChatDivider(),
+              // ── Chat divider ────────────────────────────────
+              _buildChatDivider(),
 
-              // ── Scrollable chat + emoji strip ─────────────────
+              // ── Scrollable chat + emoji strip ───────────────
               Expanded(
                 child: Stack(
                   children: [
                     ListView.builder(
                       controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(10, 4, 56, 16),
+                      padding: const EdgeInsets.fromLTRB(10, 6, 56, 16),
                       itemCount: roomState.chatMessages.length > 50
                           ? 50
                           : roomState.chatMessages.length,
                       itemBuilder: (_, i) {
                         final msgs = roomState.chatMessages.length > 50
-                            ? roomState.chatMessages.sublist(
-                                roomState.chatMessages.length - 50)
+                            ? roomState.chatMessages
+                                .sublist(roomState.chatMessages.length - 50)
                             : roomState.chatMessages;
                         return _buildChatBubble(msgs[i]);
                       },
                     ),
 
-                    // Vertical Emoji Reaction Strip on right side
                     Positioned(
-                      right: 8,
-                      bottom: 8,
-                      child: _buildEmojiReactionStrip(),
+                      right: 6,
+                      bottom: 6,
+                      child: _buildEmojiStrip(),
                     ),
 
-                    // Floating reactions overlay
                     ..._reactions.map((r) => _buildFloatingReaction(r)),
                   ],
                 ),
               ),
 
-              // ── Bottom bar ────────────────────────────────
+              // ── Bottom bar ─────────────────────────────────
               AudioRoomBottomBar(
                 isMicOn: !roomState.isMuted,
                 isHost: roomState.isHost,
@@ -644,233 +602,162 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader(AudioRoomState s) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      decoration: const BoxDecoration(
-        color: Color(0x0A0751DF), // rgba(7, 81, 223, 0.04)
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _kSurface,
         border: Border(
-          bottom: BorderSide(color: Color(0x1F0751DF), width: 1), // rgba(7, 81, 223, 0.12)
+          bottom: BorderSide(
+            color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+            width: 1,
+          ),
         ),
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Left: Minimize button
-          GestureDetector(
+          // Minimize button
+          _HeaderIconBtn(
             onTap: () {
               ref.read(audioRoomProvider.notifier).toggleMinimised();
               context.pop();
             },
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0x140751DF),
-                border: Border.all(color: const Color(0x330751DF), width: 1),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.keyboard_arrow_down,
-                color: _kPrimary,
-                size: 26,
-              ),
-            ),
+            icon: Icons.keyboard_arrow_down_rounded,
+            size: 38,
           ),
 
-          // Center: Room name + badgeRow
+          const SizedBox(width: 12),
+
+          // Room name + badges
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
                   s.roomName,
                   style: const TextStyle(
                     color: Color(0xFFEBEBF5),
-                    fontSize: 17,
+                    fontSize: 16,
                     fontFamily: 'Outfit',
                     fontWeight: FontWeight.w700,
-                    shadows: [
-                      Shadow(
-                        color: Color(0x590751DF),
-                        blurRadius: 6,
-                      ),
-                    ],
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 3),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
+                const SizedBox(height: 4),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 6,
                   children: [
-                    // • Community / • Personal tag
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0x26DC3C1E), // rgba(220, 60, 30, 0.15)
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0x66DC501E)), // rgba(220, 80, 30, 0.4)
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 5,
-                            height: 5,
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Color(0xFFE84040),
-                            ),
-                          ),
-                          const SizedBox(width: 5),
-                          Text(
-                            s.groupId != null ? 'Community' : 'Personal',
-                            style: const TextStyle(
-                              color: Color(0xFFFF7755),
-                              fontSize: 9,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 1.8,
-                            ),
-                          ),
-                        ],
-                      ),
+                    _HeaderBadge(
+                      label: s.groupId != null ? 'Community' : 'Personal',
+                      dotColor: const Color(0xFFE84040),
+                      labelColor: const Color(0xFFFF7755),
+                      bgColor: const Color(0x22DC3C1E),
+                      borderColor: const Color(0x55DC501E),
                     ),
-
-                    // • REC badge (if recording)
-                    if (s.cloudRecordingActive) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0x26EF4444), // rgba(239, 68, 68, 0.15)
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0x66EF4444)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _BlinkingRecDot(),
-                            SizedBox(width: 5),
-                            Text(
-                              'REC',
-                              style: TextStyle(
-                                color: Color(0xFFEF4444),
-                                fontSize: 9,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 1.8,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-
-                    // Rating badge (if rating > 0)
-                    if (s.averageRating != null && s.averageRating! > 0) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0x1FFA726),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0x59FFA726)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star, size: 9, color: Color(0xFFFFA726)),
-                            const SizedBox(width: 4),
-                            Text(
-                              s.averageRating!.toStringAsFixed(1),
-                              style: const TextStyle(
-                                color: Color(0xFFFFA726),
-                                fontSize: 9,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    if (s.cloudRecordingActive)
+                      _RecBadge(),
+                    if (s.averageRating != null && s.averageRating! > 0)
+                      _RatingBadge(rating: s.averageRating!),
                   ],
                 ),
               ],
             ),
           ),
 
-          // Right: Share button
-          GestureDetector(
+          const SizedBox(width: 12),
+
+          // Share button
+          _HeaderIconBtn(
             onTap: _handleShareRoom,
-            child: Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: const Color(0x140751DF),
-                border: Border.all(color: const Color(0x330751DF), width: 1),
-              ),
-              alignment: Alignment.center,
-              child: const Icon(
-                Icons.share,
-                color: _kPrimary,
-                size: 20,
-              ),
-            ),
+            icon: Icons.ios_share_rounded,
+            size: 38,
           ),
         ],
       ),
     );
   }
 
-  // ── Section Divider: ADDA CHAT ──────────────────────────────────────────────
-  Widget _buildAddaChatDivider() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+  // ── Chat section divider ───────────────────────────────────────────────────
+  Widget _buildChatDivider() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: Row(
         children: [
-          Expanded(child: Container(height: 1, color: const Color(0x1F0751DF))),
-          const SizedBox(width: 6),
-          const Icon(
-            Icons.chat_bubble_outline,
-            size: 11,
-            color: Color(0x730751DF),
-          ),
-          const SizedBox(width: 4),
-          const Text(
-            'ADDA CHAT',
-            style: TextStyle(
-              fontSize: 10,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w600,
-              color: Color(0x8C828CF8),
-              letterSpacing: 1.2,
+          Expanded(
+            child: Container(
+              height: 1,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.transparent,
+                    const Color(0xFF2563EB).withValues(alpha: 0.20),
+                  ],
+                ),
+              ),
             ),
           ),
-          const SizedBox(width: 6),
-          Expanded(child: Container(height: 1, color: const Color(0x1F0751DF))),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0x10FFFFFF),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.chat_bubble_rounded, size: 9, color: Color(0x604E9AFF)),
+                SizedBox(width: 4),
+                Text(
+                  'ADDA CHAT',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    color: Color(0x604E9AFF),
+                    letterSpacing: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Container(
+              height: 1,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    const Color(0xFF2563EB).withValues(alpha: 0.20),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  // ── Emoji Reaction Strip (Right Floating Column) ───────────────────────────
-  Widget _buildEmojiReactionStrip() {
+  // ── Emoji reaction strip ───────────────────────────────────────────────────
+  Widget _buildEmojiStrip() {
     final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
 
     return Container(
-      constraints: const BoxConstraints(maxHeight: 220),
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+      constraints: const BoxConstraints(maxHeight: 240),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 5),
       decoration: BoxDecoration(
-        color: const Color(0x26000000),
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xCC141B2D),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0x1AFFFFFF)),
       ),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: emojis.map((emoji) {
             return GestureDetector(
               onTap: () {
@@ -879,10 +766,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text(
-                  emoji,
-                  style: const TextStyle(fontSize: 20),
-                ),
+                child: Text(emoji, style: const TextStyle(fontSize: 20)),
               ),
             );
           }).toList(),
@@ -891,13 +775,16 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  // ── Build seats list from state ────────────────────────────────────────────
+  // ── Seats list ─────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _buildSeatsList(AudioRoomState s, String? myUid) {
     return List.generate(s.maxSeats, (index) {
       Map<String, dynamic>? occupant;
       for (final sp in s.speakers) {
         final spUid = sp['uid']?.toString().trim();
-        if (sp['isEmpty'] != true && spUid != null && spUid.isNotEmpty && spUid != 'null') {
+        if (sp['isEmpty'] != true &&
+            spUid != null &&
+            spUid.isNotEmpty &&
+            spUid != 'null') {
           if (sp['seatIndex'] == index) {
             occupant = sp;
             break;
@@ -907,14 +794,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
       if (occupant != null) {
         final uid = occupant['uid']?.toString() ?? '';
-        final avatar = occupant['profile_pic']?.toString() ?? occupant['avatar']?.toString();
+        final avatar =
+            occupant['profile_pic']?.toString() ?? occupant['avatar']?.toString();
         return {
           'isEmpty': false,
           'uid': uid,
           'name': occupant['name']?.toString() ?? uid,
           'profile_pic': avatar,
           'avatar': avatar,
-          'avatar_frame_url': (occupant['avatarFrameUrl'] ?? occupant['avatar_frame_url'])?.toString(),
+          'avatar_frame_url':
+              (occupant['avatarFrameUrl'] ?? occupant['avatar_frame_url'])
+                  ?.toString(),
           'isHost': uid == s.hostUid || occupant['isHost'] == true,
           'isAdmin': occupant['isAdmin'] == true,
           'communityRole': occupant['communityRole']?.toString(),
@@ -927,7 +817,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       }
 
       final isLocked = s.lockedSeats.contains(index);
-
       return {
         'isEmpty': true,
         'seatIndex': index,
@@ -936,15 +825,16 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     });
   }
 
-  // ── Chat messages ──────────────────────────────────────────────────────────
+  // ── Chat bubble ────────────────────────────────────────────────────────────
   Widget _buildChatBubble(Map<String, dynamic> msg) {
     final bool isSystem = msg['isSystem'] == true ||
         msg['senderUid'] == 'system' ||
         msg['type'] == 'system' ||
         msg['senderName'] == 'System';
-    final text = msg['text']?.toString() ?? msg['content']?.toString() ?? '';
+    final text =
+        msg['text']?.toString() ?? msg['content']?.toString() ?? '';
 
-    // System announcement bubble with Megaphone badge
+    // System message
     if (isSystem) {
       return Container(
         margin: const EdgeInsets.only(bottom: 6),
@@ -952,36 +842,36 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 26,
+              height: 26,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color(0x260751DF),
-                border: Border.all(color: const Color(0x4D0751DF)),
+                color: _kPrimaryGlow,
+                border: Border.all(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.35)),
               ),
               alignment: Alignment.center,
-              child: const Icon(
-                Icons.campaign,
-                size: 16,
-                color: Colors.white,
-              ),
+              child: const Icon(Icons.campaign_rounded,
+                  size: 13, color: Colors.white),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  color: const Color(0x140751DF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0x260751DF)),
+                  color: const Color(0x0C2563EB),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: const Color(0xFF2563EB).withValues(alpha: 0.15)),
                 ),
                 child: Text(
                   text,
                   style: const TextStyle(
-                    color: Color(0xCCEBEBF5),
+                    color: Color(0xBBEBEBF5),
                     fontSize: 12,
                     fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w400,
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
               ),
@@ -1002,7 +892,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     String time = '';
     if (ts is int) {
       final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-      time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      time =
+          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     }
 
     final senderPic = (msg['sender_profile_picture'] ??
@@ -1014,122 +905,77 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final isMe = msg['isSelf'] == true;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 7),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Avatar
-          Container(
-            width: 30,
-            height: 30,
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: const Color(0x1A0751DF),
-              border: Border.all(color: const Color(0x330751DF), width: 1),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: senderPic != null && senderPic.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: senderPic,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Center(
-                      child: Text(
-                        sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    placeholder: (_, __) => Center(
-                      child: Text(
-                        sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  )
-                : Center(
-                    child: Text(
-                      sender.isNotEmpty ? sender[0].toUpperCase() : 'U',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-          ),
+          _ChatAvatar(name: sender, picUrl: senderPic),
+          const SizedBox(width: 8),
 
           // Bubble
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isMe
-                        ? const Color(0x1A0751DF)
-                        : const Color(0x1AFFFFFF),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
-                      bottomRight: Radius.circular(12),
-                      bottomLeft: Radius.circular(2),
-                    ),
-                    border: Border.all(
-                      color: isMe
-                          ? const Color(0x260751DF)
-                          : const Color(0x1AFFFFFF),
-                      width: 1,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            sender,
-                            style: TextStyle(
-                              color: isMe ? _kGold : const Color(0xFF5B9AFF),
-                              fontSize: 11,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          if (time.isNotEmpty) ...[
-                            const SizedBox(width: 6),
-                            Text(
-                              time,
-                              style: const TextStyle(
-                                color: Color(0x4DFFFFFF),
-                                fontSize: 9,
-                                fontFamily: 'Outfit',
-                              ),
-                            ),
-                          ],
-                        ],
+                // Name + time row
+                Row(
+                  children: [
+                    Text(
+                      sender,
+                      style: TextStyle(
+                        color: isMe
+                            ? const Color(0xFF60A5FA)
+                            : const Color(0xFF93C5FD),
+                        fontSize: 11,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w700,
                       ),
-                      const SizedBox(height: 2),
+                    ),
+                    if (time.isNotEmpty) ...[
+                      const SizedBox(width: 6),
                       Text(
-                        text,
+                        time,
                         style: const TextStyle(
-                          color: Color(0xCCEBEBF5),
-                          fontSize: 13,
+                          color: Color(0x40FFFFFF),
+                          fontSize: 9,
                           fontFamily: 'Outfit',
                         ),
                       ),
                     ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+
+                // Message text
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isMe
+                        ? const Color(0x142563EB)
+                        : const Color(0x0CFFFFFF),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(2),
+                      topRight: Radius.circular(10),
+                      bottomLeft: Radius.circular(10),
+                      bottomRight: Radius.circular(10),
+                    ),
+                    border: Border.all(
+                      color: isMe
+                          ? const Color(0xFF2563EB).withValues(alpha: 0.20)
+                          : Colors.white.withValues(alpha: 0.06),
+                      width: 1,
+                    ),
+                  ),
+                  child: Text(
+                    text,
+                    style: const TextStyle(
+                      color: Color(0xDDEBEBF5),
+                      fontSize: 13,
+                      fontFamily: 'Outfit',
+                      height: 1.4,
+                    ),
                   ),
                 ),
               ],
@@ -1151,32 +997,45 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         builder: (_, t, child) => Opacity(
           opacity: (1 - t).clamp(0.0, 1.0),
           child: Transform.translate(
-            offset: Offset(0, -60 * t),
-            child: child,
+            offset: Offset(0, -80 * t),
+            child: Transform.scale(
+              scale: 0.8 + 0.4 * (1 - t),
+              child: child,
+            ),
           ),
         ),
-        child: Text(r.emoji, style: const TextStyle(fontSize: 24)),
+        child: Text(r.emoji, style: const TextStyle(fontSize: 26)),
       ),
     );
   }
 
-  // ── Error / Ended screen ───────────────────────────────────────────────────
+  // ── Error / ended screen ───────────────────────────────────────────────────
   Widget _buildErrorScreen(AudioRoomState s) {
     final isJoinError = !s.isConnected && s.error != null;
     return Scaffold(
       backgroundColor: _kBg,
       body: Center(
         child: Padding(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.all(32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                isJoinError ? Icons.wifi_off_rounded : Icons.event_busy,
-                color: Colors.orange,
-                size: 64,
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: const Color(0x22FF9800),
+                  border: Border.all(color: const Color(0x55FF9800)),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  isJoinError ? Icons.wifi_off_rounded : Icons.event_busy_rounded,
+                  color: const Color(0xFFFF9800),
+                  size: 38,
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               Text(
                 isJoinError ? 'Could Not Join Adda' : 'This Adda Has Ended',
                 style: const TextStyle(
@@ -1186,38 +1045,43 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
               Text(
                 isJoinError
                     ? (s.error ?? 'Unable to join this room. Please try again.')
                     : 'The host has wrapped up this room.\nCheck out other live addas.',
                 style: const TextStyle(
-                  color: Color(0x99FFFFFF),
+                  color: Color(0x80FFFFFF),
                   fontSize: 14,
                   fontFamily: 'Outfit',
+                  height: 1.5,
                 ),
                 textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 28),
-              ElevatedButton(
-                onPressed: () {
-                  ref.read(audioRoomProvider.notifier).leaveRoom();
-                  context.pop();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _kPrimary,
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 32, vertical: 14),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: const Text(
-                  'Back to Addas',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w700,
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    ref.read(audioRoomProvider.notifier).leaveRoom();
+                    context.pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _kPrimary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: const Text(
+                    'Back to Addas',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 15,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -1236,24 +1100,34 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final isSelf = uid == myUid;
     final isAuthority = s.isHost || s.isAdmin || s.isCoHost;
 
-    // Ghost seat — host/admin can remove it
     final isGhost = seat['isEmpty'] != true &&
-        (seat['name'] == null || seat['name'] == 'User' || seat['name'] == uid);
+        (seat['name'] == null ||
+            seat['name'] == 'User' ||
+            seat['name'] == uid);
     if (isGhost && !isSelf && isAuthority) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          backgroundColor: const Color(0xFF1A2340),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: _kCard,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Unknown User in Seat',
-              style: TextStyle(color: Color(0xFFEBEBF5), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+              style: TextStyle(
+                  color: Color(0xFFEBEBF5),
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700)),
           content: const Text(
               'This seat has a disconnected user blocking the spot. Would you like to remove them?',
-              style: TextStyle(color: Color(0x99EBEBF5), fontFamily: 'Outfit', fontSize: 14)),
+              style: TextStyle(
+                  color: Color(0x99EBEBF5),
+                  fontFamily: 'Outfit',
+                  fontSize: 14)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel', style: TextStyle(color: Color(0x73EBEBF5), fontFamily: 'Outfit')),
+              child: const Text('Cancel',
+                  style: TextStyle(
+                      color: Color(0x73EBEBF5), fontFamily: 'Outfit')),
             ),
             TextButton(
               onPressed: () {
@@ -1261,7 +1135,10 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 ref.read(audioRoomProvider.notifier).removeGhostFromSeat(uid);
               },
               child: const Text('Remove',
-                  style: TextStyle(color: Color(0xFFFF3B30), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+                  style: TextStyle(
+                      color: Color(0xFFFF3B30),
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -1269,12 +1146,12 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       return;
     }
 
-    // Map seat data to the shape UserProfileBottomSheet expects
     final participantData = {
       'userID': uid,
       'userName': seat['name']?.toString() ?? uid,
       'avatar': seat['profile_pic']?.toString() ?? seat['avatar']?.toString(),
-      'avatar_frame_url': (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
+      'avatar_frame_url':
+          (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
       'isHost': seat['isHost'] == true,
       'isAdmin': seat['isAdmin'] == true,
       'isMicOn': seat['isMuted'] != true,
@@ -1323,7 +1200,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           ? (p) => ref.read(audioRoomProvider.notifier).demoteAdmin(uid)
           : null,
       onMoveToSeat: !isSelf && isAuthority && isParticipantInSeat
-          ? (p, seatIdx) => ref.read(audioRoomProvider.notifier).moveParticipantToSeat(uid, seatIdx)
+          ? (p, seatIdx) =>
+              ref.read(audioRoomProvider.notifier).moveParticipantToSeat(uid, seatIdx)
           : null,
       onReportUser: !isSelf
           ? (p, canBan) {
@@ -1339,13 +1217,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       onCommunityKick: !isSelf && isAuthority
           ? (p, reason) {
               final name = seat['name']?.toString() ?? uid;
-              ref.read(audioRoomProvider.notifier).communityKick(uid, name, reason: reason);
+              ref
+                  .read(audioRoomProvider.notifier)
+                  .communityKick(uid, name, reason: reason);
             }
           : null,
       onCommunityBan: !isSelf && isAuthority
           ? (p, reason) {
               final name = seat['name']?.toString() ?? uid;
-              ref.read(audioRoomProvider.notifier).communityBan(uid, name, reason: reason);
+              ref
+                  .read(audioRoomProvider.notifier)
+                  .communityBan(uid, name, reason: reason);
             }
           : null,
     );
@@ -1368,7 +1250,196 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   }
 }
 
-// ── Blinking REC dot widget ──────────────────────────────────────────────────
+// ── Reusable header widgets ───────────────────────────────────────────────────
+
+class _HeaderIconBtn extends StatelessWidget {
+  final VoidCallback? onTap;
+  final IconData icon;
+  final double size;
+
+  const _HeaderIconBtn({required this.onTap, required this.icon, this.size = 38});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0x14FFFFFF),
+          border: Border.all(color: const Color(0x20FFFFFF)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: const Color(0xAAEBEBF5), size: size * 0.52),
+      ),
+    );
+  }
+}
+
+class _HeaderBadge extends StatelessWidget {
+  final String label;
+  final Color dotColor;
+  final Color labelColor;
+  final Color bgColor;
+  final Color borderColor;
+
+  const _HeaderBadge({
+    required this.label,
+    required this.dotColor,
+    required this.labelColor,
+    required this.bgColor,
+    required this.borderColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 5,
+            height: 5,
+            decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: labelColor,
+              fontSize: 9,
+              fontFamily: 'Outfit',
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RecBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0x22EF4444),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0x55EF4444)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _BlinkingRecDot(),
+          SizedBox(width: 4),
+          Text(
+            'REC',
+            style: TextStyle(
+              color: Color(0xFFEF4444),
+              fontSize: 9,
+              fontFamily: 'Outfit',
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RatingBadge extends StatelessWidget {
+  final double rating;
+  const _RatingBadge({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: const Color(0x22FFA726),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0x55FFA726)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.star_rounded, size: 9, color: Color(0xFFFFA726)),
+          const SizedBox(width: 3),
+          Text(
+            rating.toStringAsFixed(1),
+            style: const TextStyle(
+              color: Color(0xFFFFA726),
+              fontSize: 9,
+              fontFamily: 'Outfit',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Chat avatar ───────────────────────────────────────────────────────────────
+class _ChatAvatar extends StatelessWidget {
+  final String name;
+  final String? picUrl;
+  const _ChatAvatar({required this.name, this.picUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.isNotEmpty ? name[0].toUpperCase() : 'U';
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)],
+        ),
+        border: Border.all(color: const Color(0x33FFFFFF), width: 1),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: picUrl != null && picUrl!.isNotEmpty
+          ? CachedNetworkImage(
+              imageUrl: picUrl!,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => _letter(initial),
+              placeholder: (_, __) => _letter(initial),
+            )
+          : _letter(initial),
+    );
+  }
+
+  Widget _letter(String initial) {
+    return Center(
+      child: Text(
+        initial,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontFamily: 'Outfit',
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+// ── Blinking REC dot ──────────────────────────────────────────────────────────
 class _BlinkingRecDot extends StatefulWidget {
   const _BlinkingRecDot();
 
@@ -1411,7 +1482,7 @@ class _BlinkingRecDotState extends State<_BlinkingRecDot>
   }
 }
 
-// ── Floating reaction data ─────────────────────────────────────────────────────
+// ── Floating reaction data ────────────────────────────────────────────────────
 class _FloatingReaction {
   final String id, emoji;
   final double x, y;
@@ -1423,76 +1494,11 @@ class _FloatingReaction {
 // Bottom sheets
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _GoOnStageSheet extends StatelessWidget {
-  final VoidCallback onConfirm;
-  const _GoOnStageSheet({required this.onConfirm});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 36,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 20),
-            decoration: BoxDecoration(
-              color: Colors.white24,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const Text('🎤', style: TextStyle(fontSize: 40)),
-          const SizedBox(height: 12),
-          const Text(
-            'Request to Go On Stage',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Raise your hand and the host will place you on stage.',
-            style: TextStyle(color: Color(0x99FFFFFF), fontSize: 14, fontFamily: 'Outfit'),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                onConfirm();
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF0751DF),
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text(
-                'Raise Hand ✋',
-                style: TextStyle(color: Colors.white, fontSize: 15, fontFamily: 'Outfit', fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _ConfirmSheet extends StatelessWidget {
   final String title, message, confirmText;
   final Color confirmColor;
   final VoidCallback onConfirm;
+
   const _ConfirmSheet({
     required this.title,
     required this.message,
@@ -1505,21 +1511,27 @@ class _ConfirmSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFF141B2D),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      padding: EdgeInsets.fromLTRB(
+          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 36, height: 4,
-            margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-          ),
-          Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+          _SheetHandle(),
+          const SizedBox(height: 16),
+          Text(title,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Text(message, style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 14, fontFamily: 'Outfit'), textAlign: TextAlign.center),
+          Text(message,
+              style: const TextStyle(
+                  color: Color(0x80FFFFFF), fontSize: 14, fontFamily: 'Outfit'),
+              textAlign: TextAlign.center),
           const SizedBox(height: 24),
           Row(
             children: [
@@ -1527,11 +1539,14 @@ class _ConfirmSheet extends StatelessWidget {
                 child: OutlinedButton(
                   onPressed: () => Navigator.pop(context),
                   style: OutlinedButton.styleFrom(
-                    side: const BorderSide(color: Color(0x33FFFFFF)),
+                    side: const BorderSide(color: Color(0x30FFFFFF)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text('Cancel', style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+                  child: const Text('Cancel',
+                      style: TextStyle(
+                          color: Color(0xAAFFFFFF), fontFamily: 'Outfit')),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1543,10 +1558,16 @@ class _ConfirmSheet extends StatelessWidget {
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: confirmColor,
+                    elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: Text(confirmText, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+                  child: Text(confirmText,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
@@ -1581,58 +1602,64 @@ class _MoreOptionsSheet extends StatelessWidget {
     final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFF141B2D),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      padding: EdgeInsets.fromLTRB(
+          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(
-              width: 36, height: 4,
-              margin: const EdgeInsets.only(bottom: 16),
-              decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          // Reactions row
-          const Text('Reactions', style: TextStyle(color: Color(0x99FFFFFF), fontSize: 12, fontFamily: 'Outfit')),
-          const SizedBox(height: 8),
+          Center(child: _SheetHandle()),
+          const SizedBox(height: 16),
+          const Text('Reactions',
+              style: TextStyle(
+                  color: Color(0x60FFFFFF),
+                  fontSize: 11,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.8)),
+          const SizedBox(height: 10),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: emojis.map((e) => GestureDetector(
-              onTap: () => onReaction?.call(e),
-              child: Container(
-                width: 40, height: 40,
-                decoration: BoxDecoration(
-                  color: const Color(0x1A0751DF),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0x330751DF)),
-                ),
-                alignment: Alignment.center,
-                child: Text(e, style: const TextStyle(fontSize: 20)),
-              ),
-            )).toList(),
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: emojis
+                .map((e) => GestureDetector(
+                      onTap: () => onReaction?.call(e),
+                      child: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: const Color(0x14FFFFFF),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: const Color(0x20FFFFFF)),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(e, style: const TextStyle(fontSize: 18)),
+                      ),
+                    ))
+                .toList(),
           ),
           const SizedBox(height: 16),
-          const Divider(color: Color(0x1AFFFFFF)),
-          const SizedBox(height: 8),
-          // Options list
+          const Divider(color: Color(0x14FFFFFF)),
+          const SizedBox(height: 6),
           if (isInSeat)
-            _optionTile(
+            _OptionTile(
               icon: Icons.person_remove_outlined,
               label: 'Leave Stage',
-              color: const Color(0xFFFF6B6B),
-              onTap: () { Navigator.pop(context); onOffStage?.call(); },
+              color: const Color(0xFFEF4444),
+              onTap: () {
+                Navigator.pop(context);
+                onOffStage?.call();
+              },
             ),
-          _optionTile(
-            icon: Icons.people_outline,
+          _OptionTile(
+            icon: Icons.people_outline_rounded,
             label: 'View Audience',
             onTap: onViewAudience,
           ),
           if (isHost && handRaiseCount > 0)
-            _optionTile(
+            _OptionTile(
               icon: Icons.pan_tool_outlined,
               label: 'Seat Requests ($handRaiseCount)',
               color: const Color(0xFFFF9800),
@@ -1642,13 +1669,33 @@ class _MoreOptionsSheet extends StatelessWidget {
       ),
     );
   }
+}
 
-  Widget _optionTile({required IconData icon, required String label, Color? color, VoidCallback? onTap}) {
+class _OptionTile extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color? color;
+  final VoidCallback? onTap;
+
+  const _OptionTile({
+    required this.icon,
+    required this.label,
+    this.color,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(icon, color: color ?? Colors.white70),
-      title: Text(label, style: TextStyle(color: color ?? Colors.white, fontFamily: 'Outfit', fontSize: 14)),
+      leading: Icon(icon, color: color ?? const Color(0xAAFFFFFF), size: 20),
+      title: Text(label,
+          style: TextStyle(
+              color: color ?? Colors.white,
+              fontFamily: 'Outfit',
+              fontSize: 14)),
       onTap: onTap,
       contentPadding: EdgeInsets.zero,
+      minLeadingWidth: 28,
     );
   }
 }
@@ -1657,34 +1704,49 @@ class _SeatRequestsSheet extends StatelessWidget {
   final List<Map<String, dynamic>> queue;
   final void Function(String uid) onAccept;
   final void Function(String uid) onReject;
-  const _SeatRequestsSheet({required this.queue, required this.onAccept, required this.onReject});
+
+  const _SeatRequestsSheet({
+    required this.queue,
+    required this.onAccept,
+    required this.onReject,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFF141B2D),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      padding: EdgeInsets.fromLTRB(
+          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-          const Text('Seat Requests', style: TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+          Center(child: _SheetHandle()),
+          const SizedBox(height: 14),
+          const Text('Seat Requests',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (queue.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Text('No pending requests', style: TextStyle(color: Color(0x66FFFFFF), fontFamily: 'Outfit')),
+              child: Text('No pending requests',
+                  style: TextStyle(
+                      color: Color(0x60FFFFFF), fontFamily: 'Outfit')),
             )
           else
             Flexible(
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: queue.length,
-                separatorBuilder: (_, __) => const Divider(color: Color(0x1AFFFFFF), height: 1),
+                separatorBuilder: (_, __) =>
+                    const Divider(color: Color(0x10FFFFFF), height: 1),
                 itemBuilder: (_, i) {
                   final req = queue[i];
                   final uid = req['uid']?.toString() ?? '';
@@ -1693,21 +1755,36 @@ class _SeatRequestsSheet extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       radius: 18,
-                      backgroundColor: const Color(0x1A0751DF),
-                      child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                        style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                      backgroundColor: const Color(0x142563EB),
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w600),
+                      ),
                     ),
-                    title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+                    title: Text(name,
+                        style: const TextStyle(
+                            color: Colors.white, fontFamily: 'Outfit')),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.check_circle_outline, color: Color(0xFF34C759), size: 28),
-                          onPressed: () { Navigator.pop(context); onAccept(uid); },
+                          icon: const Icon(Icons.check_circle_outline_rounded,
+                              color: Color(0xFF34C759), size: 28),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            onAccept(uid);
+                          },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.cancel_outlined, color: Color(0xFFFF3B30), size: 28),
-                          onPressed: () { Navigator.pop(context); onReject(uid); },
+                          icon: const Icon(Icons.cancel_outlined,
+                              color: Color(0xFFFF3B30), size: 28),
+                          onPressed: () {
+                            Navigator.pop(context);
+                            onReject(uid);
+                          },
                         ),
                       ],
                     ),
@@ -1729,31 +1806,43 @@ class _AudienceListSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFF141B2D),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      padding: EdgeInsets.fromLTRB(
+          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.65),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-          Text('Audience (${audience.length})', style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+          Center(child: _SheetHandle()),
+          const SizedBox(height: 14),
+          Text('Audience (${audience.length})',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (audience.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Text('No audience members yet', style: TextStyle(color: Color(0x66FFFFFF), fontFamily: 'Outfit')),
+              child: Text('No audience members yet',
+                  style: TextStyle(
+                      color: Color(0x60FFFFFF), fontFamily: 'Outfit')),
             )
           else
             Flexible(
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: audience.length,
-                separatorBuilder: (_, __) => const Divider(color: Color(0x1AFFFFFF), height: 1),
+                separatorBuilder: (_, __) =>
+                    const Divider(color: Color(0x10FFFFFF), height: 1),
                 itemBuilder: (_, i) {
                   final m = audience[i];
-                  final name = m['name']?.toString() ?? m['uid']?.toString() ?? 'User';
+                  final name = m['name']?.toString() ??
+                      m['uid']?.toString() ??
+                      'User';
                   final pic = m['profile_pic']?.toString();
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
@@ -1762,28 +1851,23 @@ class _AudienceListSheet extends StatelessWidget {
                       height: 36,
                       decoration: const BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Color(0x1A0751DF),
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)],
+                        ),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: (pic != null && pic.isNotEmpty)
                           ? CachedNetworkImage(
                               imageUrl: pic,
                               fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => Center(
-                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                                    style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-                              ),
-                              placeholder: (_, __) => Center(
-                                child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                                    style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-                              ),
+                              errorWidget: (_, __, ___) => _letterWidget(name),
+                              placeholder: (_, __) => _letterWidget(name),
                             )
-                          : Center(
-                              child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                                  style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-                            ),
+                          : _letterWidget(name),
                     ),
-                    title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+                    title: Text(name,
+                        style: const TextStyle(
+                            color: Colors.white, fontFamily: 'Outfit')),
                   );
                 },
               ),
@@ -1792,13 +1876,25 @@ class _AudienceListSheet extends StatelessWidget {
       ),
     );
   }
-}
 
+  Widget _letterWidget(String name) {
+    return Center(
+      child: Text(
+        name.isNotEmpty ? name[0].toUpperCase() : 'U',
+        style: const TextStyle(
+            color: Colors.white,
+            fontFamily: 'Outfit',
+            fontWeight: FontWeight.w600),
+      ),
+    );
+  }
+}
 
 class _AudioOutputSheet extends StatelessWidget {
   final String currentMode;
   final bool bluetoothAvailable;
   final void Function(String mode) onSelect;
+
   const _AudioOutputSheet({
     required this.currentMode,
     required this.onSelect,
@@ -1809,33 +1905,66 @@ class _AudioOutputSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF111827),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        color: Color(0xFF141B2D),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+      padding: EdgeInsets.fromLTRB(
+          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(2)))),
-          const Text('Audio Output', style: TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+          Center(child: _SheetHandle()),
+          const SizedBox(height: 14),
+          const Text('Audio Output',
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
-          _audioOption(context, 'speaker', Icons.volume_up, 'Loudspeaker'),
-          _audioOption(context, 'earpiece', Icons.hearing, 'Earpiece'),
+          _audioOption(context, 'speaker', Icons.volume_up_rounded, 'Loudspeaker'),
+          _audioOption(context, 'earpiece', Icons.hearing_rounded, 'Earpiece'),
           if (bluetoothAvailable)
-            _audioOption(context, 'bluetooth', Icons.bluetooth_audio, 'Bluetooth'),
+            _audioOption(
+                context, 'bluetooth', Icons.bluetooth_audio_rounded, 'Bluetooth'),
         ],
       ),
     );
   }
 
-  Widget _audioOption(BuildContext context, String mode, IconData icon, String label) {
+  Widget _audioOption(
+      BuildContext context, String mode, IconData icon, String label) {
     final isSelected = currentMode == mode;
     return ListTile(
-      leading: Icon(icon, color: isSelected ? const Color(0xFF0751DF) : Colors.white70),
-      title: Text(label, style: TextStyle(color: isSelected ? const Color(0xFF0751DF) : Colors.white, fontFamily: 'Outfit')),
-      trailing: isSelected ? const Icon(Icons.check, color: Color(0xFF0751DF)) : null,
-      onTap: () { Navigator.pop(context); onSelect(mode); },
+      leading: Icon(icon,
+          color: isSelected ? const Color(0xFF2563EB) : Colors.white60),
+      title: Text(label,
+          style: TextStyle(
+              color: isSelected ? const Color(0xFF2563EB) : Colors.white,
+              fontFamily: 'Outfit')),
+      trailing: isSelected
+          ? const Icon(Icons.check_rounded, color: Color(0xFF2563EB))
+          : null,
+      onTap: () {
+        Navigator.pop(context);
+        onSelect(mode);
+      },
       contentPadding: EdgeInsets.zero,
+    );
+  }
+}
+
+// ── Sheet handle widget ───────────────────────────────────────────────────────
+class _SheetHandle extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 4,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.20),
+        borderRadius: BorderRadius.circular(2),
+      ),
     );
   }
 }

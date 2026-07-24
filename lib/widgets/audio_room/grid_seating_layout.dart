@@ -3,11 +3,10 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'dashed_circle_painter.dart';
 import 'participant_avatar.dart';
 
-/// Pixel-perfect port of RN GridSeatingLayout.
-/// 4-column flex-wrap grid of seats (occupied/empty/locked/reserved).
-/// Below the grid: audience horizontal scroll row.
+/// Premium redesigned GridSeatingLayout.
+/// 4-column flex-wrap grid with improved visual hierarchy.
 class GridSeatingLayout extends StatelessWidget {
-  final List<Map<String, dynamic>> seats; // [{isEmpty, uid, name, profile_pic, avatar_frame_url, isHost, isMuted, isSelf, seatIndex, isLocked}]
+  final List<Map<String, dynamic>> seats;
   final int maxSeats;
   final String? hostUid;
   final String? myUid;
@@ -15,8 +14,6 @@ class GridSeatingLayout extends StatelessWidget {
   final bool stageRequestEnabled;
   final bool isHost;
   final bool seatsInitialized;
-
-  /// Audience members (not in any seat)
   final List<Map<String, dynamic>> audience;
 
   final void Function(Map<String, dynamic> speaker)? onSpeakerTap;
@@ -45,54 +42,69 @@ class GridSeatingLayout extends StatelessWidget {
     this.onAudienceMemberTap,
   });
 
-  static const double _edgePadding = 5.0;
+  static const double _edgePadding = 8.0;
 
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final seatWidth = (screenWidth - _edgePadding * 2) / 4;
-    final avatarSize = (seatWidth * 0.65).clamp(40.0, 64.0);
-    // Fixed row height: largest possible avatar box (frame = 1.5×) + name label
-    final seatHeight = avatarSize * 1.5 + 20.0;
+    final avatarSize = (seatWidth * 0.60).clamp(40.0, 62.0);
+    final seatHeight = avatarSize * 1.5 + 24.0;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── BAITHAK section header ────────────────────────
+        // ── BAITHAK header ──────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(14, 8, 14, 2),
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
           child: Row(
             children: [
-              const Icon(
-                Icons.people,
-                size: 12,
-                color: Color(0x99828CF8),
-              ),
-              const SizedBox(width: 5),
-              const Text(
-                'BAITHAK',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600,
-                  color: Color(0x99828CF8),
-                  letterSpacing: 1.4,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0x140751DF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x260751DF)),
+                ),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.people_alt_rounded, size: 11, color: Color(0xFF6E8FE0)),
+                    SizedBox(width: 5),
+                    Text(
+                      'BAITHAK',
+                      style: TextStyle(
+                        fontSize: 9,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF6E8FE0),
+                        letterSpacing: 1.6,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
-                child: Container(height: 1, color: const Color(0x1F0751DF)),
+                child: Container(
+                  height: 1,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [Color(0x330751DF), Colors.transparent],
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
         ),
 
-        // ── Stage Grid ────────────────────────────────────
+        // ── Stage Grid ──────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: _edgePadding, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: _edgePadding, vertical: 4),
           child: Wrap(
             spacing: 0,
-            runSpacing: 4,
+            runSpacing: 6,
             children: List.generate(maxSeats, (index) {
               final seat = index < seats.length ? seats[index] : null;
               return _buildSeat(context, seat, index, seatWidth, avatarSize, seatHeight);
@@ -100,7 +112,7 @@ class GridSeatingLayout extends StatelessWidget {
           ),
         ),
 
-        // ── Audience row ──────────────────────────────────
+        // ── Audience row ────────────────────────────────────
         if (audience.isNotEmpty) _buildAudienceRow(context),
       ],
     );
@@ -116,7 +128,7 @@ class GridSeatingLayout extends StatelessWidget {
         uidStr == 'null';
 
     if (!isEmpty) {
-      final uid = uidStr!;
+      final uid = uidStr;
       final isSpeaking = activeSpeakerUid != null && uid == activeSpeakerUid;
       final isMuted = seat['isMuted'] == true;
       final isHostSeat = uid == hostUid || seat['isHost'] == true;
@@ -156,7 +168,7 @@ class GridSeatingLayout extends StatelessWidget {
 
   Widget _buildEmptySeat(int index, double seatWidth, double avatarSize, double seatHeight) {
     final String seatText = seatsInitialized
-        ? (isHost && index != 0 ? 'Hold to lock' : 'Hold to lock')
+        ? (isHost ? 'Hold to lock' : 'Join')
         : 'Syncing...';
 
     return SizedBox(
@@ -174,15 +186,21 @@ class GridSeatingLayout extends StatelessWidget {
               height: avatarSize,
               child: CustomPaint(
                 painter: const DashedCirclePainter(
-                  color: Color(0x26FFFFFF),
-                  strokeWidth: 2.0,
+                  color: Color(0x33FFFFFF),
+                  strokeWidth: 1.5,
                   dashLength: 5.0,
-                  dashGap: 3.5,
+                  dashGap: 4.0,
                 ),
                 child: Container(
-                  decoration: const BoxDecoration(
+                  decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0x14FFFFFF),
+                    color: const Color(0x0AFFFFFF),
+                    gradient: RadialGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: 0.06),
+                        Colors.transparent,
+                      ],
+                    ),
                   ),
                   alignment: Alignment.center,
                   child: !seatsInitialized
@@ -195,21 +213,21 @@ class GridSeatingLayout extends StatelessWidget {
                           ),
                         )
                       : Icon(
-                          Icons.event_seat,
-                          size: avatarSize * 0.48,
+                          Icons.add_rounded,
+                          size: avatarSize * 0.40,
                           color: const Color(0x4DFFFFFF),
                         ),
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 5),
             Text(
               seatText,
               style: const TextStyle(
-                color: Color(0x99FFFFFF),
-                fontSize: 10,
+                color: Color(0x73FFFFFF),
+                fontSize: 9,
                 fontFamily: 'Outfit',
-                fontWeight: FontWeight.w400,
+                fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
@@ -222,7 +240,7 @@ class GridSeatingLayout extends StatelessWidget {
   }
 
   Widget _buildLockedSeat(int index, double seatWidth, double avatarSize, double seatHeight) {
-    final String label = isHost && index != 0 ? 'Hold to unlock' : 'Seat ${index + 1}';
+    final String label = isHost ? 'Hold to unlock' : 'Seat ${index + 1}';
 
     return SizedBox(
       width: seatWidth,
@@ -239,33 +257,33 @@ class GridSeatingLayout extends StatelessWidget {
               height: avatarSize,
               child: CustomPaint(
                 painter: const DashedCirclePainter(
-                  color: Color(0xFFFF6B6B),
-                  strokeWidth: 2.0,
+                  color: Color(0xAAEF4444),
+                  strokeWidth: 1.5,
                   dashLength: 5.0,
-                  dashGap: 3.5,
+                  dashGap: 4.0,
                 ),
                 child: Container(
                   decoration: const BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Color(0x26FF6B6B),
+                    color: Color(0x18EF4444),
                   ),
                   alignment: Alignment.center,
                   child: Icon(
-                    Icons.lock,
-                    size: avatarSize * 0.42,
-                    color: const Color(0xFFFF6B6B),
+                    Icons.lock_rounded,
+                    size: avatarSize * 0.38,
+                    color: const Color(0xAAEF4444),
                   ),
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 5),
             Text(
               label,
               style: const TextStyle(
-                color: Color(0x99FFFFFF),
-                fontSize: 10,
+                color: Color(0x73FFFFFF),
+                fontSize: 9,
                 fontFamily: 'Outfit',
-                fontWeight: FontWeight.w400,
+                fontWeight: FontWeight.w500,
               ),
               textAlign: TextAlign.center,
               maxLines: 1,
@@ -279,16 +297,19 @@ class GridSeatingLayout extends StatelessWidget {
 
   Widget _buildAudienceRow(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.fromLTRB(10, 6, 10, 2),
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0x1AFFFFFF))),
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+      decoration: BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+        ),
       ),
       child: Row(
         children: [
           Expanded(
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
               child: Row(
                 children: [
                   ...audience.take(10).map((m) => _buildAudienceAvatar(m)),
@@ -296,20 +317,23 @@ class GridSeatingLayout extends StatelessWidget {
                     GestureDetector(
                       onTap: onShowAudienceList,
                       child: Container(
-                        width: 32,
-                        height: 32,
+                        width: 30,
+                        height: 30,
                         margin: const EdgeInsets.only(right: 6),
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: const Color(0x334A90E2),
-                          border: Border.all(color: const Color(0xFF4A90E2), width: 1.5),
+                          color: const Color(0x1A5B9AFF),
+                          border: Border.all(
+                            color: const Color(0x665B9AFF),
+                            width: 1.5,
+                          ),
                         ),
                         alignment: Alignment.center,
                         child: Text(
                           '+${audience.length - 10}',
                           style: const TextStyle(
-                            color: Color(0xFF4A90E2),
-                            fontSize: 10,
+                            color: Color(0xFF5B9AFF),
+                            fontSize: 9,
                             fontFamily: 'Outfit',
                             fontWeight: FontWeight.w700,
                           ),
@@ -320,24 +344,25 @@ class GridSeatingLayout extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(width: 8),
           GestureDetector(
             onTap: onShowAudienceList,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: const Color(0x334A90E2),
+                color: const Color(0x145B9AFF),
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: const Color(0xFF4A90E2), width: 1.5),
+                border: Border.all(color: const Color(0x665B9AFF), width: 1),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.people, size: 14, color: Color(0xFF4A90E2)),
-                  const SizedBox(width: 4),
+                  const Icon(Icons.people_rounded, size: 13, color: Color(0xFF5B9AFF)),
+                  const SizedBox(width: 5),
                   Text(
                     '${audience.length}',
                     style: const TextStyle(
-                      color: Color(0xFF4A90E2),
+                      color: Color(0xFF5B9AFF),
                       fontSize: 12,
                       fontFamily: 'Outfit',
                       fontWeight: FontWeight.w700,
@@ -371,13 +396,20 @@ class GridSeatingLayout extends StatelessWidget {
     return GestureDetector(
       onTap: () => onAudienceMemberTap?.call(member),
       child: Container(
-        width: 32,
-        height: 32,
+        width: 30,
+        height: 30,
         margin: const EdgeInsets.only(right: 6),
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: const Color(0x33FFFFFF), width: 1.5),
-          color: const Color(0x1AFFFFFF),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.18),
+            width: 1.5,
+          ),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)],
+          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: avatar != null && avatar.isNotEmpty
@@ -398,9 +430,9 @@ class GridSeatingLayout extends StatelessWidget {
         name.isNotEmpty ? name[0].toUpperCase() : 'U',
         style: const TextStyle(
           color: Colors.white,
-          fontSize: 12,
+          fontSize: 11,
           fontFamily: 'Outfit',
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

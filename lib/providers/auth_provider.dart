@@ -1,8 +1,9 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../api/graphql_service.dart';
+import '../api/dio_client.dart';
+import '../utils/storage.dart';
+import '../utils/auth_utils.dart';
+import '../utils/logger.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -28,41 +29,58 @@ class AuthState {
 }
 
 class AuthNotifier extends StateNotifier<AuthState> {
-  final _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
+  StreamSubscription<ForceLogoutEvent>? _forceLogoutSub;
 
   AuthNotifier() : super(const AuthState()) {
+    _listenToForceLogout();
     _checkExistingAuth();
   }
 
-  Future<void> _checkExistingAuth() async {
-    final prefs = await SharedPreferences.getInstance();
-    final uid = prefs.getString('uid');
-    final token = await _storage.read(key: 'accessToken');
+  void _listenToForceLogout() {
+    _forceLogoutSub = onForceLogout.listen((event) {
+      AppLogger.warn('[AuthNotifier] Force logout received: ${event.reason} - ${event.message}');
+      state = state.copyWith(status: AuthStatus.unauthenticated, uid: null, error: event.message);
+    });
+  }
 
-    if (uid != null && token != null) {
-      state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
-    } else if (uid != null) {
-      // Try generating fresh tokens for the logged-in user if token is missing
-      final refreshed = await graphQLService.refreshToken();
-      if (refreshed) {
+  Future<void> _checkExistingAuth() async {
+    try {
+      final uid = await AppStorage.get('uid') as String?;
+      final hasTokens = await AppStorage.hasAuthTokens();
+      final isExpired = await AppStorage.isAccessTokenExpired();
+
+      if (uid != null && uid.isNotEmpty && hasTokens && !isExpired) {
+        AppLogger.emoji('⚡', '[AuthNotifier] Valid tokens found on launch - unblocking API calls immediately');
+        markTokensAsReady();
         state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
-      } else {
-        state = state.copyWith(status: AuthStatus.unauthenticated);
+        return;
       }
-    } else {
-      await prefs.clear();
-      await _storage.deleteAll();
-      state = state.copyWith(status: AuthStatus.unauthenticated);
+
+      if (uid != null && uid.isNotEmpty) {
+        AppLogger.log('[AuthNotifier] Expired or missing tokens on launch - performing background validation...');
+        final result = await performTokenRefresh(uid: uid);
+        if (result.success || result.isNetworkError) {
+          markTokensAsReady();
+          state = state.copyWith(status: AuthStatus.authenticated, uid: uid);
+        } else {
+          markTokensAsReady();
+          state = state.copyWith(status: AuthStatus.unauthenticated, uid: null);
+        }
+      } else {
+        markTokensAsReady();
+        state = state.copyWith(status: AuthStatus.unauthenticated, uid: null);
+      }
+    } catch (e) {
+      AppLogger.error('[AuthNotifier] Error checking existing auth', e);
+      markTokensAsReady();
+      state = state.copyWith(status: AuthStatus.unauthenticated, uid: null);
     }
   }
 
   Future<void> signIn({required String uid}) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('uid', uid);
-    await _storage.write(key: 'uid', value: uid);
-    final refreshed = await graphQLService.refreshToken();
+    await AppStorage.set('uid', uid);
+    await performTokenRefresh(uid: uid);
+    markTokensAsReady();
     state = state.copyWith(
       status: AuthStatus.authenticated,
       uid: uid,
@@ -70,15 +88,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   Future<void> signOut() async {
-    await FirebaseAuth.instance.signOut();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    await _storage.deleteAll();
+    await performLogout();
     state = const AuthState(status: AuthStatus.unauthenticated);
   }
 
   void setLoading(bool loading) => state = state.copyWith(isLoading: loading);
   void setError(String? error) => state = state.copyWith(error: error, isLoading: false);
+
+  @override
+  void dispose() {
+    _forceLogoutSub?.cancel();
+    super.dispose();
+  }
 }
 
 final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) => AuthNotifier());
+
