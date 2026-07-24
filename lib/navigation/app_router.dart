@@ -97,6 +97,7 @@ import '../screens/home/report_screen.dart';
 import '../screens/profile/id_verification_screen.dart';
 import '../screens/profile/write_review_screen.dart';
 import '../screens/profile/ranking_rules_screen.dart';
+import '../screens/splash/splash_screen.dart';
 import 'shell_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -104,20 +105,21 @@ final routerProvider = Provider<GoRouter>((ref) {
   final locationPerm = ref.watch(locationPermissionProvider);
 
   return GoRouter(
-    initialLocation: '/auth',
+    initialLocation: '/splash',
     redirect: (context, state) {
       final isAuth = authState.status == AuthStatus.authenticated;
       final isUnknown = authState.status == AuthStatus.unknown;
+      final onSplash = state.matchedLocation == '/splash';
       final onAuthPage = state.matchedLocation.startsWith('/auth');
       final onLocPerm = state.matchedLocation == '/location-permission';
       final onOnboarding = state.matchedLocation.startsWith('/complete-profile') ||
           state.matchedLocation.startsWith('/purpose-interests') ||
           state.matchedLocation.startsWith('/tutorial');
 
-      if (isUnknown) return null;
+      if (isUnknown) return onSplash ? null : '/splash';
       if (!isAuth && !onAuthPage) return '/auth';
-      if (isAuth && onAuthPage) {
-        // After login: show location permission screen if needed
+      if (isAuth && (onAuthPage || onSplash)) {
+        // After login or app restore: show location permission screen if needed
         if (!locationPerm.granted && !locationPerm.hasSeenScreen) {
           return '/location-permission';
         }
@@ -132,6 +134,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
       GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
       GoRoute(path: '/complete-profile', builder: (_, __) => const CompleteProfileScreen()),
       GoRoute(path: '/purpose-interests', builder: (_, __) => const PurposeInterestsScreen()),
