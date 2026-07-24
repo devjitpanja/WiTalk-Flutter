@@ -1146,6 +1146,18 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       return;
     }
 
+    final participantCommunityRole = s.communityRolesMap[uid]?.toString();
+    final isParticipantCommunityOwner = participantCommunityRole == 'super_admin';
+    final isParticipantCommunityAdmin = participantCommunityRole == 'admin';
+    final iAmCommunityOwner = s.myCommunityRole == 'super_admin';
+    final iAmCommunityAdmin = s.myCommunityRole == 'admin' || s.myCommunityRole == 'super_admin';
+    final isCommunityAdda = s.groupId != null && s.groupId!.isNotEmpty;
+    final canDoCommunityActions = isCommunityAdda &&
+        iAmCommunityAdmin &&
+        !isSelf &&
+        !isParticipantCommunityOwner &&
+        (!isParticipantCommunityAdmin || iAmCommunityOwner);
+
     final participantData = {
       'userID': uid,
       'userName': seat['name']?.toString() ?? uid,
@@ -1155,8 +1167,9 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       'isHost': seat['isHost'] == true,
       'isAdmin': seat['isAdmin'] == true,
       'isMicOn': seat['isMuted'] != true,
-      'communityRole': seat['communityRole']?.toString(),
+      'communityRole': participantCommunityRole,
       'isVerified': seat['isVerified'] == true,
+      'verificationBadge': seat['verificationBadge'],
     };
 
     final isParticipantInSeat = seat['isEmpty'] != true;
@@ -1169,7 +1182,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       currentUserId: myUid,
       hostUid: s.hostUid,
       isParticipantInSeat: isParticipantInSeat,
-      isCommunityAdda: s.groupId != null,
+      isCommunityAdda: isCommunityAdda,
       myCommunityRole: s.myCommunityRole,
       communityRolesMap: s.communityRolesMap,
       actionsFrozen: false,
@@ -1214,7 +1227,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               );
             }
           : null,
-      onCommunityKick: !isSelf && isAuthority
+      onCommunityKick: canDoCommunityActions
           ? (p, reason) {
               final name = seat['name']?.toString() ?? uid;
               ref
@@ -1222,7 +1235,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                   .communityKick(uid, name, reason: reason);
             }
           : null,
-      onCommunityBan: !isSelf && isAuthority
+      onCommunityBan: canDoCommunityActions
           ? (p, reason) {
               final name = seat['name']?.toString() ?? uid;
               ref

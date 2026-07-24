@@ -132,7 +132,12 @@ class AudioRoomService {
       );
       final d = res.data;
       if (d is Map) {
-        return d['is_following'] == true || d['following'] == true;
+        // API wraps result in data: { isFollowing: bool }
+        if (d['data'] is Map) {
+          final inner = d['data'] as Map;
+          return inner['isFollowing'] == true || inner['is_following'] == true;
+        }
+        return d['isFollowing'] == true || d['is_following'] == true || d['following'] == true;
       }
       return false;
     } catch (e) {

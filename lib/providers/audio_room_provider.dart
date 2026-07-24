@@ -781,6 +781,12 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       });
       _managerSubs.add(managerSub);
 
+      // ── Step 8: Fetch community roles for community rooms ─────────────────
+      final groupId = state.groupId;
+      if (groupId != null && groupId.isNotEmpty) {
+        _fetchCommunityRoles(roomId);
+      }
+
       return true;
     } catch (e) {
       if (kDebugMode) print('[AudioRoomProvider] joinRoom error: $e');
@@ -1505,6 +1511,10 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
           }
           state = state.copyWith(audience: updatedAudience);
         }
+        // Refresh community roles when roster changes (matches RN behaviour)
+        if (state.groupId != null && state.groupId!.isNotEmpty) {
+          _fetchCommunityRoles(roomId);
+        }
       }
     });
 
@@ -1863,6 +1873,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         'avatarFrameUrl': profile['avatarFrameUrl']?.toString(),
         'isSelf': uid == myUid,
         'soundLevel': profile['soundLevel'] ?? 0.0,
+        'communityRole': state.communityRolesMap[uid],
       };
     }).toList();
   }
@@ -1890,6 +1901,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         'avatarFrameUrl': profile['avatarFrameUrl']?.toString(),
         'isVerified': profile['isVerified'] == true,
         'isAdmin': profile['isAdmin'] == true,
+        'communityRole': state.communityRolesMap[uid],
       });
     });
 
@@ -1954,6 +1966,20 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         }
       } catch (_) {}
     });
+  }
+
+  // ── Fetch community roles map (uid → 'super_admin'|'admin'|...) ──────────
+  Future<void> _fetchCommunityRoles(String roomId) async {
+    try {
+      final result = await audioRoomService.getCommunityRoles(roomId);
+      if (!mounted) return;
+      final roles = result['roles'];
+      if (roles is Map) {
+        state = state.copyWith(
+          communityRolesMap: Map<String, dynamic>.from(roles),
+        );
+      }
+    } catch (_) {}
   }
 
   // ── Health check (non-host, every 90s) ────────────────────────────────────

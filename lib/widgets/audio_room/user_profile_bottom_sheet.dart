@@ -90,6 +90,15 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
     _fetchUserProfile();
   }
   
+  static Color _parseColor(String hex) {
+    try {
+      final h = hex.replaceAll('#', '');
+      if (h.length == 6) return Color(int.parse('FF$h', radix: 16));
+      if (h.length == 8) return Color(int.parse(h, radix: 16));
+    } catch (_) {}
+    return const Color(0xFF0751DF);
+  }
+
   int? _calcAge(String? birthday) {
     if (birthday == null) return null;
     try {
@@ -156,15 +165,16 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
       if (mounted) {
         // Server may return explicit state; if not, keep the optimistic value
         bool nowFollowing;
-        if (result.containsKey('following')) {
-          nowFollowing = result['following'] == true;
+        if (result.containsKey('data') && result['data'] is Map) {
+          final d = result['data'] as Map;
+          nowFollowing = d['isFollowing'] == true || d['is_following'] == true || d['following'] == true;
+        } else if (result.containsKey('isFollowing')) {
+          nowFollowing = result['isFollowing'] == true;
         } else if (result.containsKey('is_following')) {
           nowFollowing = result['is_following'] == true;
-        } else if (result.containsKey('data') && result['data'] is Map) {
-          final d = result['data'] as Map;
-          nowFollowing = d['following'] == true || d['is_following'] == true;
+        } else if (result.containsKey('following')) {
+          nowFollowing = result['following'] == true;
         } else {
-          // No explicit field — keep the optimistic toggle
           nowFollowing = !wasFollowing;
         }
         setState(() {
@@ -222,6 +232,15 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
         ? _getJoinedText(_userProfileData!['created_at'].toString())
         : null;
     final bool isVerified = _userProfileData?['is_verified'] == true;
+    final Map<String, dynamic>? verificationBadge =
+        _userProfileData?['verification_badge'] is Map
+            ? Map<String, dynamic>.from(_userProfileData!['verification_badge'] as Map)
+            : (widget.participant?['verificationBadge'] is Map
+                ? Map<String, dynamic>.from(widget.participant!['verificationBadge'] as Map)
+                : null);
+    final Color badgeColor = verificationBadge?['color'] != null
+        ? _parseColor(verificationBadge!['color'].toString())
+        : const Color(0xFF0751DF);
 
     List<String> interests = [];
     try {
@@ -389,7 +408,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                         ),
                                       ),
                                       if (isVerified)
-                                        const Icon(Icons.verified_rounded, size: 16, color: Color(0xFF0751DF)),
+                                        Icon(Icons.verified_rounded, size: 16, color: badgeColor),
                                       if (age != null && gender != null && (gender == 'male' || gender == 'female'))
                                         Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
@@ -878,10 +897,12 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: isLoading
-                ? const SizedBox(
-                    height: 20,
-                    width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A90E2)),
+                ? const Center(
+                    child: SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A90E2)),
+                    ),
                   )
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
