@@ -2035,12 +2035,15 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
   }
 
   Future<void> _fetchData() async {
+    debugPrint('[WiTalkBubble] _fetchData start → url="${widget.url}" linkType="${widget.linkType}"');
     try {
       final d = await _resolveWiTalkLink(widget.url, widget.linkType, widget.message.content);
-      _witalkLinkCache[widget.url] = d;
+      debugPrint('[WiTalkBubble] _fetchData result → ${d == null ? "NULL (fallback)" : "kind=${d['kind']}, name=${d['name']}"}');
+      // Only cache successful resolutions; leave null-results uncached so retry is possible
+      if (d != null) _witalkLinkCache[widget.url] = d;
       if (mounted) setState(() { _loading = false; _data = d; });
-    } catch (_) {
-      _witalkLinkCache[widget.url] = null;
+    } catch (e, st) {
+      debugPrint('[WiTalkBubble] _fetchData ERROR: $e\n$st');
       if (mounted) setState(() { _loading = false; _data = null; });
     }
   }
@@ -2060,12 +2063,20 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
         }
         break;
       case 'group':
+        // Mirrors RN App.jsx handleComplexDeepLink group/ logic:
+        //   public community → CommunityInfoScreen
+        //   private group    → GroupInviteBottomSheet
         final inviteCode = d['inviteCode'] as String?;
         final groupId = d['groupId'] as String?;
-        if (inviteCode != null) {
-          context.push('/chat/join-group', extra: {'inviteCode': inviteCode});
-        } else if (groupId != null) {
-          context.push('/chat/group/$groupId');
+        final isPrivate = d['isPrivate'] == true;
+        if (!isPrivate) {
+          // Public community → CommunityInfoScreen (accepts either groupId or inviteCode)
+          final target = groupId ?? inviteCode;
+          if (target != null) context.push('/community-info/$target');
+        } else {
+          // Private group → bottom sheet
+          final code = inviteCode ?? groupId;
+          if (code != null) _showGroupInviteSheet(context, code);
         }
         break;
       case 'groupchat':
@@ -2079,16 +2090,26 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
     }
   }
 
+  void _showGroupInviteSheet(BuildContext context, String inviteCode) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _GroupInviteSheet(inviteCode: inviteCode, c: widget.c),
+    );
+  }
+
   // Resolve any witalk.in URL to a typed card data map.
   // Mirrors RN's fetchWiTalkLinkData + channelAPI.getByUsername flow exactly.
   static Future<Map<String, dynamic>?> _resolveWiTalkLink(
       String url, String linkType, String content) async {
     final uri = Uri.tryParse(url);
-    if (uri == null) return null;
+    if (uri == null) { debugPrint('[WiTalkBubble] _resolveWiTalkLink: invalid URI "$url"'); return null; }
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
-    if (segments.isEmpty) return null;
+    if (segments.isEmpty) { debugPrint('[WiTalkBubble] _resolveWiTalkLink: no path segments in "$url"'); return null; }
 
     final first = segments[0];
+    debugPrint('[WiTalkBubble] _resolveWiTalkLink: first="$first" segments=$segments');
 
     // witalk.in/group/{inviteCode} — explicit group invite URL
     if (first == 'group' && segments.length >= 2) {
@@ -2103,28 +2124,42 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
     // witalk.in/{slug} — could be username, group slug, or channel username.
     // Use the resolve endpoint (mirrors channelAPI.getByUsername) to determine type.
     final slug = first;
+    // Guard: skip API call for slugs that can't be valid handles (same rule as channel_api.dart)
+    if (!RegExp(r'^[a-zA-Z0-9_-]{3,30}$').hasMatch(slug)) {
+      debugPrint('[WiTalkBubble] _resolveWiTalkLink: slug "$slug" failed handle validation');
+      return null;
+    }
     try {
+      debugPrint('[WiTalkBubble] GET /v1/username/resolve/${Uri.encodeComponent(slug)}');
       final resolveRes = await dioClient.get(
-        '/v1/username/resolve',
-        queryParameters: {'username': slug},
+        '/v1/username/resolve/${Uri.encodeComponent(slug)}',
       );
-      final resolved = resolveRes.data?['data'] ?? resolveRes.data;
-      if (resolved == null) return null;
+      debugPrint('[WiTalkBubble] resolve response: ${resolveRes.statusCode} → ${resolveRes.data}');
+      // Response shape is {type, data} directly — no outer wrapper
+      final resolved = resolveRes.data as Map<String, dynamic>?;
+      if (resolved == null) { debugPrint('[WiTalkBubble] resolve: data is null'); return null; }
 
       final resolvedType = resolved['type']?.toString();
       final resolvedData = resolved['data'] as Map<String, dynamic>?;
+      debugPrint('[WiTalkBubble] resolvedType="$resolvedType" resolvedData=$resolvedData');
 
       if (resolvedType == 'user') {
-        // Fetch full user profile
-        final res = await dioClient.get('/v1/user/profile/${Uri.encodeComponent(slug)}');
-        final u = res.data?['data']?['user'] ?? res.data?['data'] ?? res.data;
-        if (u == null || u['name'] == null) return null;
-        final stats = res.data?['data']?['stats'] ?? {};
-        final followers = stats['followers_count'] ?? u['followers_count'];
+        // resolvedData already has: id, username, name, picture — use it directly.
+        // Fall back to a full profile fetch only if name is missing.
+        Map<String, dynamic>? u = resolvedData;
+        if (u == null || u['name'] == null) {
+          debugPrint('[WiTalkBubble] resolve data missing name, fetching /v1/user/profile/$slug');
+          final res = await dioClient.get('/v1/user/profile/${Uri.encodeComponent(slug)}');
+          debugPrint('[WiTalkBubble] profile response: ${res.statusCode} → ${res.data}');
+          u = res.data?['data']?['user'] ?? res.data?['data'] ?? res.data as Map<String, dynamic>?;
+        }
+        if (u == null || u['name'] == null) { debugPrint('[WiTalkBubble] profile: user/name is null'); return null; }
+        final followers = u['followers_count'];
         return {
           'kind': 'profile',
           'name': u['name'].toString(),
-          'avatarUrl': u['profile_pic'],
+          // resolve returns 'picture'; full profile returns 'profile_pic' — try both
+          'avatarUrl': u['picture'] ?? u['profile_pic'],
           'meta': [
             if (u['username'] != null) '@${u['username']}',
             if (followers != null) '${_fmtCount(followers)} followers',
@@ -2142,10 +2177,12 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
 
       if (resolvedType == 'channel') {
         final channelId = resolvedData?['id']?.toString();
-        if (channelId == null) return null;
+        if (channelId == null) { debugPrint('[WiTalkBubble] channel: no id in resolvedData=$resolvedData'); return null; }
+        debugPrint('[WiTalkBubble] GET /v1/channels/$channelId');
         final res = await dioClient.get('/v1/channels/$channelId');
+        debugPrint('[WiTalkBubble] channel response: ${res.statusCode} → ${res.data}');
         final c = res.data?['channel'] ?? res.data?['data']?['channel'] ?? res.data?['data'] ?? res.data;
-        if (c == null || c['name'] == null) return null;
+        if (c == null || c['name'] == null) { debugPrint('[WiTalkBubble] channel: c/name is null'); return null; }
         final subCount = c['subscriber_count'];
         return {
           'kind': 'channel',
@@ -2170,18 +2207,25 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
         if (inviteCode != null) return _resolveGroupInvite(inviteCode);
         final groupId = resolvedData?['id']?.toString();
         if (groupId != null) return _resolveGroupById(groupId);
+        debugPrint('[WiTalkBubble] group: no inviteCode or id in resolvedData=$resolvedData');
         return null;
       }
-    } catch (_) {}
+
+      debugPrint('[WiTalkBubble] unhandled resolvedType="$resolvedType"');
+    } catch (e, st) {
+      debugPrint('[WiTalkBubble] _resolveWiTalkLink EXCEPTION: $e\n$st');
+    }
 
     return null;
   }
 
   static Future<Map<String, dynamic>?> _resolveGroupInvite(String inviteCode) async {
     try {
+      debugPrint('[WiTalkBubble] GET /v1/groups/invite/${Uri.encodeComponent(inviteCode)}');
       final res = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(inviteCode)}');
+      debugPrint('[WiTalkBubble] groupInvite response: ${res.statusCode} → ${res.data}');
       final g = res.data?['data'] ?? res.data;
-      if (g == null || g['name'] == null) return null;
+      if (g == null || g['name'] == null) { debugPrint('[WiTalkBubble] groupInvite: g/name is null'); return null; }
       final memberCount = g['member_count'];
       // Match RN isPrivate logic exactly
       final isPrivate = g['entity_type'] != null
@@ -2205,14 +2249,16 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
         'inviteCode': inviteCode,
         'groupId': g['id']?.toString(),
       };
-    } catch (_) { return null; }
+    } catch (e, st) { debugPrint('[WiTalkBubble] _resolveGroupInvite EXCEPTION: $e\n$st'); return null; }
   }
 
   static Future<Map<String, dynamic>?> _resolveGroupById(String groupId) async {
     try {
+      debugPrint('[WiTalkBubble] GET /v1/groups/$groupId');
       final res = await dioClient.get('/v1/groups/$groupId');
+      debugPrint('[WiTalkBubble] groupById response: ${res.statusCode} → ${res.data}');
       final g = res.data?['data'] ?? res.data;
-      if (g == null || g['name'] == null) return null;
+      if (g == null || g['name'] == null) { debugPrint('[WiTalkBubble] groupById: g/name is null'); return null; }
       final memberCount = g['member_count'];
       final isPrivate = g['is_private'] == true;
       return {
@@ -2884,5 +2930,329 @@ class _SwipeToReplyState extends State<_SwipeToReply> {
         ],
       ),
     );
+  }
+}
+
+// ── Group Invite Bottom Sheet ─────────────────────────────────────────────────
+// Mirrors RN GroupInviteBottomSheet.jsx exactly:
+//   private group → fetch details → show join/open/cancel-request/banned states
+//   On join success → push /chat/group/{groupId}
+class _GroupInviteSheet extends StatefulWidget {
+  final String inviteCode;
+  final ThemeColors c;
+  const _GroupInviteSheet({required this.inviteCode, required this.c});
+
+  @override
+  State<_GroupInviteSheet> createState() => _GroupInviteSheetState();
+}
+
+class _GroupInviteSheetState extends State<_GroupInviteSheet> {
+  Map<String, dynamic>? _group;
+  bool _loading = true;
+  bool _joining = false;
+  bool _canceling = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    try {
+      final res = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}');
+      final data = res.data?['data'] as Map<String, dynamic>? ?? res.data as Map<String, dynamic>?;
+      if (!mounted) return;
+      setState(() { _loading = false; _group = data; if (data == null) _error = 'Group not found or invite link expired.'; });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() { _loading = false; _error = 'Could not load group details.'; });
+    }
+  }
+
+  Future<void> _join() async {
+    if (_joining || _group == null) return;
+    setState(() { _joining = true; _error = null; });
+    try {
+      final res = await dioClient.post('/v1/groups/join', data: {'invite_code': widget.inviteCode});
+      final requiresApproval = res.data?['requiresApproval'] == true ||
+          res.data?['data']?['requires_approval'] == true;
+      if (!mounted) return;
+      if (requiresApproval) {
+        final updated = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}');
+        final data = updated.data?['data'] as Map<String, dynamic>?;
+        if (mounted) setState(() { _joining = false; if (data != null) _group = data; });
+      } else {
+        final groupId = _group!['id']?.toString();
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        if (groupId != null) context.push('/chat/group/$groupId');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final msg = e.toString().toLowerCase().contains('already')
+          ? 'You are already a member of this group.'
+          : 'Failed to join group. Please try again.';
+      setState(() { _joining = false; _error = msg; });
+    }
+  }
+
+  Future<void> _cancelRequest() async {
+    final requestId = (_group?['join_request'] as Map<String, dynamic>?)?['id']?.toString();
+    if (requestId == null || _canceling) return;
+    setState(() { _canceling = true; _error = null; });
+    try {
+      await dioClient.delete('/v1/groups/join-requests/$requestId');
+      final updated = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}');
+      final data = updated.data?['data'] as Map<String, dynamic>?;
+      if (mounted) setState(() { _canceling = false; if (data != null) _group = data; });
+    } catch (_) {
+      if (mounted) setState(() { _canceling = false; _error = 'Failed to cancel request.'; });
+    }
+  }
+
+  void _openGroup() {
+    final groupId = _group?['id']?.toString();
+    Navigator.of(context).pop();
+    if (groupId != null) context.push('/chat/group/$groupId');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = widget.c;
+    return Container(
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 20,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 40,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 36, height: 5,
+            decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(3)),
+          ),
+          const SizedBox(height: 20),
+          if (_loading)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 40),
+              child: Column(children: [
+                CircularProgressIndicator(color: c.primaryButton),
+                const SizedBox(height: 12),
+                Text('Loading group details…',
+                    style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 15)),
+              ]),
+            )
+          else if (_error != null && _group == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 30),
+              child: Column(children: [
+                Icon(Icons.error_outline, size: 56, color: c.error),
+                const SizedBox(height: 12),
+                Text('Unable to Load Group',
+                    style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18)),
+                const SizedBox(height: 8),
+                Text(_error!, textAlign: TextAlign.center,
+                    style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 14)),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: c.border),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: Text('Close', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ]),
+            )
+          else if (_group != null)
+            _buildContent(c),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(ThemeColors c) {
+    final g = _group!;
+
+    if (g['is_banned'] == true) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Column(children: [
+          const Icon(Icons.block, size: 72, color: Color(0xFFEF4444)),
+          const SizedBox(height: 16),
+          const Text("You're Banned",
+              style: TextStyle(color: Color(0xFFEF4444), fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 22)),
+          const SizedBox(height: 10),
+          Text('You have been banned from this group and cannot join or request to join.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 14, height: 1.5)),
+        ]),
+      );
+    }
+
+    final name = g['name']?.toString() ?? 'Group';
+    final description = g['description']?.toString();
+    final picture = g['picture']?.toString() ?? g['image_url']?.toString();
+    final memberCount = g['member_count'] as int? ?? 0;
+    final isMember = g['is_member'] == true;
+    final joinRequest = g['join_request'] as Map<String, dynamic>?;
+    final requiresApproval = g['requires_approval'] == true;
+    final canJoin = g['can_join'] != false;
+    final restrictionReason = g['restriction_reason']?.toString();
+    final isPublic = g['entity_type'] != null
+        ? g['entity_type'] == 'community'
+        : (g['group_type'] != null ? g['group_type'] == 'public' : g['is_private'] != true);
+    final entityLabel = isPublic ? 'Community' : 'Group';
+
+    return Column(children: [
+      CircleAvatar(
+        radius: 56,
+        backgroundColor: c.primaryButton.withValues(alpha: 0.15),
+        backgroundImage: picture != null ? CachedNetworkImageProvider(picture) : null,
+        child: picture == null
+            ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: TextStyle(color: c.primaryButton, fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 36))
+            : null,
+      ),
+      const SizedBox(height: 16),
+      Text(name, textAlign: TextAlign.center,
+          style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 22)),
+      const SizedBox(height: 6),
+      if (description != null && description.isNotEmpty) ...[
+        Text(description, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 14, height: 1.5)),
+        const SizedBox(height: 12),
+      ],
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.people, size: 18, color: c.textTertiary),
+        const SizedBox(width: 6),
+        Text('$memberCount ${memberCount == 1 ? 'member' : 'members'}',
+            style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 14)),
+      ]),
+      const SizedBox(height: 16),
+      if (joinRequest != null)
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: c.background,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: c.border),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.schedule, size: 20, color: c.textSecondary),
+            const SizedBox(width: 8),
+            Text('An admin must approve your request.',
+                style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit', fontSize: 13)),
+          ]),
+        )
+      else
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Text(
+            requiresApproval && !isMember
+                ? 'An admin must approve your request.'
+                : 'You will be added to "$name" and its announcement group. Your profile will be visible to its admins.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit', fontSize: 12, height: 1.5),
+          ),
+        ),
+      const SizedBox(height: 20),
+      if (_error != null)
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEE2E2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFFECACA)),
+          ),
+          child: Text(_error!, textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFFDC2626), fontFamily: 'Outfit', fontSize: 13)),
+        ),
+      SizedBox(
+        width: double.infinity,
+        child: isMember
+            ? ElevatedButton(
+                onPressed: _openGroup,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: c.text,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                child: Text('Open $entityLabel',
+                    style: TextStyle(color: c.background, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15)),
+              )
+            : !canJoin
+                ? Column(children: [
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEE2E2),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFFECACA)),
+                      ),
+                      child: Text(restrictionReason ?? 'You cannot join this community',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(color: Color(0xFFDC2626), fontFamily: 'Outfit', fontSize: 13)),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: null,
+                        style: ElevatedButton.styleFrom(
+                          disabledBackgroundColor: const Color(0xFF9CA3AF),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: const Text('Cannot Join',
+                            style: TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15)),
+                      ),
+                    ),
+                  ])
+                : joinRequest != null
+                    ? OutlinedButton(
+                        onPressed: _canceling ? null : _cancelRequest,
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: c.border),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: _canceling
+                            ? SizedBox(width: 20, height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: c.text))
+                            : Text('Cancel request',
+                                style: TextStyle(color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15)),
+                      )
+                    : ElevatedButton(
+                        onPressed: _joining ? null : _join,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: c.text,
+                          disabledBackgroundColor: c.textTertiary.withValues(alpha: 0.6),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        child: _joining
+                            ? const SizedBox(width: 20, height: 20,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text(
+                                requiresApproval ? 'Request to join' : 'Join $entityLabel',
+                                style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15)),
+                      ),
+      ),
+    ]);
   }
 }

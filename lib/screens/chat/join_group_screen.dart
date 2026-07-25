@@ -9,7 +9,8 @@ import '../../api/app_endpoints.dart';
 import '../../services/chat_api_service.dart';
 
 class JoinGroupScreen extends ConsumerStatefulWidget {
-  const JoinGroupScreen({super.key});
+  final String? inviteCode;
+  const JoinGroupScreen({super.key, this.inviteCode});
 
   @override
   ConsumerState<JoinGroupScreen> createState() => _JoinGroupScreenState();
@@ -24,6 +25,16 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
   Map<String, dynamic>? _preview;
   String? _error;
   bool _alreadyMember = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.inviteCode != null && widget.inviteCode!.isNotEmpty) {
+      _codeCtrl.text = widget.inviteCode!;
+      // Auto-check after the first frame so the widget tree is built
+      WidgetsBinding.instance.addPostFrameCallback((_) => _checkCode());
+    }
+  }
 
   @override
   void dispose() {

@@ -227,7 +227,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/chat/group/:id', builder: (_, s) => GroupChatScreen(groupId: s.pathParameters['id']!)),
       GoRoute(path: '/chat/groups', builder: (_, __) => const GroupListScreen()),
       GoRoute(path: '/chat/create-group', builder: (_, __) => const CreateGroupScreen()),
-      GoRoute(path: '/chat/join-group', builder: (_, __) => const JoinGroupScreen()),
+      GoRoute(path: '/chat/join-group', builder: (_, s) {
+        final extra = s.extra as Map<String, dynamic>?;
+        return JoinGroupScreen(inviteCode: extra?['inviteCode'] as String?);
+      }),
       GoRoute(path: '/chat/group-info/:id', builder: (_, s) => GroupInfoScreen(groupId: s.pathParameters['id']!)),
       GoRoute(path: '/chat/group-permissions/:id', builder: (_, s) => GroupPermissionsScreen(groupId: s.pathParameters['id']!)),
       GoRoute(path: '/chat/group-tools/:id', builder: (_, s) => GroupToolsScreen(groupId: s.pathParameters['id']!)),
