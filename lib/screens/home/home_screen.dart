@@ -215,15 +215,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSkeleton(ThemeColors c) => ListView.builder(
-        itemCount: 4,
-        itemBuilder: (context2, idx) => Shimmer.fromColors(
-          baseColor: c.surface,
-          highlightColor: c.border,
-          child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            height: 300,
-            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
+  Widget _buildSkeleton(ThemeColors c) => Column(
+        children: List.generate(
+          4,
+          (_) => Shimmer.fromColors(
+            baseColor: c.surface,
+            highlightColor: c.border,
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              height: 300,
+              decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
+            ),
           ),
         ),
       );

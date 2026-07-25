@@ -299,10 +299,8 @@ class SocketService {
       if (params != null) {
         _audioRoomSocket?.emit('join', [params['roomId'], params['userInfo']]);
         debugPrint('[AUDIO-ROOM-SOCKET] Re-emitting join roomId=${params['roomId']}');
-      } else if (uid != null) {
-        // Fallback: user-only join (before a room is entered)
-        _audioRoomSocket?.emit('join', uid);
       }
+      // No fallback emit — server requires roomId + userId, which only exist once a room is entered
     });
 
     _audioRoomSocket?.on('join_success', (data) {
