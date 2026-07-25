@@ -93,14 +93,34 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
     final uid = ref.read(authProvider).uid ?? '';
     final params = uid.isNotEmpty ? {'userId': uid} : <String, dynamic>{};
     Map<String, dynamic>? data;
+
+    // Try group ID endpoint first
     try {
-      // RN always uses invite code; Flutter tries group ID first, then invite code
       final res = await dioClient.get(
         '/v1/groups/${widget.communityId}',
         queryParameters: params,
       );
       data = res.data['data'] as Map<String, dynamic>?;
-    } catch (_) {
+    } catch (_) {}
+
+    // If is_member is null the ID endpoint didn't return membership info — re-fetch via invite code which always includes it.
+    if (data != null && data['is_member'] == null) {
+      final inviteCode = data['invite_code'] as String?;
+      final codeToTry = (inviteCode != null && inviteCode.isNotEmpty)
+          ? inviteCode
+          : widget.communityId;
+      try {
+        final res = await dioClient.get(
+          '/v1/groups/invite/$codeToTry',
+          queryParameters: params,
+        );
+        final inviteData = res.data['data'] as Map<String, dynamic>?;
+        if (inviteData != null) data = inviteData;
+      } catch (_) {}
+    }
+
+    // Fallback: try invite code directly (original fallback path)
+    if (data == null) {
       try {
         final res = await dioClient.get(
           '/v1/groups/invite/${widget.communityId}',
@@ -109,6 +129,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
         data = res.data['data'] as Map<String, dynamic>?;
       } catch (_) {}
     }
+
     if (!mounted) return;
     if (data == null) {
       setState(() => _loading = false);

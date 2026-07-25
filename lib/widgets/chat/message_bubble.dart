@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
+import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
 import 'voice_message_player.dart';
 import 'poll_message.dart';
@@ -127,6 +128,7 @@ class MessageBubble extends StatelessWidget {
                     onTapImage: onTapImage,
                     onReplyTap: onReplyTap,
                     c: c,
+                    currentUserId: currentUserId,
                   ),
                 ),
               ),
@@ -176,6 +178,7 @@ class _BubbleContent extends StatelessWidget {
   final VoidCallback? onTapImage;
   final VoidCallback? onReplyTap;
   final ThemeColors c;
+  final String? currentUserId;
 
   const _BubbleContent({
     required this.message,
@@ -187,6 +190,7 @@ class _BubbleContent extends StatelessWidget {
     this.onTapImage,
     this.onReplyTap,
     required this.c,
+    this.currentUserId,
   });
 
   Color get _bubbleColor => isMyMessage
@@ -265,6 +269,7 @@ class _BubbleContent extends StatelessWidget {
                 url: witalkMatch.group(0)!,
                 linkType: first,
                 c: c,
+                currentUserId: currentUserId,
               );
             }
           }
@@ -2002,6 +2007,7 @@ class _WiTalkLinkBubble extends StatefulWidget {
   final String url;
   final String linkType; // path segment: 'profile'|'group'|'groupchat'|username…
   final ThemeColors c;
+  final String? currentUserId;
 
   const _WiTalkLinkBubble({
     required this.message,
@@ -2009,6 +2015,7 @@ class _WiTalkLinkBubble extends StatefulWidget {
     required this.url,
     required this.linkType,
     required this.c,
+    this.currentUserId,
   });
 
   @override
@@ -2095,7 +2102,7 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _GroupInviteSheet(inviteCode: inviteCode, c: widget.c),
+      builder: (_) => _GroupInviteSheet(inviteCode: inviteCode, c: widget.c, userId: widget.currentUserId),
     );
   }
 
@@ -2940,7 +2947,8 @@ class _SwipeToReplyState extends State<_SwipeToReply> {
 class _GroupInviteSheet extends StatefulWidget {
   final String inviteCode;
   final ThemeColors c;
-  const _GroupInviteSheet({required this.inviteCode, required this.c});
+  final String? userId;
+  const _GroupInviteSheet({required this.inviteCode, required this.c, this.userId});
 
   @override
   State<_GroupInviteSheet> createState() => _GroupInviteSheetState();
@@ -2961,11 +2969,19 @@ class _GroupInviteSheetState extends State<_GroupInviteSheet> {
 
   Future<void> _fetch() async {
     try {
-      final res = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}');
+      debugPrint('[GroupInviteSheet] fetching invite code: ${widget.inviteCode} userId=${widget.userId}');
+      final params = <String, dynamic>{};
+      if (widget.userId != null && widget.userId!.isNotEmpty) params['userId'] = widget.userId;
+      final res = await dioClient.get(
+        '/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}',
+        queryParameters: params,
+      );
       final data = res.data?['data'] as Map<String, dynamic>? ?? res.data as Map<String, dynamic>?;
+      debugPrint('[GroupInviteSheet] group data: is_member=${data?['is_member']} requires_approval=${data?['requires_approval']} can_join=${data?['can_join']} join_request=${data?['join_request']}');
       if (!mounted) return;
       setState(() { _loading = false; _group = data; if (data == null) _error = 'Group not found or invite link expired.'; });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[GroupInviteSheet] fetch error: $e');
       if (!mounted) return;
       setState(() { _loading = false; _error = 'Could not load group details.'; });
     }
@@ -2975,21 +2991,71 @@ class _GroupInviteSheetState extends State<_GroupInviteSheet> {
     if (_joining || _group == null) return;
     setState(() { _joining = true; _error = null; });
     try {
-      final res = await dioClient.post('/v1/groups/join', data: {'invite_code': widget.inviteCode});
+      final body = <String, dynamic>{'invite_code': widget.inviteCode};
+      if (widget.userId != null && widget.userId!.isNotEmpty) {
+        body['user_id'] = widget.userId;
+      }
+      debugPrint('[GroupInviteSheet] POST /v1/groups/join body=$body');
+      final res = await dioClient.post('/v1/groups/join', data: body);
+      debugPrint('[GroupInviteSheet] join response: ${res.data}');
       final requiresApproval = res.data?['requiresApproval'] == true ||
           res.data?['data']?['requires_approval'] == true;
       if (!mounted) return;
       if (requiresApproval) {
-        final updated = await dioClient.get('/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}');
-        final data = updated.data?['data'] as Map<String, dynamic>?;
-        if (mounted) setState(() { _joining = false; if (data != null) _group = data; });
+        // Build join_request from the join response directly — no re-fetch needed
+        final requestId = res.data?['data']?['request_id']?.toString();
+        debugPrint('[GroupInviteSheet] requiresApproval=true, request_id=$requestId');
+        if (mounted) {
+          setState(() {
+            _joining = false;
+            if (requestId != null) {
+              _group = Map<String, dynamic>.from(_group!)
+                ..['join_request'] = {'id': requestId, 'status': 'pending'};
+            }
+          });
+        }
       } else {
         final groupId = _group!['id']?.toString();
         if (!mounted) return;
         Navigator.of(context).pop();
         if (groupId != null) context.push('/chat/group/$groupId');
       }
+    } on DioException catch (e) {
+      debugPrint('[GroupInviteSheet] join DioException: status=${e.response?.statusCode} data=${e.response?.data}');
+      if (!mounted) return;
+      final serverMsg = e.response?.data?['message'] as String? ??
+          e.response?.data?['error'] as String?;
+      final serverCode = e.response?.data?['code'] as String? ?? '';
+      final isPendingRequest = serverCode.toLowerCase().contains('pending') ||
+          (serverMsg != null &&
+              (serverMsg.toLowerCase().contains('pending') ||
+                  serverMsg.toLowerCase().contains('already have a')));
+      if (isPendingRequest) {
+        // Re-fetch with userId so server returns personalized join_request field
+        try {
+          debugPrint('[GroupInviteSheet] REQUEST_PENDING → re-fetching group with userId=${widget.userId}');
+          final params = <String, dynamic>{};
+          if (widget.userId != null && widget.userId!.isNotEmpty) params['userId'] = widget.userId;
+          final updated = await dioClient.get(
+            '/v1/groups/invite/${Uri.encodeComponent(widget.inviteCode)}',
+            queryParameters: params,
+          );
+          final data = updated.data?['data'] as Map<String, dynamic>?;
+          debugPrint('[GroupInviteSheet] re-fetch result: join_request=${data?['join_request']} is_member=${data?['is_member']}');
+          if (mounted) setState(() { _joining = false; if (data != null) _group = data; _error = null; });
+        } catch (refetchErr) {
+          debugPrint('[GroupInviteSheet] re-fetch failed: $refetchErr');
+          if (mounted) setState(() { _joining = false; });
+        }
+        return;
+      }
+      final msg = serverMsg ??
+          (e.toString().toLowerCase().contains('already')
+              ? 'You are already a member of this group.'
+              : 'Failed to join group. Please try again.');
+      setState(() { _joining = false; _error = msg; });
     } catch (e) {
+      debugPrint('[GroupInviteSheet] join error: $e');
       if (!mounted) return;
       final msg = e.toString().toLowerCase().contains('already')
           ? 'You are already a member of this group.'
