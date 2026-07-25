@@ -22,12 +22,13 @@ class CommunityInfoScreen extends ConsumerStatefulWidget {
       _CommunityInfoScreenState();
 }
 
-class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
+class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
+    with WidgetsBindingObserver {
   Map<String, dynamic>? _group;
   bool _loading = true;
   bool _joining = false;
 
-  // Tabs: 0=Overview, live=-1/1, admins=1/2
+  // Tabs: 0=Overview, live=1/-1, admins=1/2
   int _activeTab = 0;
 
   // Admins
@@ -38,12 +39,14 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   // Live addas
   List<Map<String, dynamic>> _liveAddas = [];
   bool _liveAddasLoading = false;
+  bool _liveAddasFetched = false;
 
   // Location
   Position? _userPosition;
   bool _locationLoading = false;
   bool _gpsDisabled = false;
   bool _locationPermDenied = false;
+  bool _pendingLocationRetry = false;
 
   // Community reverse-geocode name
   String? _communityLocationName;
@@ -54,8 +57,35 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadGroup();
   }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _pendingLocationRetry) {
+      _pendingLocationRetry = false;
+      _fetchUserLocation();
+    }
+  }
+
+  // ── Truthy helper (API may return 1/0 integers instead of true/false) ───────
+
+  static bool _truthy(dynamic v) => v == true || v == 1;
+
+  // ── Derived tab indices ────────────────────────────────────────────────────
+
+  bool get _hasLiveAddas => _liveAddas.isNotEmpty;
+  List<String> get _tabs =>
+      _hasLiveAddas ? ['Overview', 'Live Addas', 'Admins'] : ['Overview', 'Admins'];
+  int get _liveTab => _hasLiveAddas ? 1 : -1;
+  int get _adminsTab => _hasLiveAddas ? 2 : 1;
 
   // ── API ────────────────────────────────────────────────────────────────────
 
@@ -64,14 +94,13 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     final params = uid.isNotEmpty ? {'userId': uid} : <String, dynamic>{};
     Map<String, dynamic>? data;
     try {
-      // Try by group ID first
+      // RN always uses invite code; Flutter tries group ID first, then invite code
       final res = await dioClient.get(
         '/v1/groups/${widget.communityId}',
         queryParameters: params,
       );
       data = res.data['data'] as Map<String, dynamic>?;
     } catch (_) {
-      // Fall back to invite code endpoint
       try {
         final res = await dioClient.get(
           '/v1/groups/invite/${widget.communityId}',
@@ -130,7 +159,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       final state = addr['state'];
       final parts = [city, state].whereType<String>().toList();
       if (parts.isNotEmpty) {
-        setState(() => _communityLocationName = parts.join(', '));
+        setState(() => _communityLocationName = parts.sublist(0, parts.length > 2 ? 2 : parts.length).join(', '));
       }
     } catch (_) {}
   }
@@ -162,17 +191,30 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   Future<void> _fetchLiveAddas() async {
     final g = _group;
     if (g == null) return;
+    // Only re-fetch if: first time OR the Live Addas tab is active
+    if (_liveAddasFetched && _activeTab != _liveTab) return;
     setState(() => _liveAddasLoading = true);
     try {
       final res =
           await dioClient.get('/v1/audio-rooms/group/${g['id']}/all-active');
       if (!mounted) return;
       final data = res.data['data'];
+      final addas = data is List ? data.cast<Map<String, dynamic>>() : <Map<String, dynamic>>[];
       setState(() {
-        _liveAddas = data is List ? data.cast<Map<String, dynamic>>() : [];
+        _liveAddas = addas;
+        _liveAddasFetched = true;
+        // If Live Addas tab was active but there are no more live addas, reset to Overview
+        if (!_hasLiveAddas && _activeTab == 1) {
+          _activeTab = 0;
+        }
       });
     } catch (_) {
-      if (mounted) setState(() => _liveAddas = []);
+      if (mounted) {
+        setState(() {
+          _liveAddas = [];
+          if (_activeTab == 1) _activeTab = 0;
+        });
+      }
     } finally {
       if (mounted) setState(() => _liveAddasLoading = false);
     }
@@ -186,7 +228,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     return g['location_radius_km'] != null &&
         g['location_lat'] != null &&
         g['location_lng'] != null &&
-        g['is_member'] != true;
+        !_truthy(g['is_member']);
   }
 
   double? get _distanceKm {
@@ -259,7 +301,13 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   }
 
   Future<void> _openLocationSettings() async {
-    await Geolocator.openLocationSettings();
+    _pendingLocationRetry = true;
+    try {
+      await Geolocator.openLocationSettings();
+    } catch (_) {
+      _pendingLocationRetry = false;
+      await Geolocator.openAppSettings();
+    }
   }
 
   // ── Join logic ─────────────────────────────────────────────────────────────
@@ -270,14 +318,14 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       (_group?['monetization_type'] as String? ?? '').contains('subscription');
   bool get _allowsPass =>
       (_group?['monetization_type'] as String? ?? '').contains('pass') ||
-      _group?['pass_required'] == true;
+      _truthy(_group?['pass_required']);
   bool get _canJoinWithPass =>
       _allowsPass && ((_group?['required_passes'] as List?)?.isNotEmpty ?? false);
   bool get _hasTrial =>
       _group != null &&
       _group!['trial_free_hours'] != null &&
       (double.tryParse(_group!['trial_free_hours'].toString()) ?? 0) > 0 &&
-      _group!['trial_already_used'] != true;
+      !_truthy(_group!['trial_already_used']);
   bool get _trialActive {
     final g = _group;
     if (g == null) return false;
@@ -317,7 +365,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       }
     }
 
-    if (g['can_join'] == false) {
+    if (g['can_join'] == false || g['can_join'] == 0) {
       setState(() => _alert = _AlertConfig(
             title: 'Access Restricted',
             message: g['restriction_reason'] as String? ??
@@ -327,18 +375,18 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       return;
     }
 
-    if (g['is_monetized'] != true && _canJoinWithPass) {
-      _showSnackbar('Pass join not yet supported.', isError: false);
+    if (!_truthy(g['is_monetized']) && _canJoinWithPass) {
+      _joinWithPass();
       return;
     }
 
-    if (g['is_monetized'] == true && _hasTrial && g['is_member'] != true) {
+    if (_truthy(g['is_monetized']) && _hasTrial && !_truthy(g['is_member'])) {
       _joinFree();
       return;
     }
 
-    if (g['is_monetized'] == true &&
-        (g['is_member'] != true ||
+    if (_truthy(g['is_monetized']) &&
+        (!_truthy(g['is_member']) ||
             g['my_join_method'] == 'free' ||
             _trialExpired)) {
       _showSnackbar('Paid join not yet supported.', isError: false);
@@ -367,7 +415,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       }
       final res = await dioClient.post('/v1/groups/join', data: body);
       if (!mounted) return;
-      if (res.data['requiresApproval'] == true) {
+      if (_truthy(res.data['requiresApproval'])) {
         setState(() => _alert = const _AlertConfig(
               title: 'Request Sent',
               message:
@@ -376,14 +424,31 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
               goBack: true,
             ));
       } else {
-        context.pushReplacement('/chat/group/${g['id']}');
+        _navigateToChat(g);
       }
-    } catch (e) {
+    } on DioException catch (e) {
+      if (!mounted) return;
+      final code = e.response?.data?['code'] as String?;
+      if (code == 'TRIAL_EXPIRED' || code == 'PAYMENT_REQUIRED') {
+        _showSnackbar('Paid join not yet supported.', isError: false);
+      } else {
+        final msg = e.response?.data?['message'] as String?;
+        _showSnackbar(msg ?? 'Failed to join community.', isError: true);
+      }
+    } catch (_) {
       if (!mounted) return;
       _showSnackbar('Failed to join community.', isError: true);
     } finally {
       if (mounted) setState(() => _joining = false);
     }
+  }
+
+  void _joinWithPass() {
+    _showSnackbar('Pass join not yet supported.', isError: false);
+  }
+
+  void _navigateToChat(Map<String, dynamic> g) {
+    context.pushReplacement('/chat/group/${g['id']}');
   }
 
   void _handleOpen() {
@@ -393,12 +458,6 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   }
 
   // ── Tabs ───────────────────────────────────────────────────────────────────
-
-  bool get _hasLiveAddas => _liveAddas.isNotEmpty;
-  List<String> get _tabs =>
-      _hasLiveAddas ? ['Overview', 'Live Addas', 'Admins'] : ['Overview', 'Admins'];
-  int get _liveTab => _hasLiveAddas ? 1 : -1;
-  int get _adminsTab => _hasLiveAddas ? 2 : 1;
 
   void _onTabTap(int i) {
     setState(() => _activeTab = i);
@@ -646,7 +705,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       Map<String, dynamic> g, bool isDark, ThemeColors colors) {
     final chips = <Widget>[];
 
-    if (g['is_monetized'] == true && _allowsOneTime) {
+    if (_truthy(g['is_monetized']) && _allowsOneTime) {
       chips.add(_Chip(
         icon: Icons.bolt,
         label: 'One-time',
@@ -659,7 +718,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             : const Color(0xFFFDE68A),
       ));
     }
-    if (g['is_monetized'] == true && _allowsSubscription) {
+    if (_truthy(g['is_monetized']) && _allowsSubscription) {
       chips.add(_Chip(
         icon: Icons.workspace_premium,
         label: 'Subscription',
@@ -672,7 +731,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             : const Color(0xFFFDE68A),
       ));
     }
-    if (g['is_monetized'] == true ? _allowsPass : g['pass_required'] == true) {
+    if (_truthy(g['is_monetized']) ? _allowsPass : _truthy(g['pass_required'])) {
       chips.add(_Chip(
         icon: Icons.confirmation_number,
         label: 'Pass',
@@ -685,7 +744,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             : const Color(0xFFFDE68A),
       ));
     }
-    if (g['is_monetized'] != true && g['pass_required'] != true) {
+    if (!_truthy(g['is_monetized']) && !_truthy(g['pass_required'])) {
       chips.add(_Chip(
         icon: Icons.lock_open,
         label: 'Free to Join',
@@ -711,7 +770,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             : const Color(0xFFFDE68A),
       ));
     }
-    if (g['can_join'] == false) {
+    if (g['can_join'] == false || g['can_join'] == 0) {
       chips.add(_Chip(
         icon: Icons.block,
         label: 'Restricted',
@@ -724,7 +783,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             : const Color(0xFFFECACA),
       ));
     }
-    if (g['verified_only'] == true) {
+    if (_truthy(g['verified_only'])) {
       chips.add(_Chip(
         icon: Icons.verified,
         label: 'Verified Only',
@@ -774,6 +833,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     return Container(
       decoration: BoxDecoration(
         color: colors.background,
+        border: Border(bottom: BorderSide(color: colors.border, width: 1)),
       ),
       child: Row(
         children: List.generate(_tabs.length, (i) {
@@ -822,9 +882,6 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
                     if (isActive)
                       Positioned(
                         bottom: 0,
-                        left: '20%' == '20%'
-                            ? null
-                            : null, // resolved below via FractionallySizedBox
                         child: FractionallySizedBox(
                           widthFactor: 0.6,
                           child: Container(
@@ -860,7 +917,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
   // Overview tab
   Widget _buildOverviewTab(
       Map<String, dynamic> g, bool isDark, ThemeColors colors) {
-    final hasRequirements = g['verified_only'] == true ||
+    final hasRequirements = _truthy(g['verified_only']) ||
         (g['city'] != null && g['city'] != '') ||
         g['location_radius_km'] != null ||
         (g['gender_allowed'] != null && g['gender_allowed'] != 'all') ||
@@ -956,7 +1013,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (g['verified_only'] == true)
+                if (_truthy(g['verified_only']))
                   _RequirementRow(
                     iconBg: isDark
                         ? const Color(0xFF2563EB).withOpacity(0.18)
@@ -1073,7 +1130,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             ),
           ],
         ),
-        if (g['is_member'] != true) ...[
+        if (!_truthy(g['is_member'])) ...[
           const SizedBox(height: 8),
           if (_locationLoading)
             Row(
@@ -1157,10 +1214,10 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
           children: [
             const CircularProgressIndicator(color: Color(0xFFFF3B30)),
             const SizedBox(height: 10),
-            Text('Loading live addas...',
+            const Text('Loading live addas...',
                 style: TextStyle(
                     fontFamily: 'Outfit',
-                    color: colors.textSecondary,
+                    color: Color(0xFFFF3B30),
                     fontSize: 13)),
           ],
         ),
@@ -1220,7 +1277,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
       Map<String, dynamic> item, bool isDark, ThemeColors colors) {
     return GestureDetector(
       onTap: () {
-        if (_group?['is_member'] != true) {
+        if (!_truthy(_group?['is_member'])) {
           setState(() => _alert = const _AlertConfig(
                 title: 'Join Community First',
                 message:
@@ -1530,9 +1587,9 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     }
 
     // Open Community — already a member (and not in a state that needs re-purchase)
-    final isMember = g['is_member'] == true;
+    final isMember = _truthy(g['is_member']);
     final needsRepurchase = isMember &&
-        g['is_monetized'] == true &&
+        _truthy(g['is_monetized']) &&
         (g['my_join_method'] == 'free' || _trialExpired);
 
     if (isMember && !needsRepurchase) {
@@ -1570,21 +1627,24 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
 
     // Determine join methods
     final methods = <String>[];
-    if (g['is_monetized'] == true && _allowsOneTime) methods.add('one_time');
-    if (g['is_monetized'] == true && _allowsSubscription) methods.add('subscription');
+    if (_truthy(g['is_monetized']) && _allowsOneTime) methods.add('one_time');
+    if (_truthy(g['is_monetized']) && _allowsSubscription) methods.add('subscription');
     if (_canJoinWithPass) methods.add('pass');
     if (methods.isEmpty) methods.add('free');
 
-    final isBlocked = (_needsLocation && !_locationLoading &&
-            (_gpsDisabled || _locationPermDenied || !_withinRange)) ||
-        g['can_join'] == false;
+    // Match RN isJoinBlocked: locationBlocked OR locationOutOfRange OR can_join === false
+    final locationBlocked = _needsLocation && !_locationLoading &&
+        (_gpsDisabled || _locationPermDenied);
+    final locationOutOfRange = _needsLocation && !_locationLoading &&
+        _distanceKm != null && !_withinRange;
+    final isBlocked = locationBlocked || locationOutOfRange || g['can_join'] == false || g['can_join'] == 0;
     final btnDisabled = _joining || isBlocked;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         // Banners
-        if (isMember && g['is_monetized'] == true && g['my_join_method'] == 'free')
+        if (isMember && _truthy(g['is_monetized']) && g['my_join_method'] == 'free')
           _FooterBanner(
             icon: Icons.lock,
             iconColor: const Color(0xFFD97706),
@@ -1608,7 +1668,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
                 ? const Color(0xFFDC2626).withOpacity(0.35)
                 : const Color(0xFFFECACA),
           ),
-        if (g['can_join'] == false)
+        if (g['can_join'] == false || g['can_join'] == 0)
           _FooterBanner(
             icon: Icons.block,
             iconColor: const Color(0xFFDC2626),
@@ -1623,11 +1683,9 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
           ),
 
         // Buttons
-        if (methods.length == 1) ...[
-          if (methods.isNotEmpty && (methods.isNotEmpty ? true : false))
-            _buildSingleMethodBtn(
-                methods[0], isDark, colors, btnDisabled, g),
-        ] else if (methods.length == 2)
+        if (methods.length == 1)
+          _buildSingleMethodBtn(methods[0], isDark, colors, btnDisabled, g)
+        else if (methods.length == 2)
           _buildTwoMethodBtns(methods, isDark, colors, btnDisabled)
         else
           _buildThreeMethodBtns(isDark, colors, btnDisabled),
@@ -1642,13 +1700,13 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
     switch (m) {
       case 'subscription':
         icon = Icons.workspace_premium;
-        label = _hasTrial && g['is_member'] != true
+        label = _hasTrial && !_truthy(g['is_member'])
             ? 'Start Free Trial'
             : 'Subscribe to Join';
         break;
       case 'one_time':
         icon = Icons.bolt;
-        label = _hasTrial && g['is_member'] != true
+        label = _hasTrial && !_truthy(g['is_member'])
             ? 'Start Free Trial'
             : 'Buy to Join';
         break;
@@ -1711,11 +1769,12 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen> {
             : m == 'one_time'
                 ? 'Buy Access'
                 : 'Use Pass';
+        final idx = methods.indexOf(m);
         return Expanded(
           child: Padding(
             padding: EdgeInsets.only(
-                left: methods.indexOf(m) == 0 ? 0 : 4,
-                right: methods.indexOf(m) == 0 ? 4 : 0),
+                left: idx == 0 ? 0 : 4,
+                right: idx == 0 ? 4 : 0),
             child: GestureDetector(
               onTap: disabled ? null : () => _handleJoin(type: m),
               child: Opacity(
@@ -2328,4 +2387,3 @@ class _AlertOverlay extends StatelessWidget {
     );
   }
 }
-
