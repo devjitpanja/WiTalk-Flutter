@@ -562,6 +562,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
       color: c.background,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
+          width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
           decoration: BoxDecoration(
             border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
@@ -779,7 +780,9 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
   }
 
   Widget _buildNoComments(ThemeColors c) {
-    return Padding(
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
       padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 16),
       child: Column(children: [
         Icon(Icons.chat_bubble_outline, size: 48, color: c.textTertiary),
@@ -790,6 +793,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
         Text('Be the first to comment',
             style: TextStyle(color: c.textTertiary, fontSize: 14, fontFamily: 'Outfit')),
       ]),
+    ),
     );
   }
 
@@ -908,9 +912,8 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
       decoration: BoxDecoration(
         color: c.surface,
         border: Border(top: BorderSide(color: c.border, width: 0.5)),
-        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(0, -2))],
       ),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+      child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         CircleAvatar(
           radius: 18,
           backgroundColor: c.border,
@@ -926,7 +929,8 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
           child: TextField(
             controller: _commentCtrl,
             focusNode: _commentFocus,
-            maxLines: null,
+            maxLines: 5,
+            minLines: 1,
             maxLength: 500,
             decoration: InputDecoration(
               hintText: _replyingTo != null ? 'Reply...' : 'Add a comment...',
@@ -935,13 +939,13 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
               fillColor: c.background,
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(100),
                   borderSide: BorderSide(color: c.border)),
               enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(100),
                   borderSide: BorderSide(color: c.border)),
               focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(100),
                   borderSide: BorderSide(color: c.border)),
               counterText: '',
             ),
