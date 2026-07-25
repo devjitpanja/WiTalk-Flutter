@@ -639,8 +639,9 @@ class _ChatConversationScreenState
     final partnerName = (partner['name'] ?? partner['username'] ?? 'User') as String;
     final partnerUsername = (partner['username'] ?? '') as String;
     final partnerPic = partner['profile_pic'] as String?;
-    final isVerified = partner['is_verified'] == true;
-    final verificationBadge = partner['verification_badge'];
+    final isVerified = partner['is_verified'] == true || partner['is_verified'] == 1;
+    final rawBadge0 = partner['verification_badge'];
+    final verificationBadge = rawBadge0 is Map ? Map<String, dynamic>.from(rawBadge0) : null;
 
     showModalBottomSheet(
       context: context,
@@ -1184,10 +1185,10 @@ class _ChatConversationScreenState
         'Chat';
     final partnerPic =
         _chatPartner?['profile_pic'] ?? widget.otherUser?['profile_pic'];
-    final isVerified = _chatPartner?['is_verified'] == true ||
-        widget.otherUser?['is_verified'] == true;
-    final verificationBadge = _chatPartner?['verification_badge'] ??
-        widget.otherUser?['verification_badge'];
+    final isVerified = _chatPartner?['is_verified'] == true || _chatPartner?['is_verified'] == 1 ||
+        widget.otherUser?['is_verified'] == true || widget.otherUser?['is_verified'] == 1;
+    final rawBadge = _chatPartner?['verification_badge'] ?? widget.otherUser?['verification_badge'];
+    final verificationBadge = rawBadge is Map ? Map<String, dynamic>.from(rawBadge) : null;
 
     final isTyping = typingUsers.isNotEmpty && !typingUsers.contains(uid);
 

@@ -1172,12 +1172,14 @@ class _ChatTile extends StatelessWidget {
                             ),
                           ),
                         ),
-                        if (!isGroup && otherUser?['is_verified'] == true)
+                        if (!isGroup && (otherUser?['is_verified'] == true || otherUser?['is_verified'] == 1))
                           Padding(
                             padding: const EdgeInsets.only(left: 4),
                             child: VerificationBadge(
                               isVerified: true,
-                              badge: otherUser?['verification_badge'],
+                              badge: otherUser?['verification_badge'] is Map
+                                  ? Map<String, dynamic>.from(otherUser!['verification_badge'] as Map)
+                                  : null,
                               size: 16,
                             ),
                           ),

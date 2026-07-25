@@ -224,7 +224,7 @@ class ParticipantAvatar extends StatelessWidget {
 
           // ── Name + host badge row ─────────────────────────────────────────
           if (showName) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: 1),
             SizedBox(
               width: outerSize,
               child: Row(

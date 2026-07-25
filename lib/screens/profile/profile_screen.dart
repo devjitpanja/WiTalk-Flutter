@@ -573,7 +573,11 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
               Text(username, style: TextStyle(color: colors.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16)),
               if (isVerified) ...[
                 const SizedBox(width: 4),
-                VerificationBadge(size: 18),
+                VerificationBadge(
+                  isVerified: isVerified,
+                  badge: verificationBadge is Map ? Map<String, dynamic>.from(verificationBadge as Map) : null,
+                  size: 18,
+                ),
               ],
             ]),
             centerTitle: true,

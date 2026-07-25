@@ -52,7 +52,7 @@ class GridSeatingLayout extends StatelessWidget {
     // Tighter seatHeight: outerSize (avatarSize * 1.5) + name label height.
     // Matches RN: effectiveAvatarSize + nameMarginTop + nameFontSize + 4.
     final nameFontSize = (avatarSize * 0.20).clamp(9.0, 11.0);
-    final seatHeight = avatarSize * 1.5 + 4 + nameFontSize + 6;
+    final seatHeight = avatarSize * 1.5 + 1 + nameFontSize + 6;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
