@@ -3,14 +3,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'sound_wave_indicator.dart';
 import '../common/verification_badge.dart';
 
-/// Premium redesigned seat avatar for the audio room grid.
-///
-/// Visual improvements:
-///  • Muted: small red badge at bottom-right instead of full dark overlay
-///  • Speaking: vibrant ripple rings with host-aware color (gold vs sky-blue)
-///  • Host ring: gold glow border (static) or gold ripple (speaking)
-///  • Name: color-coded by role, single Text (no Row+Flexible overflow)
-///  • Avatar background: subtle gradient instead of flat blue
 class ParticipantAvatar extends StatelessWidget {
   final String? uid;
   final String? name;
@@ -74,13 +66,15 @@ class ParticipantAvatar extends StatelessWidget {
         ? 'You'
         : (name?.isNotEmpty == true ? name!.split(' ')[0] : (uid ?? 'User'));
 
+    // roleBadgeSize: scales with avatar, matches RN: max(12, size * 0.27)
+    final double roleBadgeSize = (size * 0.27).clamp(12.0, 18.0);
+
+    // outerSize: frame needs extra room; no-frame just needs ripple space
     const double outerMult = 1.5;
     final outerSize = size * outerMult;
     final nameFontSize = (size * 0.20).clamp(9.0, 11.0);
 
-    // Verification badge: anchored to the right edge of the avatar circle
     final verBadgeSize = (size * 0.30).clamp(14.0, 20.0);
-    // distance from stack's right edge so badge center sits on avatar's right rim
     final verBadgeRight = (size * 0.30 - verBadgeSize / 2).clamp(-verBadgeSize * 0.4, size * 0.25);
 
     // Role-based name color
@@ -95,6 +89,12 @@ class ParticipantAvatar extends StatelessWidget {
       nameColor = const Color(0xFFDDE3F0);
     }
 
+    // Whether any role badge will be shown (shifts name container left to re-center)
+    final bool showRoleBadge = isHost ||
+        (communityRole == 'super_admin') ||
+        (communityRole == 'admin') ||
+        isAdmin;
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -107,33 +107,30 @@ class ParticipantAvatar extends StatelessWidget {
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                // ── Speaking ripple / host ring / default border ───────────────
-                if (isSpeaking && !hasFrame)
-                  _PremiumRipple(size: size, isHost: isHost)
-                else if (!hasFrame && isHost)
-                  Container(
-                    width: size + 6,
-                    height: size + 6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 3.0,
-                      ),
-                    ),
-                  )
-                else if (!hasFrame)
-                  Container(
-                    width: size + 6,
-                    height: size + 6,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: Colors.white,
-                        width: 3.0,
-                      ),
+                // ── Speaking ripple rings (always behind everything) ──────────
+                // Rendered for BOTH framed and non-framed users.
+                // For non-framed users this produces the "water-drop" concentric
+                // ring effect that matches the RN SoundWaveIndicator ripple.
+                if (isSpeaking)
+                  _PremiumRipple(size: size, isHost: isHost),
+
+                // ── White border — always visible ────────────────────────────
+                // Stays on top of the ripple, below the avatar clip.
+                // Matches RN: white 3px circle around the profile picture at all
+                // times; the speaking animation overlays it without replacing it.
+                Container(
+                  width: size + 6,
+                  height: size + 6,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isHost && !hasFrame
+                          ? const Color(0xFFFFB700)
+                          : Colors.white,
+                      width: isSpeaking && !hasFrame ? 2.5 : 2.0,
                     ),
                   ),
+                ),
 
                 // ── Avatar circle with gradient background ────────────────────
                 Container(
@@ -159,8 +156,7 @@ class ParticipantAvatar extends StatelessWidget {
                 ),
 
                 // ── Frame overlay (above avatar) ──────────────────────────────
-                if (hasFrame) ...[
-                  if (isSpeaking) _PremiumRipple(size: size, isHost: isHost),
+                if (hasFrame)
                   Positioned.fill(
                     child: CachedNetworkImage(
                       imageUrl: resolvedFrameUrl,
@@ -168,23 +164,21 @@ class ParticipantAvatar extends StatelessWidget {
                       errorWidget: (_, __, ___) => const SizedBox.shrink(),
                     ),
                   ),
-                ],
 
-                // ── Wave bars for framed speaking (bottom edge) ───────────────
+                // ── Wave bars for framed speaking (centered over avatar) ──────
+                // RN positions these absolutely in the center of the frame, with
+                // zIndex: 20 — rendered above the frame artwork.
                 if (isSpeaking && hasFrame)
-                  Positioned(
-                    bottom: 0,
-                    child: SoundWaveIndicator(
-                      isSpeaking: true,
-                      color: const Color(0xFF38BDF8),
-                      barCount: 4,
-                      barWidth: 2.5,
-                      minHeight: 4,
-                      maxHeight: 10,
-                    ),
+                  SoundWaveIndicator(
+                    isSpeaking: true,
+                    color: Colors.white.withValues(alpha: 0.95),
+                    barCount: 5,
+                    barWidth: 2.0,
+                    minHeight: (size * 0.08).clamp(4.0, 8.0),
+                    maxHeight: (size * 0.18).clamp(8.0, 14.0),
                   ),
 
-                // ── Muted: black overlay (40%) + centered mic-off icon ────────
+                // ── Muted overlay + mic-off icon ─────────────────────────────
                 if (isMuted) ...[
                   Positioned(
                     left: (outerSize - size) / 2,
@@ -204,7 +198,7 @@ class ParticipantAvatar extends StatelessWidget {
                   ),
                 ],
 
-                // ── Verification badge: bottom-right, no badge when frame active
+                // ── Verification badge: bottom-right ─────────────────────────
                 if (isVerified && !hasFrame)
                   Positioned(
                     right: verBadgeRight,
@@ -228,30 +222,48 @@ class ParticipantAvatar extends StatelessWidget {
             ),
           ),
 
-          // ── Name label (single Text — no overflow) ────────────────────────
+          // ── Name + host badge row ─────────────────────────────────────────
           if (showName) ...[
             const SizedBox(height: 4),
             SizedBox(
               width: outerSize,
-              child: Text(
-                firstName,
-                style: TextStyle(
-                  color: nameColor,
-                  fontSize: nameFontSize,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600,
-                  shadows: isHost
-                      ? [
-                          Shadow(
-                            color: const Color(0xFFFFB700).withValues(alpha: 0.5),
-                            blurRadius: 6,
-                          ),
-                        ]
-                      : null,
-                ),
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  // Role badge (host / community owner / admin)
+                  if (showRoleBadge) ...[
+                    _RoleBadge(
+                      size: roleBadgeSize,
+                      isHost: isHost,
+                      communityRole: communityRole,
+                      isAdmin: isAdmin,
+                    ),
+                    const SizedBox(width: 3),
+                  ],
+                  Flexible(
+                    child: Text(
+                      firstName,
+                      style: TextStyle(
+                        color: nameColor,
+                        fontSize: nameFontSize,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        shadows: isHost
+                            ? [
+                                Shadow(
+                                  color: const Color(0xFFFFB700).withValues(alpha: 0.5),
+                                  blurRadius: 6,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -271,6 +283,57 @@ class ParticipantAvatar extends StatelessWidget {
           fontFamily: 'Outfit',
           fontWeight: FontWeight.w700,
         ),
+      ),
+    );
+  }
+}
+
+// ── Role badge: blue circle with icon, matches RN ─────────────────────────────
+class _RoleBadge extends StatelessWidget {
+  final double size;
+  final bool isHost;
+  final String? communityRole;
+  final bool isAdmin;
+
+  const _RoleBadge({
+    required this.size,
+    required this.isHost,
+    this.communityRole,
+    this.isAdmin = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color bgColor;
+    final IconData icon;
+
+    if (isHost) {
+      bgColor = const Color(0xFF0751DF);
+      icon = Icons.stars_rounded;
+    } else if (communityRole == 'super_admin') {
+      bgColor = const Color(0xFFDC2626);
+      icon = Icons.star_rounded;
+    } else if (communityRole == 'admin') {
+      bgColor = const Color(0xFFCA8A04);
+      icon = Icons.star_rounded;
+    } else {
+      // regular adda admin
+      bgColor = const Color(0xFF0A84FF);
+      icon = Icons.person_rounded;
+    }
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: bgColor,
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        icon,
+        size: size * 0.65,
+        color: Colors.white,
       ),
     );
   }
@@ -339,14 +402,14 @@ class _RipplePainter extends CustomPainter {
     const waves = 3;
     final spread = avatarRadius * 0.65;
     final baseColor =
-        isHost ? const Color(0xFFFFB700) : const Color(0xFF38BDF8);
+        isHost ? const Color(0xFFFFB700) : const Color(0xFFFFFFFF);
 
     for (int i = 0; i < waves; i++) {
       double t = (progress - i / waves) % 1.0;
       if (t < 0) t += 1.0;
 
-      final r = avatarRadius + 2 + t * spread;
-      final opacity = (1.0 - t) * 0.80;
+      final r = avatarRadius + 4 + t * spread;
+      final opacity = (1.0 - t) * 0.70;
 
       canvas.drawCircle(
         center,

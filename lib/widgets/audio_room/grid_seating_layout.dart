@@ -49,14 +49,17 @@ class GridSeatingLayout extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final seatWidth = (screenWidth - _edgePadding * 2) / 4;
     final avatarSize = (seatWidth * 0.60).clamp(40.0, 62.0);
-    final seatHeight = avatarSize * 1.5 + 24.0;
+    // Tighter seatHeight: outerSize (avatarSize * 1.5) + name label height.
+    // Matches RN: effectiveAvatarSize + nameMarginTop + nameFontSize + 4.
+    final nameFontSize = (avatarSize * 0.20).clamp(9.0, 11.0);
+    final seatHeight = avatarSize * 1.5 + 4 + nameFontSize + 6;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── BAITHAK header ──────────────────────────────────
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: Row(
             children: [
               Container(
@@ -101,10 +104,10 @@ class GridSeatingLayout extends StatelessWidget {
 
         // ── Stage Grid ──────────────────────────────────────
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: _edgePadding, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: _edgePadding, vertical: 2),
           child: Wrap(
             spacing: 0,
-            runSpacing: 6,
+            runSpacing: 2,
             children: List.generate(maxSeats, (index) {
               final seat = index < seats.length ? seats[index] : null;
               return _buildSeat(context, seat, index, seatWidth, avatarSize, seatHeight);

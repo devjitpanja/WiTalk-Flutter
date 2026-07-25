@@ -14,9 +14,9 @@ import '../../widgets/audio_room/user_profile_bottom_sheet.dart';
 import '../../widgets/audio_room/report_bottom_sheet.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-const Color _kBg = Color(0xFF090D18);
-const Color _kSurface = Color(0xFF0F1521);
-const Color _kCard = Color(0xFF141B2D);
+const Color _kBg = Color(0xFF080C17);
+const Color _kSurface = Color(0xFF0D1220);
+const Color _kCard = Color(0xFF121930);
 const Color _kPrimary = Color(0xFF2563EB);
 const Color _kPrimaryGlow = Color(0x332563EB);
 
@@ -215,10 +215,25 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   void _showSnack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(msg, style: const TextStyle(fontFamily: 'Outfit')),
+        content: Text(
+          msg,
+          style: const TextStyle(
+            fontFamily: 'Outfit',
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: Color(0xEEEBEBF5),
+          ),
+        ),
         behavior: SnackBarBehavior.floating,
-        backgroundColor: _kCard,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor: const Color(0xFF1A2236),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: BorderSide(
+            color: Colors.white.withValues(alpha: 0.10),
+            width: 1,
+          ),
+        ),
+        elevation: 8,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -613,13 +628,27 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: _kSurface,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            const Color(0xFF0E1525),
+            _kSurface,
+          ],
+        ),
         border: Border(
           bottom: BorderSide(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.15),
             width: 1,
           ),
         ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.30),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -645,15 +674,16 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                   s.roomName,
                   style: const TextStyle(
                     color: Color(0xFFEBEBF5),
-                    fontSize: 16,
+                    fontSize: 17,
                     fontFamily: 'Outfit',
                     fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
                   ),
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 Wrap(
                   alignment: WrapAlignment.center,
                   spacing: 6,
@@ -691,7 +721,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   // ── Chat section divider ───────────────────────────────────────────────────
   Widget _buildChatDivider() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
       child: Row(
         children: [
           Expanded(
@@ -701,7 +731,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 gradient: LinearGradient(
                   colors: [
                     Colors.transparent,
-                    const Color(0xFF2563EB).withValues(alpha: 0.20),
+                    const Color(0xFF3B82F6).withValues(alpha: 0.25),
                   ],
                 ),
               ),
@@ -709,24 +739,28 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0x10FFFFFF),
-              borderRadius: BorderRadius.circular(6),
+              color: const Color(0xFF3B82F6).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: const Color(0xFF3B82F6).withValues(alpha: 0.18),
+                width: 1,
+              ),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.chat_bubble_rounded, size: 9, color: Color(0x604E9AFF)),
-                SizedBox(width: 4),
+                Icon(Icons.chat_bubble_rounded, size: 9, color: Color(0x804E9AFF)),
+                SizedBox(width: 5),
                 Text(
                   'ADDA CHAT',
                   style: TextStyle(
                     fontSize: 9,
                     fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    color: Color(0x604E9AFF),
-                    letterSpacing: 1.4,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0x804E9AFF),
+                    letterSpacing: 1.6,
                   ),
                 ),
               ],
@@ -739,7 +773,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF2563EB).withValues(alpha: 0.20),
+                    const Color(0xFF3B82F6).withValues(alpha: 0.25),
                     Colors.transparent,
                   ],
                 ),
@@ -756,12 +790,22 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
 
     return Container(
-      constraints: const BoxConstraints(maxHeight: 240),
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 5),
+      constraints: const BoxConstraints(maxHeight: 260),
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       decoration: BoxDecoration(
-        color: const Color(0xCC141B2D),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0x1AFFFFFF)),
+        color: const Color(0xE0121930),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.10),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.40),
+            blurRadius: 12,
+            offset: const Offset(-2, 4),
+          ),
+        ],
       ),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
@@ -774,7 +818,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 ref.read(audioRoomProvider.notifier).sendReaction(emoji);
               },
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(vertical: 3.5),
                 child: Text(emoji, style: const TextStyle(fontSize: 20)),
               ),
             );
@@ -846,13 +890,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     // System message
     if (isSystem) {
       return Container(
-        margin: const EdgeInsets.only(bottom: 6),
+        margin: const EdgeInsets.only(bottom: 5),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Container(
-              width: 26,
-              height: 26,
+              width: 24,
+              height: 24,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _kPrimaryGlow,
@@ -861,13 +905,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               ),
               alignment: Alignment.center,
               child: const Icon(Icons.campaign_rounded,
-                  size: 13, color: Colors.white),
+                  size: 12, color: Colors.white),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0x0C2563EB),
                   borderRadius: BorderRadius.circular(10),
@@ -914,20 +958,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final isMe = msg['isSelf'] == true;
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 7),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Avatar
           _ChatAvatar(name: sender, picUrl: senderPic),
           const SizedBox(width: 8),
 
-          // Bubble
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Name + time row
                 Row(
                   children: [
                     Text(
@@ -939,14 +980,15 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                         fontSize: 11,
                         fontFamily: 'Outfit',
                         fontWeight: FontWeight.w700,
+                        letterSpacing: 0.1,
                       ),
                     ),
                     if (time.isNotEmpty) ...[
-                      const SizedBox(width: 6),
+                      const SizedBox(width: 5),
                       Text(
                         time,
                         style: const TextStyle(
-                          color: Color(0x40FFFFFF),
+                          color: Color(0x38FFFFFF),
                           fontSize: 9,
                           fontFamily: 'Outfit',
                         ),
@@ -956,31 +998,30 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 ),
                 const SizedBox(height: 3),
 
-                // Message text
                 Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
                     color: isMe
-                        ? const Color(0x142563EB)
-                        : const Color(0x0CFFFFFF),
+                        ? const Color(0x182563EB)
+                        : const Color(0x0EFFFFFF),
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(2),
-                      topRight: Radius.circular(10),
-                      bottomLeft: Radius.circular(10),
-                      bottomRight: Radius.circular(10),
+                      topRight: Radius.circular(12),
+                      bottomLeft: Radius.circular(12),
+                      bottomRight: Radius.circular(12),
                     ),
                     border: Border.all(
                       color: isMe
-                          ? const Color(0xFF2563EB).withValues(alpha: 0.20)
-                          : Colors.white.withValues(alpha: 0.06),
+                          ? const Color(0xFF2563EB).withValues(alpha: 0.22)
+                          : Colors.white.withValues(alpha: 0.07),
                       width: 1,
                     ),
                   ),
                   child: Text(
                     text,
                     style: const TextStyle(
-                      color: Color(0xDDEBEBF5),
+                      color: Color(0xE0EBEBF5),
                       fontSize: 13,
                       fontFamily: 'Outfit',
                       height: 1.4,
@@ -1290,11 +1331,21 @@ class _HeaderIconBtn extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: const Color(0x14FFFFFF),
-          border: Border.all(color: const Color(0x20FFFFFF)),
+          color: Colors.white.withValues(alpha: 0.10),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.18),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.20),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
         alignment: Alignment.center,
-        child: Icon(icon, color: const Color(0xAAEBEBF5), size: size * 0.52),
+        child: Icon(icon, color: const Color(0xCCEBEBF5), size: size * 0.52),
       ),
     );
   }
@@ -1533,7 +1584,7 @@ class _ConfirmSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF141B2D),
+        color: Color(0xFF111828),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
@@ -1624,7 +1675,7 @@ class _MoreOptionsSheet extends StatelessWidget {
     final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF141B2D),
+        color: Color(0xFF111828),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
@@ -1737,7 +1788,7 @@ class _SeatRequestsSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF141B2D),
+        color: Color(0xFF111828),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
@@ -1828,7 +1879,7 @@ class _AudienceListSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF141B2D),
+        color: Color(0xFF111828),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
@@ -1927,7 +1978,7 @@ class _AudioOutputSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        color: Color(0xFF141B2D),
+        color: Color(0xFF111828),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       padding: EdgeInsets.fromLTRB(
@@ -1981,11 +2032,11 @@ class _SheetHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 36,
+      width: 40,
       height: 4,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.20),
-        borderRadius: BorderRadius.circular(2),
+        color: Colors.white.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(100),
       ),
     );
   }
