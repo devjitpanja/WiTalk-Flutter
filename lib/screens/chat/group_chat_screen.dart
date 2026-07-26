@@ -86,9 +86,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       ref
           .read(chatProvider.notifier)
           .setActiveConversation(widget.groupId);
-      ref
-          .read(chatProvider.notifier)
-          .markAsRead(widget.groupId);
+      final msgs = ref.read(conversationMessagesProvider(widget.groupId));
+      final lastId = msgs.isNotEmpty ? msgs.last.id : null;
+      ref.read(chatProvider.notifier).markGroupAsRead(widget.groupId, lastReadMessageId: lastId);
     } else if (state == AppLifecycleState.paused) {
       ref
           .read(chatProvider.notifier)
@@ -137,7 +137,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     ]);
     debugPrint('[GroupChat] Parallel fetch done');
 
-    ref.read(chatProvider.notifier).markAsRead(widget.groupId);
+    final allMsgs = ref.read(conversationMessagesProvider(widget.groupId));
+    final lastMsgId = allMsgs.isNotEmpty ? allMsgs.last.id : null;
+    ref.read(chatProvider.notifier).markGroupAsRead(widget.groupId, lastReadMessageId: lastMsgId);
+    debugPrint('[GroupChat] markGroupAsRead called — lastMsgId=$lastMsgId');
 
     if (mounted) {
       setState(() => _loading = false);

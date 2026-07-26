@@ -17,7 +17,13 @@ class ChatApiService {
 
   Future<Map<String, dynamic>?> getConversation(String conversationId) async {
     final res = await dioClient.get(AppEndpoints.conversation(conversationId));
-    return res.data['data'] as Map<String, dynamic>?;
+    final raw = res.data['data'];
+    if (raw is Map<String, dynamic>) return raw;
+    // Some backends return the conversation nested inside a list
+    if (raw is List && raw.isNotEmpty && raw.first is Map) {
+      return Map<String, dynamic>.from(raw.first as Map);
+    }
+    return null;
   }
 
   Future<Map<String, dynamic>> createConversation({

@@ -26,14 +26,15 @@ final _conversationSyncTimestamps = <String, int>{};
 const _syncStaleMs = 5 * 60 * 1000; // 5 minutes
 
 class ChatConversationScreen extends ConsumerStatefulWidget {
-  final String chatId;
+  // null = new conversation not yet created (lazy-create on first send, mirrors RN)
+  final String? chatId;
   final Map<String, dynamic>? otherUser;
   final String? conversationStatus;
   final String? initiatorId;
 
   const ChatConversationScreen({
     super.key,
-    required this.chatId,
+    this.chatId,
     this.otherUser,
     this.conversationStatus,
     this.initiatorId,
@@ -50,6 +51,12 @@ class _ChatConversationScreenState
   final _scrollCtrl = ScrollController();
   final _inputCtrl = ChatInputBarController();
   final _imagePicker = ImagePicker();
+
+  // Active conversation id — may start null when opened from profile (lazy creation)
+  String? _activeChatId;
+  bool _disposed = false;
+  // Cached notifier — ref.read is invalid during dispose(), so we grab it once in initState
+  late final ChatNotifier _chatNotifier;
 
   Map<String, dynamic>? _chatPartner;
   bool _loading = true;
@@ -94,6 +101,7 @@ class _ChatConversationScreenState
   @override
   void initState() {
     super.initState();
+    _chatNotifier = ref.read(chatProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     _scrollCtrl.addListener(_onScroll);
     _initTypingDotAnimations();
@@ -151,23 +159,27 @@ class _ChatConversationScreenState
     _dot2Ctrl.dispose();
     _countdownTimer?.cancel();
     _respectCountdown.dispose();
-    // Leave conversation room and clear active tracking (mirrors RN useFocusEffect cleanup)
-    ref.read(chatProvider.notifier).leaveConversation(widget.chatId);
-    ref.read(chatProvider.notifier).setActiveConversation(null);
+    _disposed = true;
+    // Use cached notifier — ref.read is illegal during dispose()
+    if (_activeChatId != null) {
+      _chatNotifier.leaveConversation(_activeChatId!);
+    }
+    _chatNotifier.setActiveConversation(null);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      ref.read(chatProvider.notifier).setActiveConversation(widget.chatId);
-      ref.read(chatProvider.notifier).markAsRead(widget.chatId);
+    if (state == AppLifecycleState.resumed && _activeChatId != null) {
+      ref.read(chatProvider.notifier).setActiveConversation(_activeChatId!);
+      ref.read(chatProvider.notifier).markAsRead(_activeChatId!);
     } else if (state == AppLifecycleState.paused) {
       ref.read(chatProvider.notifier).setActiveConversation(null);
     }
   }
 
   Future<void> _init() async {
+    if (_disposed) return;
     final uid = ref.read(authProvider).uid;
     _currentUserId = uid;
 
@@ -176,50 +188,77 @@ class _ChatConversationScreenState
       return;
     }
 
-    ref.read(chatProvider.notifier).joinConversation(widget.chatId);
-    ref.read(chatProvider.notifier).setActiveConversation(widget.chatId);
+    _activeChatId = widget.chatId;
+
+    // No chatId — opened via /chat/new (genuinely new conversation).
+    // Profile screen already checks the local store and navigates to
+    // /chat/conversation/:id when one exists, so reaching here means
+    // this is a brand-new chat that will be created on first send.
+    if (_activeChatId == null) {
+      final otherUserId = widget.otherUser?['id']?.toString();
+      debugPrint('[ChatConversation] new chat — no conversation yet for user $otherUserId');
+      _chatPartner = widget.otherUser;
+      if (mounted) setState(() => _loading = false);
+      if (_disposed) return;
+      await Future.wait([
+        _loadMuteStatus(uid, otherUserId),
+        _checkBlockStatus(uid, otherUserId),
+        _checkPrivacyStatus(otherUserId),
+        _checkReceiverBanStatus(otherUserId),
+        _checkMatchStatus(otherUserId),
+      ]);
+      if (mounted && !_disposed) setState(() {});
+      return;
+    }
+
+    debugPrint('[ChatConversation] _init: loading conversation $_activeChatId');
+
+    ref.read(chatProvider.notifier).joinConversation(_activeChatId!);
+    ref.read(chatProvider.notifier).setActiveConversation(_activeChatId!);
 
     // Load from in-memory store first (instant)
-    final stored = ref.read(conversationMessagesProvider(widget.chatId));
+    final stored = ref.read(conversationMessagesProvider(_activeChatId!));
+    debugPrint('[ChatConversation] in-memory store has ${stored.length} messages for $_activeChatId');
     if (stored.isNotEmpty) {
       _buildListItems(stored);
       _lastMessageCount = stored.length;
-      if (mounted) setState(() => _loading = false);
+      if (mounted && !_disposed) setState(() => _loading = false);
     }
 
-    // Sync from server if stale
-    final lastSync = _conversationSyncTimestamps[widget.chatId];
+    // Apply fast-path request state from route params (MessageRequestsScreen passes these)
+    _chatPartner = widget.otherUser;
+    if (widget.conversationStatus == 'request_pending' && widget.initiatorId != null) {
+      _isIncomingRequest = widget.initiatorId != uid;
+      _isOutgoingRequest = widget.initiatorId == uid;
+    }
+
+    // Fetch fresh conversation detail FIRST so _isOutgoingRequest is set before
+    // _loadMessages runs — that way the sentMessageCount derivation works correctly
+    await _loadConversationDetail();
+    if (_disposed) return;
+
+    // Sync messages from server if stale
+    final lastSync = _conversationSyncTimestamps[_activeChatId!];
     final now = DateTime.now().millisecondsSinceEpoch;
     final isStale = lastSync == null || now - lastSync > _syncStaleMs;
 
     if (isStale) {
       await _loadMessages(reset: true);
-      _conversationSyncTimestamps[widget.chatId] = now;
+      if (_disposed) return;
+      _conversationSyncTimestamps[_activeChatId!] = now;
     } else {
-      if (mounted) setState(() => _loading = false);
-    }
-
-    if (widget.otherUser == null) {
-      await _loadConversationDetail();
-    } else {
-      _chatPartner = widget.otherUser;
-      // Initialize request state from route params (passed by MessageRequestsScreen)
-      if (widget.conversationStatus == 'request_pending' && widget.initiatorId != null) {
-        setState(() {
-          _isIncomingRequest = widget.initiatorId != uid;
-          _isOutgoingRequest = widget.initiatorId == uid;
-        });
-      }
+      if (mounted && !_disposed) setState(() => _loading = false);
     }
 
     // Don't mark as read if this is an incoming request (must accept first)
-    if (!_isIncomingRequest) {
-      ref.read(chatProvider.notifier).markAsRead(widget.chatId);
+    if (!_isIncomingRequest && !_disposed) {
+      ref.read(chatProvider.notifier).markAsRead(_activeChatId!);
     }
 
     final otherUserId =
         (_chatPartner?['id'] ?? widget.otherUser?['id'])?.toString();
 
+    if (_disposed) return;
     // Run all status checks in parallel (mirrors RN InteractionManager.runAfterInteractions)
     await Future.wait([
       _loadMuteStatus(uid, otherUserId),
@@ -229,7 +268,7 @@ class _ChatConversationScreenState
       _checkMatchStatus(otherUserId),
     ]);
 
-    if (mounted) {
+    if (mounted && !_disposed) {
       setState(() => _loading = false);
       _scrollToBottom(animated: false);
     }
@@ -249,20 +288,37 @@ class _ChatConversationScreenState
   }
 
   Future<void> _loadConversationDetail() async {
+    final chatId = _activeChatId;
+    if (chatId == null || _disposed) return;
     try {
-      final data = await chatApiService.getConversation(widget.chatId);
-      if (data != null && mounted) {
+      final data = await chatApiService.getConversation(chatId);
+      debugPrint('[ChatConversation] _loadConversationDetail: status=${data?['status']} initiator_id=${data?['initiator_id']} sent_message_count=${data?['sent_message_count']} me=$_currentUserId');
+      if (data != null && mounted && !_disposed) {
+        final isOutgoing = data['status'] == 'request_pending' &&
+            data['initiator_id'].toString() == _currentUserId;
+        // Derive sent count from loaded messages if API doesn't return it
+        int sentCount = (data['sent_message_count'] as num?)?.toInt() ?? 0;
+        if (sentCount == 0 && isOutgoing && _currentUserId != null) {
+          final loaded = ref.read(conversationMessagesProvider(chatId));
+          sentCount = loaded.where((m) => m.senderId == _currentUserId).length;
+          debugPrint('[ChatConversation] derived sentCount=$sentCount from ${loaded.length} loaded messages');
+        }
         setState(() {
-          _chatPartner = data['other_user'] as Map<String, dynamic>? ?? data;
+          if (data['other_user'] != null) {
+            _chatPartner = data['other_user'] as Map<String, dynamic>?;
+          } else if (_chatPartner == null) {
+            _chatPartner = data;
+          }
           _isIncomingRequest = data['status'] == 'request_pending' &&
               data['initiator_id'].toString() != _currentUserId;
-          _isOutgoingRequest = data['status'] == 'request_pending' &&
-              data['initiator_id'].toString() == _currentUserId;
-          _sentMessageCount =
-              (data['sent_message_count'] as num?)?.toInt() ?? 0;
+          _isOutgoingRequest = isOutgoing;
+          _sentMessageCount = sentCount;
         });
+        debugPrint('[ChatConversation] request state → isIncoming=$_isIncomingRequest isOutgoing=$_isOutgoingRequest sentCount=$_sentMessageCount');
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ChatConversation] _loadConversationDetail error: $e');
+    }
   }
 
   Future<void> _checkBlockStatus(String uid, String? otherUserId) async {
@@ -320,7 +376,10 @@ class _ChatConversationScreenState
     if (otherUserId == null) return;
     // Only trigger for NEW conversations (no existing chatId messages)
     // and only when the conversation doesn't already have messages
-    final existingMessages = ref.read(conversationMessagesProvider(widget.chatId));
+    final chatId = _activeChatId;
+    final existingMessages = chatId != null
+        ? ref.read(conversationMessagesProvider(chatId))
+        : <ChatMessage>[];
     final isNewConversation = existingMessages.isEmpty;
     if (!isNewConversation) return;
 
@@ -525,7 +584,8 @@ class _ChatConversationScreenState
     if (_loadingMore && !reset) return;
 
     final uid = _currentUserId;
-    if (uid == null) return;
+    final chatId = _activeChatId;
+    if (uid == null || chatId == null) return;
 
     if (reset) {
       _offset = 0;
@@ -537,13 +597,15 @@ class _ChatConversationScreenState
 
     try {
       final msgs = await chatApiService.getMessages(
-        widget.chatId,
+        chatId,
         limit: _pageSize,
         offset: _offset,
         userId: uid,
       );
 
       if (!mounted) return;
+
+      debugPrint('[ChatConversation] _loadMessages: fetched ${msgs.length} messages from API for $chatId (reset=$reset)');
 
       // API returns newest-first; reverse so oldest is first in list (newest at bottom)
       final chatMsgs = msgs
@@ -553,18 +615,19 @@ class _ChatConversationScreenState
           .toList();
 
       if (reset) {
-        ref.read(chatProvider.notifier).setMessages(widget.chatId, chatMsgs);
+        if (_disposed) return;
+        ref.read(chatProvider.notifier).setMessages(chatId, chatMsgs);
         // Derive sent message count for outgoing-request 2-message limit
         if (_isOutgoingRequest && _currentUserId != null) {
           final sent = chatMsgs
               .where((m) => m.senderId == _currentUserId)
               .length;
-          if (mounted) setState(() => _sentMessageCount = sent);
+          if (mounted && !_disposed) setState(() => _sentMessageCount = sent);
         }
       } else {
         ref
             .read(chatProvider.notifier)
-            .appendOlderMessages(widget.chatId, chatMsgs);
+            .appendOlderMessages(chatId, chatMsgs);
       }
 
       _offset += msgs.length;
@@ -819,6 +882,34 @@ class _ChatConversationScreenState
       return;
     }
 
+    // Lazy conversation creation — mirrors RN: only creates on first message send
+    if (_activeChatId == null) {
+      debugPrint('[ChatConversation] _handleSend: no chatId — creating conversation with ${partner['id']}');
+      try {
+        final res = await chatApiService.createConversation(
+          userId: uid,
+          otherUserId: partner['id'].toString(),
+        );
+        debugPrint('[ChatConversation] createConversation response: $res');
+        final dataMap = res['data'];
+        String? convId;
+        if (dataMap is Map) convId = dataMap['id']?.toString();
+        convId ??= res['id']?.toString();
+        if (convId == null) return;
+        setState(() => _activeChatId = convId);
+        ref.read(chatProvider.notifier).joinConversation(convId);
+        ref.read(chatProvider.notifier).setActiveConversation(convId);
+        // Fetch status after creation (may be request_pending)
+        await _loadConversationDetail();
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Could not start conversation')));
+        }
+        return;
+      }
+    }
+
     if (editing != null) {
       _inputCtrl.clearEditing();
       try {
@@ -837,10 +928,10 @@ class _ChatConversationScreenState
     }
 
     _inputCtrl.clear();
-    ref.read(chatProvider.notifier).stopTyping(widget.chatId);
+    ref.read(chatProvider.notifier).stopTyping(_activeChatId!);
 
     await ref.read(chatProvider.notifier).sendMessage(
-          conversationId: widget.chatId,
+          conversationId: _activeChatId!,
           receiverId: partner['id'].toString(),
           content: text,
           messageType: 'text',
@@ -885,8 +976,25 @@ class _ChatConversationScreenState
       final decodedImage =
           await decodeImageFromList(await imageFile.readAsBytes());
 
+      // Lazy conversation creation for image send
+      if (_activeChatId == null) {
+        final res = await chatApiService.createConversation(
+          userId: uid,
+          otherUserId: partner['id'].toString(),
+        );
+        final dataMap = res['data'];
+        String? convId;
+        if (dataMap is Map) convId = dataMap['id']?.toString();
+        convId ??= res['id']?.toString();
+        if (convId == null) return null;
+        if (mounted) setState(() => _activeChatId = convId);
+        ref.read(chatProvider.notifier).joinConversation(convId);
+        ref.read(chatProvider.notifier).setActiveConversation(convId);
+        await _loadConversationDetail();
+      }
+
       await ref.read(chatProvider.notifier).sendMessage(
-            conversationId: widget.chatId,
+            conversationId: _activeChatId!,
             receiverId: partner['id'].toString(),
             content: '',
             messageType: 'image',
@@ -910,32 +1018,33 @@ class _ChatConversationScreenState
 
   void _acceptRequest() async {
     final uid = _currentUserId;
-    if (uid == null) return;
+    final chatId = _activeChatId;
+    if (uid == null || chatId == null) return;
     try {
-      await chatApiService.acceptConversation(widget.chatId, uid);
+      await chatApiService.acceptConversation(chatId, uid);
       if (mounted) {
         // Update provider so MessageRequestsScreen list reflects the change
-        ref.read(chatProvider.notifier).acceptConversation(widget.chatId);
+        ref.read(chatProvider.notifier).acceptConversation(chatId);
         setState(() {
           _isIncomingRequest = false;
           _isOutgoingRequest = false;
         });
-        ref.read(chatProvider.notifier).markAsRead(widget.chatId);
+        ref.read(chatProvider.notifier).markAsRead(chatId);
       }
     } catch (_) {}
   }
 
   void _deleteRequest() async {
-    final uid = _currentUserId;
-    if (uid == null) return;
+    final chatId = _activeChatId;
+    if (chatId == null) return;
     try {
       await chatApiService.deleteConversation(
-        widget.chatId,
+        chatId,
         deleteType: 'for_everyone',
       );
       if (mounted) {
         // Remove from provider so list updates immediately
-        ref.read(chatProvider.notifier).removeConversation(widget.chatId);
+        ref.read(chatProvider.notifier).removeConversation(chatId);
         context.pop();
       }
     } catch (_) {}
@@ -996,12 +1105,16 @@ class _ChatConversationScreenState
                 try {
                   await dioClient.post(AppEndpoints.blockUser,
                       data: {'blocker_id': uid, 'blocked_id': partnerId});
-                  await chatApiService.deleteConversation(
-                    widget.chatId,
-                    deleteType: 'for_everyone',
-                  );
+                  if (_activeChatId != null) {
+                    await chatApiService.deleteConversation(
+                      _activeChatId!,
+                      deleteType: 'for_everyone',
+                    );
+                  }
                   if (mounted) {
-                    ref.read(chatProvider.notifier).removeConversation(widget.chatId);
+                    if (_activeChatId != null) {
+                      ref.read(chatProvider.notifier).removeConversation(_activeChatId!);
+                    }
                     context.pop();
                   }
                 } catch (_) {}
@@ -1125,7 +1238,7 @@ class _ChatConversationScreenState
               ref.read(chatProvider.notifier).deleteMessage(
                     message.id,
                     deleteType: forEveryone ? 'for_everyone' : 'for_me',
-                    conversationId: widget.chatId,
+                    conversationId: _activeChatId ?? '',
                   );
             },
             child: Text('Delete',
@@ -1140,11 +1253,13 @@ class _ChatConversationScreenState
   }
 
   void _pinMessage(ChatMessage message, bool pin) async {
+    final chatId = _activeChatId;
+    if (chatId == null) return;
     try {
       if (pin) {
-        await chatApiService.pinMessage(widget.chatId, message.id);
+        await chatApiService.pinMessage(chatId, message.id);
       } else {
-        await chatApiService.unpinMessage(widget.chatId, message.id);
+        await chatApiService.unpinMessage(chatId, message.id);
       }
     } catch (_) {}
   }
@@ -1160,7 +1275,9 @@ class _ChatConversationScreenState
     final isDarkMode = ref.watch(themeProvider);
     final uid = _currentUserId ?? '';
 
-    final messages = ref.watch(conversationMessagesProvider(widget.chatId));
+    final messages = _activeChatId != null
+        ? ref.watch(conversationMessagesProvider(_activeChatId!))
+        : <ChatMessage>[];
 
     // Auto-scroll when new messages arrive and user is at bottom
     if (messages.length > _lastMessageCount) {
@@ -1173,8 +1290,9 @@ class _ChatConversationScreenState
 
     _buildListItems(messages);
 
-    final typingUsers =
-        ref.watch(conversationTypingProvider(widget.chatId));
+    final typingUsers = _activeChatId != null
+        ? ref.watch(conversationTypingProvider(_activeChatId!))
+        : <String>[];
     final isPartnerOnline = ref.watch(
         userOnlineProvider((_chatPartner?['id'] ?? '').toString()));
 
@@ -1444,7 +1562,7 @@ class _ChatConversationScreenState
         // Input bar
         ChatInputBar(
           controller: _inputCtrl,
-          conversationId: widget.chatId,
+          conversationId: _activeChatId ?? '',
           currentUserId: uid,
           otherUserName: partnerName.toString(),
           otherUser: _chatPartner,
@@ -1519,7 +1637,7 @@ class _ChatConversationScreenState
               await mutedChatsService.muteChat(
                 userId: userId,
                 mutedUserId: mutedUserId,
-                conversationId: widget.chatId,
+                conversationId: _activeChatId ?? '',
                 muteDuration: d,
               );
               if (mounted) setState(() => _isMuted = true);
@@ -1593,9 +1711,11 @@ class _ChatConversationScreenState
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              ref
-                  .read(chatProvider.notifier)
-                  .deleteConversation(widget.chatId);
+              if (_activeChatId != null) {
+                ref
+                    .read(chatProvider.notifier)
+                    .deleteConversation(_activeChatId!);
+              }
               context.pop();
             },
             child: Text('Delete',

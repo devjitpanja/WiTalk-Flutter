@@ -219,6 +219,16 @@ final routerProvider = Provider<GoRouter>((ref) {
           );
         },
       ),
+      // New conversation — no chatId yet; created lazily on first send (mirrors RN)
+      GoRoute(
+        path: '/chat/new',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ChatConversationScreen(
+            otherUser: extra?['otherUser'] as Map<String, dynamic>?,
+          );
+        },
+      ),
       GoRoute(path: '/chat/requests', builder: (_, __) => const MessageRequestsScreen()),
       GoRoute(path: '/chat/pending-requests', builder: (_, __) => const PendingRequestsScreen()),
       GoRoute(path: '/chat/pinned/:id', builder: (_, s) => PinnedMessagesScreen(conversationId: s.pathParameters['id']!, isGroup: false)),

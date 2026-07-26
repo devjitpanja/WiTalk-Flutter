@@ -525,7 +525,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _channelSocket = channelSocket;
     _currentUserId = userId;
     _setupSocketListeners();
-    if (groupSocket != null) _setupGroupSocketListeners(groupSocket);
+    if (groupSocket != null) {
+      // Sync current connection state immediately — the 'connect' event may have
+      // already fired before listeners were attached, so isGroupConnected would
+      // stay false forever without this check.
+      if (groupSocket.connected) {
+        state = state.copyWith(isGroupConnected: true);
+        debugPrint('[CHAT NOTIFIER] groupSocket already connected at init — setting isGroupConnected=true');
+      }
+      _setupGroupSocketListeners(groupSocket);
+    }
     if (channelSocket != null) _setupChannelSocketListeners(channelSocket);
     await _loadConversationsFromDb();
   }
@@ -1098,8 +1107,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final msg = ChatMessage.fromJson(d);
     if (_processedMessageIds.contains(msg.id)) return;
     _processedMessageIds.add(msg.id);
+
+    final isActive = state.activeConversationId == msg.conversationId;
+    final isIncoming = msg.senderId != _currentUserId;
+
     _addMessage(msg.conversationId, msg);
-    _updateGroupFromMessage(msg, isIncoming: true);
+    _updateGroupFromMessage(msg, isIncoming: !isActive && isIncoming);
+
+    // Auto-mark-as-read when user is actively viewing this group — mirrors RN GroupChatScreen.jsx
+    if (isActive && isIncoming && msg.id.isNotEmpty && !msg.id.startsWith('temp_')) {
+      debugPrint('[GroupRead] Auto-marking group read on new message — msgId=${msg.id}');
+      markGroupAsRead(msg.conversationId, lastReadMessageId: msg.id);
+    }
   }
 
   void _handleGroupMessageSent(dynamic data) {
@@ -1758,6 +1777,37 @@ class ChatNotifier extends StateNotifier<ChatState> {
       }
 
       // Update local state
+      _updateUnreadCount(convId, 0);
+      _db.chatDao.markConversationRead(convId).ignore();
+      _db.chatDao.markAllMessagesRead(convId, _currentUserId!).ignore();
+    });
+  }
+
+  // Groups use a different socket event and namespace — mirrors RN useGroupSocket.js markAsRead.
+  void markGroupAsRead(String groupId, {String? lastReadMessageId}) {
+    if (_currentUserId == null) return;
+    debugPrint('[GroupRead] markGroupAsRead groupId=$groupId lastMsg=$lastReadMessageId groupSocketConnected=${_groupSocket?.connected}');
+
+    // Debounce using the same timer — only one pending mark-read at a time per group.
+    _pendingMarkReadConvId = groupId;
+    _markReadDebounceTimer?.cancel();
+    _markReadDebounceTimer = Timer(const Duration(milliseconds: 100), () {
+      final convId = _pendingMarkReadConvId;
+      if (convId == null) return;
+      _pendingMarkReadConvId = null;
+
+      if (_groupSocket != null && _groupSocket!.connected) {
+        _groupSocket!.emit('mark_group_read', {
+          'group_id': convId,
+          'user_id': _currentUserId,
+          'last_read_message_id': lastReadMessageId,
+        });
+        debugPrint('[GroupRead] ✅ emitted mark_group_read for $convId');
+      } else {
+        debugPrint('[GroupRead] ⚠️ groupSocket not connected — skipping socket emit');
+      }
+
+      // Always update local state so the badge clears immediately.
       _updateUnreadCount(convId, 0);
       _db.chatDao.markConversationRead(convId).ignore();
       _db.chatDao.markAllMessagesRead(convId, _currentUserId!).ignore();

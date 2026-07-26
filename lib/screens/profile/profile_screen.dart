@@ -13,7 +13,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/verification_badge.dart';
 import '../../providers/follow_provider.dart';
-import '../../services/chat_api_service.dart';
+import '../../providers/chat_provider.dart';
 
 // ─── Level ring gradient colors ──────────────────────────────────────────────
 List<Color> _levelRingColors(int level) {
@@ -368,31 +368,26 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     required String username,
     required String? profilePic,
   }) async {
-    if (widget.viewerUid.isEmpty) return;
-    try {
-      final chatService = ChatApiService();
-      final res = await chatService.createConversation(
-        userId: widget.viewerUid,
-        otherUserId: otherUserId,
-      );
-      // Response shape: {success: true, data: {id: '...'}}
-      final dataMap = res['data'];
-      String? convId;
-      if (dataMap is Map) {
-        convId = dataMap['id']?.toString();
-      }
-      convId ??= res['id']?.toString();
-      if (convId == null || !mounted) return;
-      context.push('/chat/conversation/$convId', extra: {
-        'otherUser': {
-          'id': otherUserId,
-          'name': name,
-          'username': username,
-          'profile_pic': profilePic,
-        },
-      });
-    } catch (e) {
-      _showSnack('Could not open chat');
+    if (widget.viewerUid.isEmpty || !mounted) return;
+
+    final otherUser = {
+      'id': otherUserId,
+      'name': name,
+      'username': username,
+      'profile_pic': profilePic,
+    };
+
+    // Check local store first — if conversation exists navigate directly to it
+    // (avoids /chat/new redirect which causes a defunct-widget crash)
+    final existing = ref.read(conversationsProvider).where(
+      (c) => c.otherUserId == otherUserId || c.otherUser?['id']?.toString() == otherUserId,
+    ).firstOrNull;
+
+    if (existing != null) {
+      context.push('/chat/conversation/${existing.id}', extra: {'otherUser': otherUser});
+    } else {
+      // Truly new — lazy-create on first send
+      context.push('/chat/new', extra: {'otherUser': otherUser});
     }
   }
 
