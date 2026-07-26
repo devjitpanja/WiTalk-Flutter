@@ -187,10 +187,17 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(PostCard old) {
     super.didUpdateWidget(old);
-    if (widget.post != old.post) {
-      _disposeVideo();
-      _initVideoIfNeeded();
-    }
+    if (widget.post == old.post) return;
+    // Only reinitialize video if the actual video URL changed.
+    // Like/comment updates replace the post map reference but keep the same
+    // media, which would otherwise cause the video to dispose and reload.
+    final items = _mediaItems;
+    final newVideoUrl = items.isNotEmpty && (items[0]['type'] as String?) == 'video'
+        ? items[0]['url'] as String?
+        : null;
+    if (newVideoUrl == _currentVideoUrl) return;
+    _disposeVideo();
+    _initVideoIfNeeded();
   }
 
   @override
