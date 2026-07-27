@@ -1049,7 +1049,7 @@ class _ChatTile extends StatelessWidget {
           ? 'You reacted ${conv.lastReactionEmoji} to "$short"'
           : 'Reacted ${conv.lastReactionEmoji} to "$short"';
     } else if (conv.lastMessageTime == null) {
-      lastMsgPreview = isGroup ? 'No messages yet' : '';
+      lastMsgPreview = 'No messages yet';
     } else {
       switch (conv.lastMessageType) {
         case 'voice':
@@ -1079,7 +1079,27 @@ class _ChatTile extends StatelessWidget {
           lastMsgPreview = '📊 Poll';
           break;
         default:
-          lastMsgPreview = conv.lastMessage ?? '';
+          final text = conv.lastMessage ?? '';
+          if (text.isEmpty) {
+            lastMsgPreview = 'No messages yet';
+          } else if (text.contains('witalk.in/adda/')) {
+            lastMsgPreview = '🎙️ Adda Room';
+          } else if (text.contains('witalk.in/')) {
+            // Detect group/community/profile invite links by path segment
+            final uri = Uri.tryParse(text);
+            final seg = uri?.pathSegments.isNotEmpty == true
+                ? uri!.pathSegments.first.toLowerCase()
+                : '';
+            if (seg == 'groupchat' || seg == 'group') {
+              lastMsgPreview = '👥 Group Invite';
+            } else if (seg == 'community') {
+              lastMsgPreview = '🏘️ Community Invite';
+            } else {
+              lastMsgPreview = '🔗 WiTalk Link';
+            }
+          } else {
+            lastMsgPreview = text;
+          }
       }
     }
 

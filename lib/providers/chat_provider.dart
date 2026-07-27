@@ -531,7 +531,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // stay false forever without this check.
       if (groupSocket.connected) {
         state = state.copyWith(isGroupConnected: true);
-        debugPrint('[CHAT NOTIFIER] groupSocket already connected at init — setting isGroupConnected=true');
       }
       _setupGroupSocketListeners(groupSocket);
     }
@@ -579,16 +578,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     s.on('connect', (_) {
       state = state.copyWith(isConnected: true);
-      debugPrint('[CHAT NOTIFIER] connect event — currentUserId=$_currentUserId  activeConv=${state.activeConversationId}');
       if (_currentUserId != null) {
-        debugPrint('[CHAT NOTIFIER] Emitting join uid=$_currentUserId');
         s.emit('join', _currentUserId);
-      } else {
-        debugPrint('[CHAT NOTIFIER] ⚠️ connect: _currentUserId is null — join NOT emitted!');
       }
       final activeConvId = state.activeConversationId;
       if (activeConvId != null) {
-        debugPrint('[CHAT NOTIFIER] Re-joining conversation room: $activeConvId');
         s.emit('join_conversation', activeConvId);
       }
       // Start 30s heartbeat — mirrors RN userStatusService
@@ -601,7 +595,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     });
 
     s.on('disconnect', (_) {
-      debugPrint('[CHAT NOTIFIER] disconnect event');
       state = state.copyWith(isConnected: false);
       // Clear all online presence — we can't trust stale state after a disconnect
       state = state.copyWith(onlineUsers: {});
@@ -612,7 +605,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // join_success — mirrors RN ChatContext.jsx: fetch conversations + groups
     // from API so the list is always fresh after socket auth is confirmed.
     s.on('join_success', (data) {
-      debugPrint('[CHAT NOTIFIER] ✅ join_success: $data');
       if (data != null && data is Map) {
         final onlineUsers = data['onlineUsers'];
         if (onlineUsers is List) {
@@ -634,20 +626,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
           _patchMessage(convId, tempId, (m) => m.copyWith(status: 'failed'));
         }
       }
-      debugPrint('[Socket] message_error: $d');
     });
 
-    s.on('error', (data) {
-      debugPrint('[Socket] error event: $data');
-    });
-
-    s.on('group_error', (data) {
-      debugPrint('[GroupMsg] ❌ group_error from server: $data');
-    });
-
-    s.on('group_message_error', (data) {
-      debugPrint('[GroupMsg] ❌ group_message_error from server: $data');
-    });
+    s.on('error', (_) {});
+    s.on('group_error', (_) {});
+    s.on('group_message_error', (_) {});
 
     s.on('new_message', (data) => _handleNewMessage(data));
     s.on('message_sent', (data) => _handleMessageSent(data));
@@ -701,7 +684,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // ── /group-chat namespace listeners ──────────────────────────────────────────
   void _setupGroupSocketListeners(io.Socket gs) {
     gs.on('connect', (_) {
-      debugPrint('[GROUP-SOCKET] connected — re-joining active group if any');
       state = state.copyWith(isGroupConnected: true);
       final active = state.activeConversationId;
       if (active != null && _currentUserId != null) {
@@ -758,8 +740,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     gs.on('user_online', (data) => _handlePresence(data, true));
     gs.on('user_offline', (data) => _handlePresence(data, false));
 
-    gs.on('error', (data) => debugPrint('[GROUP-SOCKET] error: $data'));
-    gs.on('group_error', (data) => debugPrint('[GROUP-SOCKET] group_error: $data'));
+    gs.on('error', (_) {});
+    gs.on('group_error', (_) {});
   }
 
   // ── Private message handlers ─────────────────────────────────────────────────
@@ -788,7 +770,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void _handleMessageSent(dynamic data) {
-    debugPrint('[CHAT] ✅ message_sent received: $data');
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
     final tempId = d['temp_id']?.toString() ??
@@ -797,21 +778,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final serverId = d['id']?.toString() ??
         d['message_id']?.toString() ??
         d['messageId']?.toString();
-    // conversation_id may be missing; fall back to owner map
     final convId = d['conversation_id']?.toString() ??
         d['conversationId']?.toString() ??
         (tempId != null ? _messageOwnerMap[tempId] : null);
 
-    debugPrint('[CHAT] message_sent — tempId=$tempId  serverId=$serverId  convId=$convId');
-
-    if (serverId == null) {
-      debugPrint('[CHAT] ⚠️ message_sent: serverId is null, ignoring');
-      return;
-    }
-    if (convId == null) {
-      debugPrint('[CHAT] ⚠️ message_sent: convId is null (tempId not in ownerMap?), ignoring');
-      return;
-    }
+    if (serverId == null || convId == null) return;
 
     if (tempId != null) {
       _swapTempMessage(convId, tempId, serverId, d);
@@ -845,20 +816,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final updated = msgs.where((m) => m.id != msgId && m.tempId != msgId).toList();
     state = state.copyWith(messages: {...state.messages, convId: updated});
 
-    // When the deleted message was the last one, refresh the conversation tile
-    // from the server so we always show accurate last-message data regardless
-    // of whether the full message list is loaded in memory.
+    debugPrint('[TILE-REFRESH] removeMessage convId=$convId msgId=$msgId wasLast=$wasLast inMemoryCount=${msgs.length}');
+
     if (wasLast) {
+      debugPrint('[TILE-REFRESH] last message deleted — fetching fresh tile from server');
       _refreshConversationTile(convId);
     }
   }
 
-  // Silently re-fetches a single conversation from the server and patches
-  // its last-message fields in the conversations / groups list.
   Future<void> _refreshConversationTile(String convId) async {
     try {
+      debugPrint('[TILE-REFRESH] GET conversation/$convId ...');
       final data = await chatApiService.getConversation(convId);
-      if (data == null) return;
+      if (data == null) {
+        debugPrint('[TILE-REFRESH] ⚠️ server returned null for convId=$convId');
+        return;
+      }
+      debugPrint('[TILE-REFRESH] response: lastMessage=${data['last_message_content'] ?? data['last_message']} type=${data['last_message_type']}');
 
       final fresh = ChatConversation.fromJson(data);
 
@@ -895,6 +869,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           isLive: old.isLive,
         );
         state = state.copyWith(conversations: convs);
+        debugPrint('[TILE-REFRESH] ✅ DM tile updated — convId=$convId lastMessage=${fresh.lastMessage}');
         return;
       }
 
@@ -931,9 +906,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
           isLive: old.isLive,
         );
         state = state.copyWith(groups: groups);
+        debugPrint('[TILE-REFRESH] ✅ group tile updated — convId=$convId lastMessage=${fresh.lastMessage}');
+        return;
       }
-    } catch (_) {
-      // Silent — best-effort tile update; stale preview is acceptable
+
+      debugPrint('[TILE-REFRESH] ⚠️ convId=$convId not found in conversations or groups');
+    } catch (e) {
+      debugPrint('[TILE-REFRESH] ❌ error for convId=$convId: $e');
     }
   }
 
@@ -1211,13 +1190,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Auto-mark-as-read when user is actively viewing this group — mirrors RN GroupChatScreen.jsx
     if (isActive && isIncoming && msg.id.isNotEmpty && !msg.id.startsWith('temp_')) {
-      debugPrint('[GroupRead] Auto-marking group read on new message — msgId=${msg.id}');
       markGroupAsRead(msg.conversationId, lastReadMessageId: msg.id);
     }
   }
 
   void _handleGroupMessageSent(dynamic data) {
-    debugPrint('[GroupMsg] group_message_sent received: $data');
     if (data == null) return;
     final d = Map<String, dynamic>.from(data as Map);
     final tempId = d['temp_id']?.toString() ?? d['tempId']?.toString();
@@ -1225,14 +1202,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final groupId = d['group_id']?.toString() ??
         d['conversation_id']?.toString() ??
         (tempId != null ? _messageOwnerMap[tempId] : null);
-    debugPrint('[GroupMsg] group_message_sent — tempId=$tempId serverId=$serverId groupId=$groupId');
-    if (serverId == null || groupId == null) {
-      debugPrint('[GroupMsg] ❌ group_message_sent: missing serverId or groupId — skipping swap');
-      return;
-    }
+    if (serverId == null || groupId == null) return;
     if (tempId != null) {
       _swapTempMessage(groupId, tempId, serverId, d);
-      debugPrint('[GroupMsg] ✅ swapped temp→server: $tempId → $serverId');
     } else {
       _addMessage(groupId, ChatMessage.fromJson({...d, 'status': 'sent'}));
     }
@@ -1307,20 +1279,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
           .toList();
       if (convs.isNotEmpty) {
         setConversations(convs);
-        debugPrint('[CHAT NOTIFIER] join_success: loaded ${convs.length} conversations');
+        for (final c in convs) {
+          debugPrint('[TILE-REFRESH] loaded conv id=${c.id} name=${c.name} lastMsg=${c.lastMessage} lastMsgTime=${c.lastMessageTime} type=${c.lastMessageType}');
+        }
       }
 
       final groupsList = results[1];
       final groups = groupsList
           .map((e) => ChatConversation.fromJson(e))
           .toList();
-      if (groups.isNotEmpty) {
-        setGroups(groups);
-        debugPrint('[CHAT NOTIFIER] join_success: loaded ${groups.length} groups');
-      }
-    } catch (e) {
-      debugPrint('[CHAT NOTIFIER] _fetchInitialData error: $e');
-    }
+      if (groups.isNotEmpty) setGroups(groups);
+    } catch (_) {}
+
   }
 
   Future<void> _refreshGroups() async {
@@ -1332,9 +1302,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
           .map((e) => ChatConversation.fromJson(e))
           .toList();
       setGroups(groups);
-    } catch (e) {
-      debugPrint('[CHAT NOTIFIER] _refreshGroups error: $e');
-    }
+    } catch (_) {}
+
   }
 
   // ── Message helpers ───────────────────────────────────────────────────────────
@@ -1522,9 +1491,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // Mirrors RN ChannelListScreen.jsx + AllChatsList.jsx: subscribes to the
   // /channel namespace and updates the channels list in real-time.
   void _setupChannelSocketListeners(io.Socket cs) {
-    cs.on('connect', (_) {
-      debugPrint('[CHANNEL-SOCKET NOTIFIER] connected');
-    });
+    cs.on('connect', (_) {});
 
     cs.on('channel_new_message', (data) {
       if (data == null) return;
@@ -1567,16 +1534,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       });
 
       state = state.copyWith(channels: currentChannels);
-      debugPrint('[CHANNEL-SOCKET NOTIFIER] channel_new_message channelId=$channelId');
     });
 
-    cs.on('disconnect', (reason) {
-      debugPrint('[CHANNEL-SOCKET NOTIFIER] disconnected: $reason');
-    });
-
-    cs.on('error', (e) {
-      debugPrint('[CHANNEL-SOCKET NOTIFIER] error: $e');
-    });
+    cs.on('disconnect', (_) {});
+    cs.on('error', (_) {});
   }
 
   // ── Public API (called by screens) ───────────────────────────────────────────
@@ -1737,7 +1698,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _saveMessageToDb(optimistic);
 
     if (_socket != null) {
-      debugPrint('[CHAT] sendMessage — socket.connected=${_socket!.connected}  tempId=$tempId  convId=$conversationId');
       // metadata and media_data must be JSON strings on the wire so that RN clients
       // can JSON.parse() them — the server stores and echoes whatever it receives.
       _socket!.emit('send_message', {
@@ -1754,9 +1714,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         'replyTo': replyTo,
         'temp_id': tempId,
       });
-      debugPrint('[CHAT] send_message emitted');
     } else {
-      debugPrint('[CHAT] ⚠️ sendMessage — socket is NULL, queuing offline action');
       await _db.chatDao.insertPendingAction('send_message', jsonEncode({
         'conversation_id': conversationId,
         'sender_id': uid,
@@ -1813,9 +1771,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _addMessage(groupId, optimistic);
     _updateGroupFromMessage(optimistic);
 
-    // The /chat socket namespace does NOT handle send_group_message — that
-    // event only runs on RN's separate /group-chat namespace. Use REST instead.
-    debugPrint('[GroupMsg] sendGroupMessage via REST — tempId=$tempId groupId=$groupId');
     try {
       final res = await dioClient.post(
         AppEndpoints.groupMessages(groupId),
@@ -1840,16 +1795,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
               : null;
       final serverId = msgData?['id']?.toString() ??
           (resData is Map ? resData['id']?.toString() : null);
-      debugPrint('[GroupMsg] REST response — serverId=$serverId resData keys=${resData is Map ? (resData as Map).keys.toList() : resData}');
       if (serverId != null) {
         _swapTempMessage(groupId, tempId, serverId, msgData ?? {});
-        debugPrint('[GroupMsg] ✅ swapped temp→server: $tempId → $serverId');
       } else {
-        debugPrint('[GroupMsg] ❌ No serverId in REST response — marking failed');
         _patchMessage(groupId, tempId, (m) => m.copyWith(status: 'failed'));
       }
-    } catch (e) {
-      debugPrint('[GroupMsg] ❌ REST send failed: $e');
+    } catch (_) {
       _patchMessage(groupId, tempId, (m) => m.copyWith(status: 'failed'));
     }
   }
@@ -1881,8 +1832,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // Groups use a different socket event and namespace — mirrors RN useGroupSocket.js markAsRead.
   void markGroupAsRead(String groupId, {String? lastReadMessageId}) {
     if (_currentUserId == null) return;
-    debugPrint('[GroupRead] markGroupAsRead groupId=$groupId lastMsg=$lastReadMessageId groupSocketConnected=${_groupSocket?.connected}');
-
     // Debounce using the same timer — only one pending mark-read at a time per group.
     _pendingMarkReadConvId = groupId;
     _markReadDebounceTimer?.cancel();
@@ -1897,9 +1846,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
           'user_id': _currentUserId,
           'last_read_message_id': lastReadMessageId,
         });
-        debugPrint('[GroupRead] ✅ emitted mark_group_read for $convId');
-      } else {
-        debugPrint('[GroupRead] ⚠️ groupSocket not connected — skipping socket emit');
       }
 
       // Always update local state so the badge clears immediately.
@@ -2064,7 +2010,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void joinGroup(String groupId) {
-    debugPrint('[GroupMsg] joinGroup — groupSocket=${_groupSocket != null} connected=${_groupSocket?.connected} groupId=$groupId uid=$_currentUserId');
     _groupSocket?.emit('join_group', {'group_id': groupId, 'user_id': _currentUserId});
   }
 
