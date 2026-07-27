@@ -838,8 +838,103 @@ class ChatNotifier extends StateNotifier<ChatState> {
   void _removeMessage(String convId, String msgId) {
     final msgs = state.messages[convId];
     if (msgs == null) return;
+
+    final wasLast = msgs.isNotEmpty &&
+        (msgs.last.id == msgId || msgs.last.tempId == msgId);
+
     final updated = msgs.where((m) => m.id != msgId && m.tempId != msgId).toList();
     state = state.copyWith(messages: {...state.messages, convId: updated});
+
+    // When the deleted message was the last one, refresh the conversation tile
+    // from the server so we always show accurate last-message data regardless
+    // of whether the full message list is loaded in memory.
+    if (wasLast) {
+      _refreshConversationTile(convId);
+    }
+  }
+
+  // Silently re-fetches a single conversation from the server and patches
+  // its last-message fields in the conversations / groups list.
+  Future<void> _refreshConversationTile(String convId) async {
+    try {
+      final data = await chatApiService.getConversation(convId);
+      if (data == null) return;
+
+      final fresh = ChatConversation.fromJson(data);
+
+      // DM conversations
+      final convIdx = state.conversations.indexWhere((c) => c.id == convId);
+      if (convIdx != -1) {
+        final convs = List<ChatConversation>.from(state.conversations);
+        final old = convs[convIdx];
+        convs[convIdx] = ChatConversation(
+          id: old.id,
+          type: old.type,
+          name: old.name,
+          profilePic: old.profilePic,
+          lastMessage: fresh.lastMessage,
+          lastMessageType: fresh.lastMessageType,
+          lastMessageSenderId: fresh.lastMessageSenderId,
+          lastMessageTime: fresh.lastMessageTime,
+          lastMessageIsRead: old.lastMessageIsRead,
+          lastMessageStatus: fresh.lastMessageStatus,
+          unreadCount: old.unreadCount,
+          isMuted: old.isMuted,
+          status: old.status,
+          otherUser: old.otherUser,
+          otherUserId: old.otherUserId,
+          initiatorId: old.initiatorId,
+          iBlockedThem: old.iBlockedThem,
+          theyBlockedMe: old.theyBlockedMe,
+          sentMessageCount: old.sentMessageCount,
+          lastReactionEmoji: fresh.lastReactionEmoji,
+          lastReactionAt: fresh.lastReactionAt,
+          lastReactionUserId: fresh.lastReactionUserId,
+          lastReactionMessageContent: fresh.lastReactionMessageContent,
+          updatedAt: old.updatedAt,
+          isLive: old.isLive,
+        );
+        state = state.copyWith(conversations: convs);
+        return;
+      }
+
+      // Group conversations
+      final groupIdx = state.groups.indexWhere((g) => g.id == convId);
+      if (groupIdx != -1) {
+        final groups = List<ChatConversation>.from(state.groups);
+        final old = groups[groupIdx];
+        groups[groupIdx] = ChatConversation(
+          id: old.id,
+          type: old.type,
+          name: old.name,
+          profilePic: old.profilePic,
+          lastMessage: fresh.lastMessage,
+          lastMessageType: fresh.lastMessageType,
+          lastMessageSenderId: fresh.lastMessageSenderId,
+          lastMessageTime: fresh.lastMessageTime,
+          lastMessageIsRead: old.lastMessageIsRead,
+          lastMessageStatus: fresh.lastMessageStatus,
+          unreadCount: old.unreadCount,
+          isMuted: old.isMuted,
+          status: old.status,
+          otherUser: old.otherUser,
+          otherUserId: old.otherUserId,
+          initiatorId: old.initiatorId,
+          iBlockedThem: old.iBlockedThem,
+          theyBlockedMe: old.theyBlockedMe,
+          sentMessageCount: old.sentMessageCount,
+          lastReactionEmoji: fresh.lastReactionEmoji,
+          lastReactionAt: fresh.lastReactionAt,
+          lastReactionUserId: fresh.lastReactionUserId,
+          lastReactionMessageContent: fresh.lastReactionMessageContent,
+          updatedAt: old.updatedAt,
+          isLive: old.isLive,
+        );
+        state = state.copyWith(groups: groups);
+      }
+    } catch (_) {
+      // Silent — best-effort tile update; stale preview is acceptable
+    }
   }
 
   void _handleMessageEdited(dynamic data) {

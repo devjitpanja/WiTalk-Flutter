@@ -845,7 +845,10 @@ class _ChatConversationScreenState
               isDestructive: true,
               onTap: () {
                 Navigator.pop(ctx);
-                // TODO: navigate to Report screen
+                Future.delayed(const Duration(milliseconds: 250), () {
+                  final id = partner['id']?.toString() ?? '';
+                  if (id.isNotEmpty && mounted) context.push('/report/user/$id');
+                });
               },
             ),
             _SheetOption(
@@ -1148,13 +1151,28 @@ class _ChatConversationScreenState
       if (_isBlocked) {
         await dioClient.post(AppEndpoints.unblockUser,
             data: {'blocker_id': uid, 'blocked_id': partnerId});
-        if (mounted) setState(() => _isBlocked = false);
+        if (mounted) {
+          setState(() => _isBlocked = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User has been unblocked')));
+        }
       } else {
         await dioClient.post(AppEndpoints.blockUser,
             data: {'blocker_id': uid, 'blocked_id': partnerId});
-        if (mounted) setState(() => _isBlocked = true);
+        if (mounted) {
+          setState(() => _isBlocked = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User has been blocked')));
+        }
       }
-    } catch (_) {}
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(_isBlocked
+              ? 'Failed to unblock user. Please try again.'
+              : 'Failed to block user. Please try again.')));
+      }
+    }
   }
 
   void _onMessageLongPress(ChatMessage message) {
@@ -1615,56 +1633,126 @@ class _ChatConversationScreenState
     final uid = _currentUserId;
     final partner = _chatPartner;
     if (uid == null || partner == null) return;
-    try {
-      if (_isMuted) {
+    if (_isMuted) {
+      try {
         await mutedChatsService.unmuteChat(
             userId: uid, mutedUserId: partner['id'].toString());
-        if (mounted) setState(() => _isMuted = false);
-      } else {
-        _showMuteDurationPicker(uid, partner['id'].toString());
+        if (mounted) {
+          setState(() => _isMuted = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Notifications unmuted'),
+              backgroundColor: Color(0xFF34C759),
+              duration: Duration(seconds: 3),
+            ));
+        }
+      } catch (_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to unmute chat. Please try again.'),
+              backgroundColor: Color(0xFFFF3B30),
+            ));
+        }
       }
-    } catch (_) {}
+    } else {
+      _showMuteDurationPicker(uid, partner['id'].toString());
+    }
   }
 
   void _showMuteDurationPicker(String userId, String mutedUserId) {
     final c = context.colors;
+    const durations = [
+      ('8_hours', '8 hours', 'Mute notifications for 8 hours', Icons.schedule),
+      ('1_week', '1 week', 'Mute notifications for 1 week', Icons.date_range),
+      ('always', 'Always', 'Mute notifications until you unmute', Icons.notifications_off_outlined),
+    ];
     showModalBottomSheet(
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 16),
-        Text('Mute Notifications',
-            style: TextStyle(
-                fontSize: 16,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w600,
-                color: c.text)),
+      builder: (sheetCtx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         const SizedBox(height: 8),
-        ...['8_hours', '1_week', 'always'].map((d) {
-          final label = d == '8_hours'
-              ? '8 hours'
-              : d == '1_week'
-                  ? '1 week'
-                  : 'Always';
-          return ListTile(
-            title: Text(label,
-                style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+        Container(width: 40, height: 4,
+            decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
+        const SizedBox(height: 16),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(Icons.notifications_off_outlined, size: 24, color: c.text),
+          const SizedBox(width: 8),
+          Text('Mute notifications',
+              style: TextStyle(fontSize: 16, fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600, color: c.text)),
+        ]),
+        const SizedBox(height: 12),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: c.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Other members will not see that you muted this chat, and you will still be notified if you are mentioned.',
+              style: TextStyle(fontSize: 13, fontFamily: 'Outfit', color: c.textSecondary, height: 1.45),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        for (final (key, label, desc, icon) in durations)
+          InkWell(
             onTap: () async {
-              Navigator.pop(context);
-              await mutedChatsService.muteChat(
-                userId: userId,
-                mutedUserId: mutedUserId,
-                conversationId: _activeChatId ?? '',
-                muteDuration: d,
-              );
-              if (mounted) setState(() => _isMuted = true);
+              Navigator.pop(sheetCtx);
+              try {
+                await mutedChatsService.muteChat(
+                  userId: userId,
+                  mutedUserId: mutedUserId,
+                  conversationId: _activeChatId ?? '',
+                  muteDuration: key,
+                );
+                if (mounted) {
+                  setState(() => _isMuted = true);
+                  final msg = key == '8_hours'
+                      ? 'Notifications muted for 8 hours'
+                      : key == '1_week'
+                          ? 'Notifications muted for 1 week'
+                          : 'Notifications muted until you unmute';
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(msg),
+                    backgroundColor: const Color(0xFF34C759),
+                    duration: const Duration(seconds: 3),
+                  ));
+                }
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('Failed to mute chat. Please try again.'),
+                    backgroundColor: Color(0xFFFF3B30),
+                  ));
+                }
+              }
             },
-          );
-        }),
-        SizedBox(height: MediaQuery.of(context).padding.bottom + 8),
-      ]),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: Row(children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(color: c.background, shape: BoxShape.circle),
+                  child: Icon(icon, size: 20, color: c.text),
+                ),
+                const SizedBox(width: 14),
+                Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(label, style: TextStyle(fontSize: 15, fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w500, color: c.text)),
+                  Text(desc, style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.textSecondary)),
+                ])),
+                Icon(Icons.chevron_right, size: 20, color: c.textSecondary),
+              ]),
+            ),
+          ),
+        const SizedBox(height: 8),
+      ])),
     );
   }
 
@@ -1674,29 +1762,52 @@ class _ChatConversationScreenState
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('Clear Chat?',
+        title: Text('Clear Chat',
             style: TextStyle(
                 color: c.text,
                 fontFamily: 'Outfit',
                 fontWeight: FontWeight.w600)),
-        content: Text('All messages will be cleared for you only.',
-            style:
-                TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        content: Text(
+            'Are you sure you want to clear all messages in this chat?',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text('Cancel',
                 style: TextStyle(
-                    color: c.textSecondary, fontFamily: 'Outfit')),
+                    color: const Color(0xFF3B82F6), fontFamily: 'Outfit')),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              // TODO: call clear chat API endpoint
+              if (_activeChatId != null) {
+                ref.read(chatProvider.notifier)
+                    .deleteConversation(_activeChatId!, deleteType: 'for_me');
+              }
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (mounted) context.pop();
+              });
             },
-            child: Text('Clear',
+            child: const Text('Delete for Me',
                 style: TextStyle(
-                    color: c.error,
+                    color: Color(0xFFF59E0B),
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (_activeChatId != null) {
+                ref.read(chatProvider.notifier)
+                    .deleteConversation(_activeChatId!, deleteType: 'for_everyone');
+              }
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (mounted) context.pop();
+              });
+            },
+            child: const Text('Delete for Everyone',
+                style: TextStyle(
+                    color: Color(0xFFEF4444),
                     fontFamily: 'Outfit',
                     fontWeight: FontWeight.w600)),
           ),
@@ -1707,39 +1818,40 @@ class _ChatConversationScreenState
 
   void _confirmDeleteChat() {
     final c = context.colors;
+    final partnerName = (_chatPartner?['name'] ?? _chatPartner?['username'] ?? 'this user') as String;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('Delete Chat?',
+        title: Text('Delete Chat',
             style: TextStyle(
                 color: c.text,
                 fontFamily: 'Outfit',
                 fontWeight: FontWeight.w600)),
         content: Text(
-            'This will delete the conversation for you only.',
-            style:
-                TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+            'Delete entire conversation with $partnerName? This will permanently delete all messages from both sides and cannot be undone.',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: Text('Cancel',
                 style: TextStyle(
-                    color: c.textSecondary, fontFamily: 'Outfit')),
+                    color: const Color(0xFF3B82F6), fontFamily: 'Outfit')),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               if (_activeChatId != null) {
-                ref
-                    .read(chatProvider.notifier)
-                    .deleteConversation(_activeChatId!);
+                ref.read(chatProvider.notifier)
+                    .deleteConversation(_activeChatId!, deleteType: 'for_everyone');
               }
-              context.pop();
+              Future.delayed(const Duration(milliseconds: 300), () {
+                if (mounted) context.pop();
+              });
             },
-            child: Text('Delete',
+            child: const Text('Delete Chat',
                 style: TextStyle(
-                    color: c.error,
+                    color: Color(0xFFEF4444),
                     fontFamily: 'Outfit',
                     fontWeight: FontWeight.w600)),
           ),
