@@ -592,8 +592,11 @@ class _MiniItemState extends State<_MiniItem> with SingleTickerProviderStateMixi
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               // Like
               _ActionBtn(
-                child: Image.asset(
-                  'assets/icons/heart.png', width: 32, height: 32,
+                child: Icon(
+                  _isLiked
+                      ? const IconData(0xe2a8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter')
+                      : const IconData(0xe2a8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                  size: 32,
                   color: _isLiked ? const Color(0xFFFF3040) : Colors.white,
                 ),
                 label: _formatCount(likes),
@@ -602,16 +605,22 @@ class _MiniItemState extends State<_MiniItem> with SingleTickerProviderStateMixi
               const SizedBox(height: 20),
               // Comment
               _ActionBtn(
-                child: Image.asset('assets/icons/comment.png', width: 28, height: 28,
-                    color: Colors.white),
+                child: const Icon(
+                  IconData(0xe168, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                  size: 28,
+                  color: Colors.white,
+                ),
                 label: _formatCount(comments),
                 onTap: widget.onComment,
               ),
               const SizedBox(height: 20),
               // Share
               _ActionBtn(
-                child: Image.asset('assets/icons/share.png', width: 26, height: 26,
-                    color: Colors.white),
+                child: const Icon(
+                  IconData(0xe398, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                  size: 28,
+                  color: Colors.white,
+                ),
                 label: _formatCount(shares),
                 onTap: () => showShareBottomSheet(
                   context,

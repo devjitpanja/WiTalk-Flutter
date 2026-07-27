@@ -2,6 +2,9 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+// ignore: depend_on_referenced_packages
+// Phosphor icon codepoints used directly to work around Flutter 3.44 final-IconData restriction
+
 
 import '../widgets/audio_room/audio_room_overlay.dart';
 import '../widgets/common/global_upload_progress.dart';
@@ -77,23 +80,23 @@ class ShellScreen extends StatelessWidget {
                   label: 'Home',
                 ),
                 BottomNavigationBarItem(
-                  icon: _TabIcon(asset: 'assets/icons/explore_stroke.png', size: 24),
-                  activeIcon: _TabIcon(asset: 'assets/icons/explore.png', size: 24, active: true),
+                  icon: Icon(IconData(0xe1c8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
+                  activeIcon: Icon(IconData(0xe1c8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter'), size: 26),
                   label: 'Explore',
                 ),
                 BottomNavigationBarItem(
-                  icon: _TabIcon(asset: 'assets/icons/mic_stroke.png', size: 24),
-                  activeIcon: _TabIcon(asset: 'assets/icons/mic.png', size: 24, active: true),
+                  icon: Icon(IconData(0xe326, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
+                  activeIcon: Icon(IconData(0xe326, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter'), size: 26),
                   label: 'Adda',
                 ),
                 BottomNavigationBarItem(
-                  icon: _TabIcon(asset: 'assets/icons/chat_stroke.png', size: 24),
-                  activeIcon: _TabIcon(asset: 'assets/icons/chat.png', size: 24, active: true),
+                  icon: Icon(IconData(0xe16c, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
+                  activeIcon: Icon(IconData(0xe16c, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter'), size: 26),
                   label: 'Chat',
                 ),
                 const BottomNavigationBarItem(
-                  icon: Icon(Icons.menu, size: 27),
-                  activeIcon: Icon(Icons.menu, size: 27),
+                  icon: Icon(IconData(0xe2f0, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
+                  activeIcon: Icon(IconData(0xe2f0, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
                   label: 'Menu',
                 ),
               ],

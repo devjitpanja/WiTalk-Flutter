@@ -742,9 +742,13 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
       child: Row(children: [
         _pillBtn(
-          iconWidget: Image.asset('assets/icons/heart.png', width: 14, height: 14,
-              color: _isLiked ? c.likeColor : c.iconTint),
-          iconColor: _isLiked ? c.likeColor : c.iconTint,
+          icon: Icon(
+            _isLiked
+                ? const IconData(0xe2a8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter')
+                : const IconData(0xe2a8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+            size: 16,
+            color: _isLiked ? c.likeColor : c.iconTint,
+          ),
           count: _likes,
           liked: _isLiked,
           onTap: widget.isRemoved ? null : _toggleLike,
@@ -752,8 +756,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         ),
         const SizedBox(width: 10),
         _pillBtn(
-          iconWidget: Image.asset('assets/icons/comment.png', width: 14, height: 14, color: c.iconTint),
-          iconColor: c.iconTint,
+          icon: Icon(
+            const IconData(0xe168, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+            size: 16,
+            color: c.iconTint,
+          ),
           count: _comments,
           liked: false,
           onTap: widget.isRemoved
@@ -774,8 +781,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         ),
         const SizedBox(width: 10),
         _pillBtn(
-          iconWidget: Image.asset('assets/icons/share.png', width: 14, height: 14, color: c.iconTint),
-          iconColor: c.iconTint,
+          icon: Icon(
+            const IconData(0xe398, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+            size: 16,
+            color: c.iconTint,
+          ),
           count: (_p['shares'] ?? 0) as int,
           liked: false,
           onTap: widget.isRemoved
@@ -792,8 +802,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   }
 
   Widget _pillBtn({
-    required Widget iconWidget,
-    required Color iconColor,
+    required Icon icon,
     required int count,
     required bool liked,
     required ThemeColors c,
@@ -814,7 +823,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             borderRadius: BorderRadius.circular(100),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            iconWidget,
+            icon,
             const SizedBox(width: 8),
             Text('$count',
                 style: TextStyle(
