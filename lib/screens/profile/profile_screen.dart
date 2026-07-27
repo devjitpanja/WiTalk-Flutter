@@ -384,7 +384,12 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     ).firstOrNull;
 
     if (existing != null) {
-      context.push('/chat/conversation/${existing.id}', extra: {'otherUser': otherUser});
+      // Pass status + initiatorId so request state is available immediately (mirrors RN cache sync)
+      context.push('/chat/conversation/${existing.id}', extra: {
+        'otherUser': otherUser,
+        'status': existing.status,
+        'initiatorId': existing.initiatorId,
+      });
     } else {
       // Truly new — lazy-create on first send
       context.push('/chat/new', extra: {'otherUser': otherUser});

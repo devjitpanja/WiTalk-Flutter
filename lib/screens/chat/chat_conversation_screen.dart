@@ -225,15 +225,31 @@ class _ChatConversationScreenState
       if (mounted && !_disposed) setState(() => _loading = false);
     }
 
-    // Apply fast-path request state from route params (MessageRequestsScreen passes these)
     _chatPartner = widget.otherUser;
-    if (widget.conversationStatus == 'request_pending' && widget.initiatorId != null) {
+
+    // ── Seed request state instantly from local store (mirrors RN checkExistingConversation) ──
+    // This sets _isOutgoingRequest/_isIncomingRequest BEFORE any await so that
+    // _loadMessages and the build() computed sentMessageCount are immediately correct.
+    final localConv = ref.read(conversationsProvider).where(
+      (c) => c.id == _activeChatId,
+    ).firstOrNull;
+
+    if (localConv != null) {
+      final isOutgoing = localConv.status == 'request_pending' &&
+          localConv.initiatorId == uid;
+      final isIncoming = localConv.status == 'request_pending' &&
+          localConv.initiatorId != uid && localConv.initiatorId != null;
+      debugPrint('[CC-INIT] local store: status=${localConv.status} initiatorId=${localConv.initiatorId} isOutgoing=$isOutgoing isIncoming=$isIncoming sentCount=${localConv.sentMessageCount}');
+      _isOutgoingRequest = isOutgoing;
+      _isIncomingRequest = isIncoming;
+    } else if (widget.conversationStatus == 'request_pending' && widget.initiatorId != null) {
+      // Fast-path from route params (MessageRequestsScreen / profile nav)
       _isIncomingRequest = widget.initiatorId != uid;
       _isOutgoingRequest = widget.initiatorId == uid;
+      debugPrint('[CC-INIT] route params: isOutgoing=$_isOutgoingRequest isIncoming=$_isIncomingRequest');
     }
 
-    // Fetch fresh conversation detail FIRST so _isOutgoingRequest is set before
-    // _loadMessages runs — that way the sentMessageCount derivation works correctly
+    // Fetch fresh conversation detail to confirm/update status from server
     await _loadConversationDetail();
     if (_disposed) return;
 
@@ -292,32 +308,27 @@ class _ChatConversationScreenState
     if (chatId == null || _disposed) return;
     try {
       final data = await chatApiService.getConversation(chatId);
-      debugPrint('[ChatConversation] _loadConversationDetail: status=${data?['status']} initiator_id=${data?['initiator_id']} sent_message_count=${data?['sent_message_count']} me=$_currentUserId');
+      debugPrint('[CC-DETAIL] API: status=${data?['status']} initiator_id=${data?['initiator_id']} me=$_currentUserId');
       if (data != null && mounted && !_disposed) {
         final isOutgoing = data['status'] == 'request_pending' &&
-            data['initiator_id'].toString() == _currentUserId;
-        // Derive sent count from loaded messages if API doesn't return it
-        int sentCount = (data['sent_message_count'] as num?)?.toInt() ?? 0;
-        if (sentCount == 0 && isOutgoing && _currentUserId != null) {
-          final loaded = ref.read(conversationMessagesProvider(chatId));
-          sentCount = loaded.where((m) => m.senderId == _currentUserId).length;
-          debugPrint('[ChatConversation] derived sentCount=$sentCount from ${loaded.length} loaded messages');
-        }
+            data['initiator_id']?.toString() == _currentUserId;
+        final isIncoming = data['status'] == 'request_pending' &&
+            data['initiator_id'] != null &&
+            data['initiator_id'].toString() != _currentUserId;
         setState(() {
           if (data['other_user'] != null) {
             _chatPartner = data['other_user'] as Map<String, dynamic>?;
           } else if (_chatPartner == null) {
             _chatPartner = data;
           }
-          _isIncomingRequest = data['status'] == 'request_pending' &&
-              data['initiator_id'].toString() != _currentUserId;
+          _isIncomingRequest = isIncoming;
           _isOutgoingRequest = isOutgoing;
-          _sentMessageCount = sentCount;
+          // sentMessageCount is now live-computed in build() — no stored field needed
         });
-        debugPrint('[ChatConversation] request state → isIncoming=$_isIncomingRequest isOutgoing=$_isOutgoingRequest sentCount=$_sentMessageCount');
+        debugPrint('[CC-DETAIL] updated → isIncoming=$_isIncomingRequest isOutgoing=$_isOutgoingRequest');
       }
     } catch (e) {
-      debugPrint('[ChatConversation] _loadConversationDetail error: $e');
+      debugPrint('[CC-DETAIL] error: $e');
     }
   }
 
@@ -617,13 +628,7 @@ class _ChatConversationScreenState
       if (reset) {
         if (_disposed) return;
         ref.read(chatProvider.notifier).setMessages(chatId, chatMsgs);
-        // Derive sent message count for outgoing-request 2-message limit
-        if (_isOutgoingRequest && _currentUserId != null) {
-          final sent = chatMsgs
-              .where((m) => m.senderId == _currentUserId)
-              .length;
-          if (mounted && !_disposed) setState(() => _sentMessageCount = sent);
-        }
+        // No need to derive _sentMessageCount — build() computes it live from provider
       } else {
         ref
             .read(chatProvider.notifier)
@@ -875,7 +880,14 @@ class _ChatConversationScreenState
     if (uid == null || partner == null) return;
 
     // 2-message limit for outgoing requests (mirrors RN handleSend guard)
-    if (_isOutgoingRequest && _sentMessageCount >= 2) {
+    // Use live count from provider — same as RN useMemo on conversationMessages
+    final liveSent = _activeChatId != null
+        ? ref.read(conversationMessagesProvider(_activeChatId!))
+            .where((m) => m.senderId == uid)
+            .length
+        : 0;
+    debugPrint('[CC-SEND] isOutgoing=$_isOutgoingRequest liveSent=$liveSent');
+    if (_isOutgoingRequest && liveSent >= 2) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Waiting for the request to be accepted before sending more messages'),
       ));
@@ -949,7 +961,8 @@ class _ChatConversationScreenState
         );
 
     _scrollToBottom();
-    if (_isOutgoingRequest) setState(() => _sentMessageCount++);
+    // No need to manually increment _sentMessageCount — liveSentCount in build()
+    // recomputes automatically from the provider whenever a message is added.
   }
 
   Future<String?> _pickAndSendImage() async {
@@ -1279,6 +1292,11 @@ class _ChatConversationScreenState
         ? ref.watch(conversationMessagesProvider(_activeChatId!))
         : <ChatMessage>[];
 
+    // Live sent-message count — mirrors RN useMemo on conversationMessages (never stale)
+    final liveSentCount = uid.isNotEmpty
+        ? messages.where((m) => m.senderId == uid).length
+        : 0;
+
     // Auto-scroll when new messages arrive and user is at bottom
     if (messages.length > _lastMessageCount) {
       _lastMessageCount = messages.length;
@@ -1441,7 +1459,7 @@ class _ChatConversationScreenState
                     child:
                         CircularProgressIndicator(color: c.primary))
                 : _listItems.isEmpty
-                    ? (_isOutgoingRequest
+                    ? ((_isOutgoingRequest || (_activeChatId == null && !_isIncomingRequest))
                         ? _OutgoingRequestEmptyState(
                             c: c,
                             isDarkMode: isDarkMode,
@@ -1501,8 +1519,9 @@ class _ChatConversationScreenState
                         },
                       ),
 
-            // Outgoing request dots progress row
-            if (_isOutgoingRequest)
+            // Outgoing request dots progress row — mirrors RN condition exactly:
+            // isOutgoingRequest || (!conversationId && !isIncomingRequest)
+            if (_isOutgoingRequest || (_activeChatId == null && !_isIncomingRequest))
               Positioned(
                 left: 0,
                 right: 0,
@@ -1510,7 +1529,7 @@ class _ChatConversationScreenState
                 child: _OutgoingDotsRow(
                   c: c,
                   isDarkMode: isDarkMode,
-                  sentCount: _sentMessageCount,
+                  sentCount: liveSentCount,
                 ),
               ),
 
@@ -1574,7 +1593,7 @@ class _ChatConversationScreenState
           privacySetting: _privacySetting,
           isIncomingRequest: _isIncomingRequest,
           isOutgoingRequest: _isOutgoingRequest,
-          sentMessageCount: _sentMessageCount,
+          sentMessageCount: liveSentCount,
           isRecordingVoice: false,
           uploadingMedia: _uploadingMedia,
           onSend: _handleSend,
