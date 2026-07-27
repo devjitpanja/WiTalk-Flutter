@@ -68,7 +68,11 @@ class WiTalkHeader extends StatelessWidget {
                 children: [
                   _IconBtn(
                     onPressed: onSearchPressed ?? () => context.push('/search'),
-                    child: Icon(Icons.search, size: 26, color: c.text),
+                    child: Icon(
+                      const IconData(0xe30c, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                      size: 26,
+                      color: c.text,
+                    ),
                   ),
                   if (showNotifications) ...[
                     _IconBtn(
@@ -76,11 +80,10 @@ class WiTalkHeader extends StatelessWidget {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
-                          Image.asset(
-                            'assets/icons/bell.png',
-                            width: 24,
-                            height: 24,
-                            color: isDark ? c.text : null,
+                          Icon(
+                            const IconData(0xe0ce, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                            size: 26,
+                            color: c.text,
                           ),
                           if (unreadCount > 0)
                             Positioned(

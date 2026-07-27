@@ -637,7 +637,8 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
       );
 
   Widget _buildEmptyLive(ThemeColors c, bool canCreateAdda, bool isDark) {
-    return Padding(
+    return Center(
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -738,11 +739,13 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
           ),
         ],
       ),
+    ),
     );
   }
 
   Widget _buildEmptyUpcoming(ThemeColors c, bool isDark) {
-    return Padding(
+    return Center(
+      child: Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -803,6 +806,7 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
           ),
         ],
       ),
+    ),
     );
   }
 }
