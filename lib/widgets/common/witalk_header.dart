@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/theme_colors.dart';
+import 'create_action_bottom_sheet.dart';
 
 /// Shared header used by Home, Explore, and Adda screens.
 class WiTalkHeader extends StatelessWidget {
@@ -55,7 +56,7 @@ class WiTalkHeader extends StatelessWidget {
             children: [
               leadingAction ??
                   _IconBtn(
-                    onPressed: onAddPressed ?? () => context.push('/create-post'),
+                    onPressed: onAddPressed ?? () => showCreateActionSheet(context),
                     child: Image.asset(
                       'assets/icons/add.png',
                       width: 24,
