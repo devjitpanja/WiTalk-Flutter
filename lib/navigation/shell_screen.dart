@@ -75,8 +75,8 @@ class ShellScreen extends StatelessWidget {
               elevation: 0,
               items: [
                 BottomNavigationBarItem(
-                  icon: _TabIcon(asset: 'assets/icons/home_stroke.png', size: 24),
-                  activeIcon: _TabIcon(asset: 'assets/icons/home.png', size: 24, active: true),
+                  icon: Icon(IconData(0xe2c2, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
+                  activeIcon: Icon(IconData(0xe2c2, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter'), size: 26),
                   label: 'Home',
                 ),
                 BottomNavigationBarItem(
@@ -104,31 +104,6 @@ class ShellScreen extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _TabIcon extends StatelessWidget {
-  final String asset;
-  final double size;
-  final bool active;
-  const _TabIcon({required this.asset, required this.size, this.active = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final navTheme = Theme.of(context).bottomNavigationBarTheme;
-    final color = active
-        ? (navTheme.selectedItemColor ?? Colors.white)
-        : (navTheme.unselectedItemColor ?? const Color(0xFF8E8E93));
-    final effectiveColor = isDark ? color : (color == const Color(0xFF000000) || color == Colors.black ? null : color);
-    return Image.asset(
-      asset,
-      width: size,
-      height: size,
-      color: effectiveColor,
-      filterQuality: FilterQuality.medium,
-      isAntiAlias: true,
     );
   }
 }
