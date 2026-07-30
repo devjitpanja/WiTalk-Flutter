@@ -148,12 +148,23 @@ class _CreateActionSheetState extends ConsumerState<_CreateActionSheet> {
     debugPrint('[CreateSheet] photos=$photosStatus');
     if (!mounted) return;
 
-    // 5. All good — capture router BEFORE closing, then close → navigate
+    // 5. All good — capture router BEFORE closing the sheet (widget will be
+    //    disposed after pop, so we must not use context or mounted after that).
     final router = GoRouter.of(context);
     debugPrint('[CreateSheet] navigating to /camera');
     setState(() => _processingPost = false);
     Navigator.of(context, rootNavigator: true).pop();
-    router.push('/camera', extra: {'initialMode': 'Post'});
+    // router is a GoRouter singleton — safe to use after the sheet is disposed.
+    final result = await router.push<Map<String, dynamic>>(
+      '/camera',
+      extra: {'initialMode': 'Post'},
+    );
+    if (result != null && result['capturedMedia'] != null) {
+      router.push('/create-post', extra: {
+        'capturedMedia': result['capturedMedia'],
+        'fromCamera': result['fromCamera'] ?? true,
+      });
+    }
   }
 
   void _handleCreateCommunity() {

@@ -17,6 +17,7 @@ import '../../widgets/common/custom_alert_dialog.dart';
 const _kMaxPostImages = 20;
 const _kMaxRecordSecs = 60;
 const _kGalleryPageSize = 80;
+const _kTabBarHeight = 56.0; // content height of mode tab bar (excl. safe area)
 
 // ── Aspect ratio options ──────────────────────────────────────────────────────
 
@@ -45,7 +46,7 @@ extension _AspectRatioExt on _AspectRatio {
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 class CameraScreen extends StatefulWidget {
-  final String? initialMode; // 'Mini' | 'Post'
+  final String? initialMode; // 'Mini' | 'Post' | 'Thoughts'
   const CameraScreen({super.key, this.initialMode});
 
   @override
@@ -107,6 +108,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Processing ───────────────────────────────────────────────────────────────
   bool _processing = false;
+  bool _isCropping = false; // prevents lifecycle handler from reiniting camera during crop
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Lifecycle
@@ -118,7 +120,6 @@ class _CameraScreenState extends State<CameraScreen>
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _selectedMode = widget.initialMode ?? 'Post';
-    // Mini mode starts in camera view
     if (_selectedMode == 'Mini') _showGallery = false;
     _galleryScrollCtrl.addListener(_onGalleryScroll);
     _checkPermissionsAndInit();
@@ -136,6 +137,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isCropping) return; // cropper opens an Activity; ignore lifecycle noise during crop
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
       _controller?.dispose();
@@ -475,6 +477,42 @@ class _CameraScreenState extends State<CameraScreen>
   int _selectionIndexOf(AssetEntity asset) =>
       _selected.indexWhere((s) => s['assetId'] == asset.id);
 
+  void _showAlbumPickerSheet() {
+    if (_albums.isEmpty) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => ListView.builder(
+        shrinkWrap: true,
+        itemCount: _albums.length,
+        itemBuilder: (ctx, i) {
+          final album = _albums[i];
+          final isSel = album.id == _selectedAlbum?.id;
+          return ListTile(
+            title: Text(
+              album.name,
+              style: TextStyle(
+                color: isSel ? AppColors.primaryButton : Colors.white,
+                fontFamily: 'Outfit',
+                fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+            trailing: isSel
+                ? const Icon(Icons.check, color: AppColors.primaryButton)
+                : null,
+            onTap: () {
+              Navigator.pop(ctx);
+              _switchAlbum(album);
+            },
+          );
+        },
+      ),
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────────
   // Cropping + navigation
   // ─────────────────────────────────────────────────────────────────────────────
@@ -485,32 +523,37 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     setState(() { _processing = true; _showAspectSheet = false; });
+    _isCropping = true;
     final cropped = <Map<String, dynamic>>[];
-    for (final item in _selected) {
-      if (item['type'] != 'image') { cropped.add(item); continue; }
-      try {
-        final result = await ImageCropper().cropImage(
-          sourcePath: item['uri'] as String,
-          aspectRatio: _aspectRatio.cropRatio,
-          uiSettings: [
-            AndroidUiSettings(
-              toolbarTitle: 'Crop',
-              toolbarColor: AppColors.cardBackground,
-              toolbarWidgetColor: Colors.white,
-              lockAspectRatio: _aspectRatio != _AspectRatio.free,
-              hideBottomControls: true,
-            ),
-            IOSUiSettings(
-              title: 'Crop',
-              aspectRatioLockEnabled: _aspectRatio != _AspectRatio.free,
-              resetAspectRatioEnabled: false,
-            ),
-          ],
-        );
-        cropped.add(result != null ? {...item, 'uri': result.path} : item);
-      } catch (_) {
-        cropped.add(item);
+    try {
+      for (final item in _selected) {
+        if (item['type'] != 'image') { cropped.add(item); continue; }
+        try {
+          final result = await ImageCropper().cropImage(
+            sourcePath: item['uri'] as String,
+            aspectRatio: _aspectRatio.cropRatio,
+            uiSettings: [
+              AndroidUiSettings(
+                toolbarTitle: 'Crop',
+                toolbarColor: AppColors.cardBackground,
+                toolbarWidgetColor: Colors.white,
+                lockAspectRatio: _aspectRatio != _AspectRatio.free,
+                hideBottomControls: true,
+              ),
+              IOSUiSettings(
+                title: 'Crop',
+                aspectRatioLockEnabled: _aspectRatio != _AspectRatio.free,
+                resetAspectRatioEnabled: false,
+              ),
+            ],
+          );
+          cropped.add(result != null ? {...item, 'uri': result.path} : item);
+        } catch (_) {
+          cropped.add(item);
+        }
       }
+    } finally {
+      _isCropping = false;
     }
     if (mounted) {
       setState(() => _processing = false);
@@ -555,12 +598,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Camera preview — full-screen fill via OverflowBox + FittedBox
-  //
-  // CameraPreview has an internal AspectRatio using the camera buffer's
-  // landscape ratio (e.g. 16:9 = 1.78).  On a portrait phone this makes the
-  // preview only ~200 px tall.  We counteract it by placing CameraPreview in a
-  // SizedBox whose dimensions match the *portrait-normalised* preview size, then
-  // FittedBox.cover zooms it to fill the screen and ClipRect clips the overflow.
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildCameraPreview() {
@@ -570,7 +607,6 @@ class _CameraScreenState extends State<CameraScreen>
     final previewSize = _controller!.value.previewSize;
     if (previewSize == null) return CameraPreview(_controller!);
 
-    // Normalise to portrait: short side = width, long side = height
     final pw = previewSize.width < previewSize.height
         ? previewSize.width.toDouble()
         : previewSize.height.toDouble();
@@ -609,7 +645,10 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   Widget build(BuildContext context) {
-    final isPostGallery = _selectedMode == 'Post' && _showGallery;
+    final isGalleryMode = _selectedMode == 'Post' && _showGallery;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+    // Bottom of shutter/bottom-controls row sits just above the tab bar
+    final controlsBottom = safeBottom + _kTabBarHeight + 16;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -620,23 +659,39 @@ class _CameraScreenState extends State<CameraScreen>
           Positioned.fill(child: _buildCameraPreview()),
 
           // ── Post-mode: gallery replaces camera view ───────────────────────────
-          if (isPostGallery) _buildGalleryView(),
+          if (isGalleryMode) _buildGalleryView(),
 
-          // ── Top bar (always on top) ───────────────────────────────────────────
-          _buildTopBar(),
+          // ── Top bar — Positioned to avoid Stack's cross-axis centering bug ────
+          Positioned(
+            top: 0, left: 0, right: 0,
+            child: isGalleryMode ? _buildGalleryTopBar() : _buildCameraTopBar(),
+          ),
 
           // ── Recording timer + progress bar (Mini) ─────────────────────────────
           if (_isRecording) _buildRecordingIndicator(),
 
-          // ── Mode tabs (Mini/Post) ─────────────────────────────────────────────
-          if (!_isRecording && !isPostGallery) _buildModeTabs(),
+          // ── Mode tabs at very bottom (hidden during recording) ────────────────
+          if (!_isRecording)
+            Positioned(
+              bottom: 0, left: 0, right: 0,
+              child: _buildModeTabs(),
+            ),
 
-          // ── Bottom controls ───────────────────────────────────────────────────
-          if (!isPostGallery) _buildBottomControls(),
+          // ── Bottom shutter controls (camera view only) ────────────────────────
+          if (!isGalleryMode)
+            Positioned(
+              bottom: controlsBottom,
+              left: 24, right: 24,
+              child: _buildShutterRow(),
+            ),
 
           // ── Selected thumbnails strip (camera view, Post mode) ────────────────
-          if (!isPostGallery && _selectedMode == 'Post' && _selected.isNotEmpty)
-            _buildSelectedStrip(),
+          if (!isGalleryMode && _selectedMode == 'Post' && _selected.isNotEmpty)
+            Positioned(
+              bottom: controlsBottom + 88,
+              left: 0, right: 0,
+              child: _buildSelectedStrip(),
+            ),
 
           // ── Aspect ratio sheet ────────────────────────────────────────────────
           if (_showAspectSheet) _buildAspectRatioSheet(),
@@ -665,14 +720,16 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Top bar
+  // Top bars
   // ─────────────────────────────────────────────────────────────────────────────
 
-  Widget _buildTopBar() {
+  // Camera-view top bar: X  [dual] [gallery]  flash  flip
+  Widget _buildCameraTopBar() {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _TopBtn(icon: Icons.close, onTap: () => context.pop()),
             const Spacer(),
@@ -687,15 +744,68 @@ class _CameraScreenState extends State<CameraScreen>
                 }),
               ),
               _TopBtn(
-                icon: _showGallery ? Icons.camera_alt_rounded : Icons.photo_library_rounded,
+                icon: Icons.photo_library_rounded,
                 onTap: () {
-                  setState(() => _showGallery = !_showGallery);
-                  if (_showGallery && _galleryAssets.isEmpty) _loadGallery();
+                  setState(() => _showGallery = true);
+                  if (_galleryAssets.isEmpty) _loadGallery();
                 },
               ),
             ],
             _TopBtn(icon: _flashIcon, onTap: _toggleFlash),
             _TopBtn(icon: Icons.flip_camera_ios, onTap: _switchCamera),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Gallery-view top bar: X  |  Album name ▼ (centered)  |  Next
+  Widget _buildGalleryTopBar() {
+    return SafeArea(
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _TopBtn(icon: Icons.close, onTap: () => context.pop()),
+            Expanded(
+              child: GestureDetector(
+                onTap: _showAlbumPickerSheet,
+                child: Center(
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _selectedAlbum?.name ?? 'Recent',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const Icon(Icons.keyboard_arrow_down,
+                          color: Colors.white, size: 20),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: _selected.isNotEmpty ? _finishAndNavigate : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  'Next',
+                  style: TextStyle(
+                    color: _selected.isNotEmpty ? Colors.white : Colors.white38,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -725,7 +835,8 @@ class _CameraScreenState extends State<CameraScreen>
                 children: [
                   Container(
                       width: 8, height: 8,
-                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
+                      decoration: const BoxDecoration(
+                          color: Colors.white, shape: BoxShape.circle)),
                   const SizedBox(width: 8),
                   Text(_formatTime(_recordingTime),
                       style: const TextStyle(
@@ -750,122 +861,130 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Mode tabs
+  // Mode tabs  (Mini | Post | Thoughts)
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildModeTabs() {
-    return Positioned(
-      bottom: 124,
-      left: 0,
-      right: 0,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _ModeTab(
-            label: 'Mini',
-            selected: _selectedMode == 'Mini',
-            onTap: () => setState(() { _selectedMode = 'Mini'; _showGallery = false; }),
+    return Container(
+      color: Colors.black.withValues(alpha: 0.45),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: _kTabBarHeight,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _ModeTab(
+                label: 'Mini',
+                selected: _selectedMode == 'Mini',
+                onTap: () => setState(() {
+                  _selectedMode = 'Mini';
+                  _showGallery = false;
+                }),
+              ),
+              _ModeTab(
+                label: 'Post',
+                selected: _selectedMode == 'Post',
+                onTap: () {
+                  setState(() {
+                    _selectedMode = 'Post';
+                    _showGallery = true;
+                  });
+                  if (_galleryAssets.isEmpty) _loadGallery();
+                },
+              ),
+              _ModeTab(
+                label: 'Thoughts',
+                selected: _selectedMode == 'Thoughts',
+                onTap: () => context.pop({'mode': 'thoughts'}),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          _ModeTab(
-            label: 'Post',
-            selected: _selectedMode == 'Post',
-            onTap: () {
-              setState(() { _selectedMode = 'Post'; _showGallery = true; });
-              if (_galleryAssets.isEmpty) _loadGallery();
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Bottom controls (shutter row)
+  // Shutter row (camera view)
   // ─────────────────────────────────────────────────────────────────────────────
 
-  Widget _buildBottomControls() {
-    final safeBottom = MediaQuery.of(context).padding.bottom;
-    return Positioned(
-      bottom: safeBottom + 28,
-      left: 24,
-      right: 24,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          // Gallery shortcut
+  Widget _buildShutterRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        // Gallery shortcut
+        GestureDetector(
+          onTap: () {
+            if (_selectedMode == 'Post') {
+              setState(() => _showGallery = true);
+              if (_galleryAssets.isEmpty) _loadGallery();
+            }
+          },
+          child: Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white38, width: 1.5),
+            ),
+            child: const Icon(Icons.photo_library, color: Colors.white, size: 24),
+          ),
+        ),
+
+        // Shutter button
+        GestureDetector(
+          onTap: _onShutterTap,
+          child: Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                  color: _isRecording ? Colors.red : Colors.white, width: 4),
+              color: _isRecording
+                  ? Colors.red.withValues(alpha: 0.3)
+                  : Colors.white.withValues(alpha: 0.25),
+            ),
+            child: Center(
+              child: Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _isRecording ? Colors.red : Colors.white,
+                ),
+                child: _isRecording
+                    ? const Icon(Icons.stop, color: Colors.white, size: 30)
+                    : null,
+              ),
+            ),
+          ),
+        ),
+
+        // Done button or spacer
+        if (_selected.isNotEmpty)
           GestureDetector(
-            onTap: () {
-              if (_selectedMode == 'Post') {
-                setState(() => _showGallery = true);
-                if (_galleryAssets.isEmpty) _loadGallery();
-              }
-            },
+            onTap: _finishAndNavigate,
             child: Container(
               width: 52,
               height: 52,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white38, width: 1.5),
-              ),
-              child: const Icon(Icons.photo_library, color: Colors.white, size: 24),
-            ),
-          ),
-
-          // Shutter button
-          GestureDetector(
-            onTap: _onShutterTap,
-            child: Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: _isRecording ? Colors.red : Colors.white, width: 4),
-                color: _isRecording
-                    ? Colors.red.withValues(alpha: 0.3)
-                    : Colors.white.withValues(alpha: 0.25),
-              ),
+              decoration: const BoxDecoration(
+                  color: AppColors.primaryButton, shape: BoxShape.circle),
               child: Center(
-                child: Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: _isRecording ? Colors.red : Colors.white,
-                  ),
-                  child: _isRecording
-                      ? const Icon(Icons.stop, color: Colors.white, size: 30)
-                      : null,
-                ),
+                child: _selected.length > 1
+                    ? Text('${_selected.length}',
+                        style: const TextStyle(
+                            color: Colors.white, fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w700, fontSize: 18))
+                    : const Icon(Icons.check, color: Colors.white, size: 28),
               ),
             ),
-          ),
-
-          // Done button or spacer
-          if (_selected.isNotEmpty)
-            GestureDetector(
-              onTap: _finishAndNavigate,
-              child: Container(
-                width: 52,
-                height: 52,
-                decoration: const BoxDecoration(
-                    color: AppColors.primaryButton, shape: BoxShape.circle),
-                child: Center(
-                  child: _selected.length > 1
-                      ? Text('${_selected.length}',
-                          style: const TextStyle(
-                              color: Colors.white, fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w700, fontSize: 18))
-                      : const Icon(Icons.check, color: Colors.white, size: 28),
-                ),
-              ),
-            )
-          else
-            const SizedBox(width: 52, height: 52),
-        ],
-      ),
+          )
+        else
+          const SizedBox(width: 52, height: 52),
+      ],
     );
   }
 
@@ -886,42 +1005,37 @@ class _CameraScreenState extends State<CameraScreen>
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildSelectedStrip() {
-    return Positioned(
-      bottom: 124,
-      left: 0,
-      right: 0,
-      child: SizedBox(
-        height: 60,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: _selected.length,
-          separatorBuilder: (c, i) => const SizedBox(width: 6),
-          itemBuilder: (c, i) {
-            final item = _selected[i];
-            return GestureDetector(
-              onTap: () => setState(() => _selected.removeAt(i)),
-              child: Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(File(item['uri'] as String),
-                        width: 52, height: 52, fit: BoxFit.cover),
+    return SizedBox(
+      height: 60,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: _selected.length,
+        separatorBuilder: (c, i) => const SizedBox(width: 6),
+        itemBuilder: (c, i) {
+          final item = _selected[i];
+          return GestureDetector(
+            onTap: () => setState(() => _selected.removeAt(i)),
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.file(File(item['uri'] as String),
+                      width: 52, height: 52, fit: BoxFit.cover),
+                ),
+                Positioned(
+                  top: 2, right: 2,
+                  child: Container(
+                    width: 16, height: 16,
+                    decoration: const BoxDecoration(
+                        color: Colors.black54, shape: BoxShape.circle),
+                    child: const Icon(Icons.close, size: 11, color: Colors.white),
                   ),
-                  Positioned(
-                    top: 2, right: 2,
-                    child: Container(
-                      width: 16, height: 16,
-                      decoration: const BoxDecoration(
-                          color: Colors.black54, shape: BoxShape.circle),
-                      child: const Icon(Icons.close, size: 11, color: Colors.white),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -929,58 +1043,21 @@ class _CameraScreenState extends State<CameraScreen>
   // ─────────────────────────────────────────────────────────────────────────────
   // Gallery view (Post mode)
   //
-  // Covers the full screen with a dark background.
-  // Camera preview remains mounted behind it (ready to switch back instantly).
+  // First two grid cells are camera + gallery shortcut tiles.
+  // Top bar (gallery variant) is rendered above this in the Stack.
+  // Mode tabs are rendered below this in the Stack.
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildGalleryView() {
-    final topInset = MediaQuery.of(context).padding.top + 52.0; // below top bar
+    final topInset = MediaQuery.of(context).padding.top + 52.0;
     final safeBottom = MediaQuery.of(context).padding.bottom;
 
     return Positioned.fill(
       child: Container(
-        color: const Color(0xFF0D1017), // app background colour, not pure black
+        color: const Color(0xFF0D1017),
         child: Column(
           children: [
             SizedBox(height: topInset),
-
-            // ── Album picker ────────────────────────────────────────────────
-            if (_albums.isNotEmpty)
-              SizedBox(
-                height: 44,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  itemCount: _albums.length,
-                  separatorBuilder: (c, i) => const SizedBox(width: 8),
-                  itemBuilder: (c, i) {
-                    final album = _albums[i];
-                    final isSel = album.id == _selectedAlbum?.id;
-                    return GestureDetector(
-                      onTap: () => _switchAlbum(album),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: isSel
-                              ? AppColors.primaryButton
-                              : Colors.white12,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Text(album.name,
-                            style: TextStyle(
-                              color: isSel ? Colors.white : Colors.white70,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w500,
-                              fontSize: 13,
-                            )),
-                      ),
-                    );
-                  },
-                ),
-              ),
-
-            // ── Grid / spinner / error ───────────────────────────────────────
             Expanded(
               child: _galleryLoading
                   ? const Center(
@@ -988,73 +1065,53 @@ class _CameraScreenState extends State<CameraScreen>
                           color: AppColors.primaryButton, strokeWidth: 2))
                   : _galleryError != null
                       ? _buildGalleryError()
-                      : _galleryAssets.isEmpty
-                          ? const Center(
-                              child: Text('No photos found',
-                                  style: TextStyle(
-                                      color: Colors.white38,
-                                      fontFamily: 'Outfit',
-                                      fontSize: 15)))
-                          : GridView.builder(
-                              controller: _galleryScrollCtrl,
-                              padding: EdgeInsets.only(bottom: safeBottom + 80),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                mainAxisSpacing: 2,
-                                crossAxisSpacing: 2,
-                              ),
-                              itemCount: _galleryAssets.length,
-                              itemBuilder: (c, i) => _GalleryTile(
-                                asset: _galleryAssets[i],
-                                selectionIndex:
-                                    _selectionIndexOf(_galleryAssets[i]),
-                                totalSelected: _selected.length,
-                                onTap: () => _onGalleryAssetTapped(
-                                    _galleryAssets[i]),
-                              ),
-                            ),
-            ),
-
-            // ── Bottom bar: count + Next button ─────────────────────────────
-            Container(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, safeBottom + 8),
-              decoration: const BoxDecoration(
-                color: Color(0xFF0D1017),
-                border: Border(
-                    top: BorderSide(color: Colors.white12, width: 0.5)),
-              ),
-              child: Row(
-                children: [
-                  Text('${_selected.length} / $_kMaxPostImages selected',
-                      style: const TextStyle(
-                          color: Colors.white54,
-                          fontFamily: 'Outfit',
-                          fontSize: 13)),
-                  const Spacer(),
-                  if (_selected.isNotEmpty)
-                    GestureDetector(
-                      onTap: _finishAndNavigate,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primaryButton,
-                          borderRadius: BorderRadius.circular(24),
+                      : GridView.builder(
+                          controller: _galleryScrollCtrl,
+                          padding: EdgeInsets.only(
+                              bottom: safeBottom + _kTabBarHeight + 8),
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 2,
+                            crossAxisSpacing: 2,
+                          ),
+                          itemCount: 2 + _galleryAssets.length,
+                          itemBuilder: (c, i) {
+                            if (i == 0) return _buildCameraShortcutTile();
+                            if (i == 1) return _buildGalleryShortcutTile();
+                            final asset = _galleryAssets[i - 2];
+                            return _GalleryTile(
+                              asset: asset,
+                              selectionIndex: _selectionIndexOf(asset),
+                              totalSelected: _selected.length,
+                              onTap: () => _onGalleryAssetTapped(asset),
+                            );
+                          },
                         ),
-                        child: const Text('Next',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w600,
-                                fontSize: 15)),
-                      ),
-                    ),
-                ],
-              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCameraShortcutTile() {
+    return GestureDetector(
+      onTap: () => setState(() => _showGallery = false),
+      child: Container(
+        color: const Color(0xFF1C1C1E),
+        child: const Center(
+          child: Icon(Icons.camera_alt_outlined, color: Colors.white, size: 32),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGalleryShortcutTile() {
+    return Container(
+      color: const Color(0xFF1A2A4A),
+      child: const Center(
+        child: Icon(Icons.photo_library_outlined, color: Colors.white, size: 32),
       ),
     );
   }
@@ -1233,7 +1290,7 @@ class _ModeTab extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.white.withValues(alpha: 0.15),
+            color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(20),
           ),
           child: Text(label,

@@ -1,4 +1,4 @@
-.PHONY: android16 android15 dev both web mac phone iphone clean build-apk build-aab build-ipa
+.PHONY: android16 android15 dev both web mac phone iphone clean build-apk build-aab build-ipa sideload-ipa
 
 # --- Launch Emulators (run one of these first, then run 'make dev') ---
 
@@ -44,6 +44,18 @@ build-aab:
 
 build-ipa:
 	flutter build ipa
+
+# Builds an unsigned IPA ready for Sideloadly
+sideload-ipa:
+	flutter build ipa --release --no-codesign --no-tree-shake-icons
+	rm -rf /tmp/WiTalkSideload
+	mkdir -p /tmp/WiTalkSideload/Payload
+	cp -r "build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app" /tmp/WiTalkSideload/Payload/
+	cd /tmp/WiTalkSideload && zip -r WiTalk.ipa Payload
+	mkdir -p build/ios/ipa
+	cp /tmp/WiTalkSideload/WiTalk.ipa build/ios/ipa/WiTalk-sideload.ipa
+	rm -rf /tmp/WiTalkSideload
+	@echo "✅ IPA ready at: build/ios/ipa/WiTalk-sideload.ipa"
 
 # --- Utilities ---
 
