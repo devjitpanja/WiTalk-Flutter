@@ -21,21 +21,19 @@ const _kTabBarHeight = 56.0; // content height of mode tab bar (excl. safe area)
 
 // ── Aspect ratio options ──────────────────────────────────────────────────────
 
-enum _AspectRatio { free, square, portrait, landscape }
+enum _AspectRatio { square, portrait, landscape }
 
 extension _AspectRatioExt on _AspectRatio {
   String get label {
     switch (this) {
-      case _AspectRatio.free:      return 'Original';
       case _AspectRatio.square:    return '1:1';
       case _AspectRatio.portrait:  return '4:5';
       case _AspectRatio.landscape: return '16:9';
     }
   }
 
-  CropAspectRatio? get cropRatio {
+  CropAspectRatio get cropRatio {
     switch (this) {
-      case _AspectRatio.free:      return null;
       case _AspectRatio.square:    return const CropAspectRatio(ratioX: 1,  ratioY: 1);
       case _AspectRatio.portrait:  return const CropAspectRatio(ratioX: 4,  ratioY: 5);
       case _AspectRatio.landscape: return const CropAspectRatio(ratioX: 16, ratioY: 9);
@@ -96,7 +94,7 @@ class _CameraScreenState extends State<CameraScreen>
   final List<Map<String, dynamic>> _selected = [];
 
   // ── Aspect ratio ────────────────────────────────────────────────────────────
-  _AspectRatio _aspectRatio = _AspectRatio.free;
+  _AspectRatio _aspectRatio = _AspectRatio.square;
   bool _showAspectSheet = false;
 
   // ── Alert ────────────────────────────────────────────────────────────────────
@@ -518,13 +516,14 @@ class _CameraScreenState extends State<CameraScreen>
   // ─────────────────────────────────────────────────────────────────────────────
 
   Future<void> _cropSelectedImages() async {
-    if (_selected.isEmpty || _aspectRatio == _AspectRatio.free) {
+    if (_selected.isEmpty) {
       _doNavigate(_selected);
       return;
     }
     setState(() { _processing = true; _showAspectSheet = false; });
     _isCropping = true;
     final cropped = <Map<String, dynamic>>[];
+    bool cancelled = false;
     try {
       for (final item in _selected) {
         if (item['type'] != 'image') { cropped.add(item); continue; }
@@ -537,17 +536,18 @@ class _CameraScreenState extends State<CameraScreen>
                 toolbarTitle: 'Crop',
                 toolbarColor: AppColors.cardBackground,
                 toolbarWidgetColor: Colors.white,
-                lockAspectRatio: _aspectRatio != _AspectRatio.free,
+                lockAspectRatio: true,
                 hideBottomControls: true,
               ),
               IOSUiSettings(
                 title: 'Crop',
-                aspectRatioLockEnabled: _aspectRatio != _AspectRatio.free,
+                aspectRatioLockEnabled: true,
                 resetAspectRatioEnabled: false,
               ),
             ],
           );
-          cropped.add(result != null ? {...item, 'uri': result.path} : item);
+          if (result == null) { cancelled = true; break; }
+          cropped.add({...item, 'uri': result.path});
         } catch (_) {
           cropped.add(item);
         }
@@ -557,7 +557,7 @@ class _CameraScreenState extends State<CameraScreen>
     }
     if (mounted) {
       setState(() => _processing = false);
-      _doNavigate(cropped);
+      if (!cancelled) _doNavigate(cropped);
     }
   }
 
@@ -1148,113 +1148,152 @@ class _CameraScreenState extends State<CameraScreen>
   // Aspect ratio sheet
   // ─────────────────────────────────────────────────────────────────────────────
 
+  void _onAspectRatioSelected(_AspectRatio ratio) {
+    setState(() => _aspectRatio = ratio);
+    _cropSelectedImages();
+  }
+
   Widget _buildAspectRatioSheet() {
     final safeBottom = MediaQuery.of(context).padding.bottom;
+
     return Positioned.fill(
-      child: Material(
-        color: Colors.black54,
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.fromLTRB(20, 20, 20, safeBottom + 20),
-            decoration: const BoxDecoration(
-              color: Color(0xFF1C1C1E),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      child: Stack(
+        children: [
+          // Backdrop — closes sheet without navigating
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() => _showAspectSheet = false),
+              child: Container(color: Colors.black.withValues(alpha: 0.8)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36, height: 4,
-                    decoration: BoxDecoration(
-                        color: Colors.white24,
-                        borderRadius: BorderRadius.circular(2)),
-                  ),
+          ),
+          // Sheet panel
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: double.infinity,
+                padding: EdgeInsets.fromLTRB(20, 12, 20, safeBottom + 20),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF1C1C1E),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 ),
-                const SizedBox(height: 16),
-                const Text('Crop & Aspect Ratio',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w700,
-                        fontSize: 18)),
-                const SizedBox(height: 4),
-                Text('Applies to all ${_selected.length} selected images',
-                    style: const TextStyle(
-                        color: Colors.white54,
-                        fontFamily: 'Outfit',
-                        fontSize: 13)),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: _AspectRatio.values.map((r) {
-                    final sel = _aspectRatio == r;
-                    return GestureDetector(
-                      onTap: () => setState(() => _aspectRatio = r),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: sel ? AppColors.primaryButton : Colors.white12,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(r.label,
-                            style: TextStyle(
-                              color: sel ? Colors.white : Colors.white70,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                            )),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 24),
-                Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.white24),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
+                    // Handle indicator — matches RN: #8E8E93, 36w × 5h
+                    Container(
+                      width: 36,
+                      height: 5,
+                      decoration: BoxDecoration(
+                          color: const Color(0xFF8E8E93),
+                          borderRadius: BorderRadius.circular(3)),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Choose Image Format',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 20),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Select the aspect ratio for all images in this post',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Color(0xFF8E8E93),
+                          fontFamily: 'Outfit',
+                          fontSize: 14),
+                    ),
+                    const SizedBox(height: 24),
+                    // 3 option cards — no selection highlight, matches RN
+                    Row(
+                      children: [
+                        for (int i = 0; i < _AspectRatio.values.length; i++) ...[
+                          if (i > 0) const SizedBox(width: 8),
+                          Expanded(
+                            child: _buildRatioCard(_AspectRatio.values[i]),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    // Cancel button — #2c2c2e bg, #3a3a3c border width 1
+                    SizedBox(
+                      width: double.infinity,
+                      child: GestureDetector(
+                        onTap: () => setState(() => _showAspectSheet = false),
+                        child: Container(
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: () => setState(() => _showAspectSheet = false),
-                        child: const Text('Back',
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2C2C2E),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: const Color(0xFF3A3A3C), width: 1),
+                          ),
+                          child: const Text(
+                            'Cancel',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
                                 color: Colors.white,
                                 fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primaryButton,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed: _cropSelectedImages,
-                        child: Text(
-                          _aspectRatio == _AspectRatio.free ? 'Next' : 'Crop & Next',
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontFamily: 'Outfit',
-                              fontWeight: FontWeight.w600),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 16),
+                          ),
                         ),
                       ),
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRatioCard(_AspectRatio ratio) {
+    final label = ratio == _AspectRatio.square
+        ? 'Square'
+        : ratio == _AspectRatio.portrait
+            ? 'Portrait'
+            : 'Landscape';
+    return GestureDetector(
+      onTap: () => _onAspectRatioSelected(ratio),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF2C2C2E),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFF3A3A3C), width: 2),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _AspectRatioPreviewShape(ratio: ratio),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w600,
+                fontSize: 14),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '${ratio.label} Ratio',
+              style: const TextStyle(
+                  color: Color(0xFF8E8E93),
+                  fontFamily: 'Outfit',
+                  fontSize: 11),
+            ),
+          ],
         ),
       ),
     );
@@ -1262,6 +1301,40 @@ class _CameraScreenState extends State<CameraScreen>
 }
 
 // ── Supporting widgets ────────────────────────────────────────────────────────
+
+class _AspectRatioPreviewShape extends StatelessWidget {
+  final _AspectRatio ratio;
+  const _AspectRatioPreviewShape({required this.ratio});
+
+  @override
+  Widget build(BuildContext context) {
+    const Color blue = Color(0xFF4A90E2);
+    double w, h;
+    switch (ratio) {
+      case _AspectRatio.square:
+        w = 40; h = 40; break;
+      case _AspectRatio.portrait:
+        w = 35; h = 44; break;
+      case _AspectRatio.landscape:
+        w = 45; h = 25; break;
+    }
+    // Wrap in a fixed 60×60 container to keep card heights uniform
+    return SizedBox(
+      width: 60,
+      height: 60,
+      child: Center(
+        child: Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: blue,
+            borderRadius: BorderRadius.circular(6),
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _TopBtn extends StatelessWidget {
   final IconData icon;
