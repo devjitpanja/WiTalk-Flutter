@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
@@ -116,16 +117,51 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen>
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (picked == null) return;
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(toolbarTitle: 'Crop Photo', toolbarColor: AppColors.background, toolbarWidgetColor: Colors.white, initAspectRatio: CropAspectRatioPreset.square, lockAspectRatio: true),
-        IOSUiSettings(title: 'Crop Photo', aspectRatioLockEnabled: true),
-      ],
+    if (picked == null || !mounted) return;
+    await _editAndSetImage(picked.path);
+  }
+
+  Future<void> _editAndSetImage(String sourcePath) async {
+    Uint8List? resultBytes;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProImageEditor.file(
+          File(sourcePath),
+          callbacks: ProImageEditorCallbacks(
+            onImageEditingComplete: (bytes) async {
+              resultBytes = bytes;
+              Navigator.pop(context);
+            },
+          ),
+          configs: ProImageEditorConfigs(
+            designMode: ImageEditorDesignMode.material,
+            imageGeneration: ImageGenerationConfigs(
+              outputFormat: OutputFormat.jpg,
+              jpegQuality: 90,
+              maxOutputSize: const Size(1080, 1080),
+            ),
+            i18n: const I18n(done: 'Done', cancel: 'Cancel'),
+            cropRotateEditor: const CropRotateEditorConfigs(
+              initAspectRatio: 1.0,
+            ),
+            paintEditor: const PaintEditorConfigs(),
+            textEditor: const TextEditorConfigs(),
+            filterEditor: const FilterEditorConfigs(),
+            tuneEditor: const TuneEditorConfigs(),
+            blurEditor: const BlurEditorConfigs(),
+            emojiEditor: const EmojiEditorConfigs(),
+            stickerEditor: const StickerEditorConfigs(),
+          ),
+        ),
+      ),
     );
-    if (cropped != null && mounted) setState(() => _profileImage = File(cropped.path));
+    if (resultBytes != null && mounted) {
+      final dir = await getTemporaryDirectory();
+      final outFile = File('${dir.path}/avatar_edit_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await outFile.writeAsBytes(resultBytes!);
+      setState(() => _profileImage = outFile);
+    }
   }
 
   Future<void> _submit() async {

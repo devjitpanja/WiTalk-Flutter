@@ -6,7 +6,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
 import '../../theme/app_colors.dart';
@@ -32,11 +33,11 @@ extension _AspectRatioExt on _AspectRatio {
     }
   }
 
-  CropAspectRatio get cropRatio {
+  double get initRatio {
     switch (this) {
-      case _AspectRatio.square:    return const CropAspectRatio(ratioX: 1,  ratioY: 1);
-      case _AspectRatio.portrait:  return const CropAspectRatio(ratioX: 4,  ratioY: 5);
-      case _AspectRatio.landscape: return const CropAspectRatio(ratioX: 16, ratioY: 9);
+      case _AspectRatio.square:    return 1.0;
+      case _AspectRatio.portrait:  return 4 / 5;
+      case _AspectRatio.landscape: return 16 / 9;
     }
   }
 }
@@ -105,8 +106,7 @@ class _CameraScreenState extends State<CameraScreen>
   List<DialogButtonConfig> _alertButtons = [];
 
   // ── Processing ───────────────────────────────────────────────────────────────
-  bool _processing = false;
-  bool _isCropping = false; // prevents lifecycle handler from reiniting camera during crop
+  bool _isEditing = false; // prevents lifecycle handler from reiniting camera during editor
 
   // ─────────────────────────────────────────────────────────────────────────────
   // Lifecycle
@@ -135,7 +135,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_isCropping) return; // cropper opens an Activity; ignore lifecycle noise during crop
+    if (_isEditing) return;
     if (_controller == null || !_controller!.value.isInitialized) return;
     if (state == AppLifecycleState.inactive) {
       _controller?.dispose();
@@ -515,56 +515,78 @@ class _CameraScreenState extends State<CameraScreen>
   // Cropping + navigation
   // ─────────────────────────────────────────────────────────────────────────────
 
-  Future<void> _cropSelectedImages() async {
+  Future<void> _editSelectedImages() async {
     if (_selected.isEmpty) {
       _doNavigate(_selected);
       return;
     }
-    setState(() { _processing = true; _showAspectSheet = false; });
-    _isCropping = true;
-    final cropped = <Map<String, dynamic>>[];
-    bool cancelled = false;
-    try {
-      for (final item in _selected) {
-        if (item['type'] != 'image') { cropped.add(item); continue; }
-        try {
-          final result = await ImageCropper().cropImage(
-            sourcePath: item['uri'] as String,
-            aspectRatio: _aspectRatio.cropRatio,
-            uiSettings: [
-              AndroidUiSettings(
-                toolbarTitle: 'Crop',
-                toolbarColor: AppColors.cardBackground,
-                toolbarWidgetColor: Colors.white,
-                lockAspectRatio: true,
-                hideBottomControls: true,
+    setState(() { _showAspectSheet = false; });
+    _isEditing = true;
+
+    final edited = List<Map<String, dynamic>>.from(_selected);
+    final dir = await getTemporaryDirectory();
+
+    for (int i = 0; i < edited.length; i++) {
+      final item = edited[i];
+      if (item['type'] != 'image') continue;
+
+      final sourcePath = item['uri'] as String;
+      Uint8List? resultBytes;
+
+      if (!mounted) break;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProImageEditor.file(
+            File(sourcePath),
+            callbacks: ProImageEditorCallbacks(
+              onImageEditingComplete: (bytes) async {
+                resultBytes = bytes;
+                Navigator.pop(context);
+              },
+            ),
+            configs: ProImageEditorConfigs(
+              designMode: ImageEditorDesignMode.material,
+              imageGeneration: ImageGenerationConfigs(
+                outputFormat: OutputFormat.jpg,
+                jpegQuality: 90,
+                maxOutputSize: const Size(2000, 2000),
               ),
-              IOSUiSettings(
-                title: 'Crop',
-                aspectRatioLockEnabled: true,
-                resetAspectRatioEnabled: false,
+              i18n: const I18n(
+                done: 'Done',
+                cancel: 'Cancel',
               ),
-            ],
-          );
-          if (result == null) { cancelled = true; break; }
-          cropped.add({...item, 'uri': result.path});
-        } catch (_) {
-          cropped.add(item);
-        }
+              cropRotateEditor: CropRotateEditorConfigs(
+                initAspectRatio: _aspectRatio.initRatio,
+              ),
+              paintEditor: const PaintEditorConfigs(),
+              textEditor: const TextEditorConfigs(),
+              filterEditor: const FilterEditorConfigs(),
+              tuneEditor: const TuneEditorConfigs(),
+              blurEditor: const BlurEditorConfigs(),
+              emojiEditor: const EmojiEditorConfigs(),
+              stickerEditor: const StickerEditorConfigs(),
+            ),
+          ),
+        ),
+      );
+
+      if (resultBytes != null) {
+        final outFile = File('${dir.path}/edited_${i}_${item['assetId'] ?? 'cam'}.jpg');
+        await outFile.writeAsBytes(resultBytes!);
+        edited[i] = {...item, 'uri': outFile.path};
       }
-    } finally {
-      _isCropping = false;
+      // If resultBytes is null the user dismissed without saving — keep original
     }
-    if (mounted) {
-      setState(() => _processing = false);
-      if (!cancelled) _doNavigate(cropped);
-    }
+
+    _isEditing = false;
+    if (mounted) _doNavigate(edited);
   }
 
   void _finishAndNavigate() {
     if (_selected.isEmpty) { context.pop(); return; }
     if (_selectedMode == 'Post' && _selected.every((s) => s['type'] == 'image')) {
-      setState(() => _showAspectSheet = true);
+      setState(() => _showAspectSheet = true); // user picks aspect ratio, then _editSelectedImages is called
     } else {
       _doNavigate(_selected);
     }
@@ -696,15 +718,6 @@ class _CameraScreenState extends State<CameraScreen>
           // ── Aspect ratio sheet ────────────────────────────────────────────────
           if (_showAspectSheet) _buildAspectRatioSheet(),
 
-          // ── Processing overlay ────────────────────────────────────────────────
-          if (_processing)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black54,
-                child: const Center(
-                    child: CircularProgressIndicator(color: AppColors.primaryButton)),
-              ),
-            ),
 
           // ── Alert ─────────────────────────────────────────────────────────────
           CustomAlertDialog(
@@ -1150,7 +1163,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _onAspectRatioSelected(_AspectRatio ratio) {
     setState(() => _aspectRatio = ratio);
-    _cropSelectedImages();
+    _editSelectedImages();
   }
 
   Widget _buildAspectRatioSheet() {

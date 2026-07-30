@@ -5,7 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
@@ -518,24 +519,48 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   }
 
   Future<void> _cropAndSetImage(String path) async {
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Edit Photo',
-          toolbarColor: context.colors.primary,
-          toolbarWidgetColor: Colors.white,
-          lockAspectRatio: true,
+    if (!mounted) return;
+    Uint8List? resultBytes;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProImageEditor.file(
+          File(path),
+          callbacks: ProImageEditorCallbacks(
+            onImageEditingComplete: (bytes) async {
+              resultBytes = bytes;
+              Navigator.pop(context);
+            },
+          ),
+          configs: ProImageEditorConfigs(
+            designMode: ImageEditorDesignMode.material,
+            imageGeneration: ImageGenerationConfigs(
+              outputFormat: OutputFormat.jpg,
+              jpegQuality: 90,
+              maxOutputSize: const Size(1080, 1080),
+            ),
+            i18n: const I18n(done: 'Done', cancel: 'Cancel'),
+            cropRotateEditor: const CropRotateEditorConfigs(
+              initAspectRatio: 1.0,
+            ),
+            paintEditor: const PaintEditorConfigs(),
+            textEditor: const TextEditorConfigs(),
+            filterEditor: const FilterEditorConfigs(),
+            tuneEditor: const TuneEditorConfigs(),
+            blurEditor: const BlurEditorConfigs(),
+            emojiEditor: const EmojiEditorConfigs(),
+            stickerEditor: const StickerEditorConfigs(),
+          ),
         ),
-        IOSUiSettings(title: 'Edit Photo', aspectRatioLockEnabled: true, resetAspectRatioEnabled: false),
-      ],
+      ),
     );
-    if (cropped != null && mounted) {
-      final file = File(cropped.path);
+    if (resultBytes != null && mounted) {
+      final dir = await getTemporaryDirectory();
+      final outFile = File('${dir.path}/avatar_edit_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      await outFile.writeAsBytes(resultBytes!);
       setState(() {
-        _selectedImage = file;
-        _profilePic = cropped.path; // local preview
+        _selectedImage = outFile;
+        _profilePic = outFile.path;
       });
       _checkHasChanges();
     }
