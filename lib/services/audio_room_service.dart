@@ -499,6 +499,163 @@ class AudioRoomService {
       return {'success': false};
     }
   }
+
+  // ── Create / My Room ────────────────────────────────────────────────────────
+
+  /// Create a new live audio room.
+  Future<Map<String, dynamic>> createRoom(Map<String, dynamic> roomData) async {
+    try {
+      final res = await dioClient.post(baseUrl, data: roomData);
+      return res.data as Map<String, dynamic>? ?? {'success': false};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] createRoom error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get the current user's own live room.
+  Future<Map<String, dynamic>> getMyRoom() async {
+    try {
+      final res = await dioClient.get('$baseUrl/my-room');
+      return res.data as Map<String, dynamic>? ?? {'success': true, 'data': null};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] getMyRoom error: $e');
+      return {'success': true, 'data': null};
+    }
+  }
+
+  /// Get the current user's scheduled rooms.
+  Future<Map<String, dynamic>> getMySchedules() async {
+    try {
+      final res = await dioClient.get('$baseUrl/my-schedules');
+      return res.data as Map<String, dynamic>? ?? {'success': true, 'data': []};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] getMySchedules error: $e');
+      return {'success': true, 'data': []};
+    }
+  }
+
+  /// Check if a username/channel name is available.
+  Future<Map<String, dynamic>> checkUsernameAvailability(String username) async {
+    try {
+      final res = await dioClient.get('$baseUrl/check-username/$username');
+      return res.data as Map<String, dynamic>? ?? {'available': false};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] checkUsernameAvailability error: $e');
+      return {'available': false};
+    }
+  }
+
+  /// Schedule a new adda or update an existing scheduled adda.
+  Future<Map<String, dynamic>> scheduleRoom(Map<String, dynamic> roomData) async {
+    try {
+      final res = await dioClient.post('$baseUrl/schedule', data: roomData);
+      return res.data as Map<String, dynamic>? ?? {'success': false};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] scheduleRoom error: $e');
+      rethrow;
+    }
+  }
+
+  /// Start an existing scheduled room now.
+  Future<Map<String, dynamic>> startScheduledRoomWithIp(String roomId, {String? frontendIp}) async {
+    try {
+      final res = await dioClient.post(
+        '$baseUrl/$roomId/start',
+        data: {if (frontendIp != null) 'frontendIp': frontendIp},
+      );
+      return res.data as Map<String, dynamic>? ?? {'success': false};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] startScheduledRoomWithIp error: $e');
+      rethrow;
+    }
+  }
+
+  /// Delete a scheduled room.
+  Future<Map<String, dynamic>> deleteScheduledRoomById(String roomId) async {
+    try {
+      final res = await dioClient.delete('$baseUrl/$roomId/schedule');
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] deleteScheduledRoomById error: $e');
+      return {'success': false};
+    }
+  }
+
+  /// Update a live room's metadata.
+  Future<Map<String, dynamic>> updateRoomData(String roomId, Map<String, dynamic> data) async {
+    try {
+      final res = await dioClient.put('$baseUrl/$roomId', data: data);
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] updateRoomData error: $e');
+      rethrow;
+    }
+  }
+
+  /// Force-end a live room.
+  Future<Map<String, dynamic>> forceEndRoom(String roomId) async {
+    try {
+      final res = await dioClient.post('$baseUrl/$roomId/end');
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] forceEndRoom error: $e');
+      rethrow;
+    }
+  }
+
+  // ── Reviews ─────────────────────────────────────────────────────────────────
+
+  /// Get paginated reviews for a room.
+  Future<Map<String, dynamic>> getRoomReviews(String roomId, int page, int limit) async {
+    try {
+      final res = await dioClient.get(
+        '$baseUrl/$roomId/reviews',
+        queryParameters: {'page': page, 'limit': limit},
+      );
+      return res.data as Map<String, dynamic>? ?? {'data': [], 'pagination': {'hasMore': false}};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] getRoomReviews error: $e');
+      return {'data': [], 'pagination': {'hasMore': false}};
+    }
+  }
+
+  /// Get rating aggregate (average, distribution, top tags) for a room.
+  Future<Map<String, dynamic>> getRoomRatingAggregate(String roomId) async {
+    try {
+      final res = await dioClient.get('$baseUrl/$roomId/rating/aggregate');
+      return res.data as Map<String, dynamic>? ?? {'data': null};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] getRoomRatingAggregate error: $e');
+      return {'data': null};
+    }
+  }
+
+  /// Delete the current user's own review.
+  Future<Map<String, dynamic>> deleteRoomReview(String roomId, String reviewId) async {
+    try {
+      final res = await dioClient.delete('$baseUrl/$roomId/reviews/$reviewId');
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] deleteRoomReview error: $e');
+      rethrow;
+    }
+  }
+
+  /// Report a review.
+  Future<Map<String, dynamic>> reportReview(
+      String roomId, String reviewId, String reason) async {
+    try {
+      final res = await dioClient.post(
+        '$baseUrl/$roomId/reviews/$reviewId/report',
+        data: {'reason': reason},
+      );
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] reportReview error: $e');
+      rethrow;
+    }
+  }
 }
 
 final audioRoomService = AudioRoomService();

@@ -92,6 +92,7 @@ import '../screens/settings/storage_data_screen.dart';
 import '../screens/settings/bugs_suggestions_screen.dart';
 import '../screens/media/camera_screen.dart';
 import '../screens/media/fullscreen_video_screen.dart';
+import '../screens/media/media_edit_screen.dart';
 import '../screens/media/mini_screen.dart';
 import '../screens/home/report_screen.dart';
 import '../screens/profile/id_verification_screen.dart';
@@ -391,6 +392,17 @@ final routerProvider = Provider<GoRouter>((ref) {
           final extra = state.extra as Map<String, dynamic>? ?? {};
           final mode = extra['initialMode'] as String? ?? state.uri.queryParameters['mode'];
           return CameraScreen(initialMode: mode);
+        },
+      ),
+      GoRoute(
+        path: '/media-edit',
+        builder: (_, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          final media = (extra['media'] as List<dynamic>?)
+                  ?.whereType<Map<String, dynamic>>()
+                  .toList() ??
+              const <Map<String, dynamic>>[];
+          return MediaEditScreen(media: media);
         },
       ),
       GoRoute(path: '/fullscreen-video', builder: (_, s) => FullscreenVideoScreen(url: s.uri.queryParameters['url'] ?? '')),
