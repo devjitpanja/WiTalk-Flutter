@@ -453,6 +453,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
 
   void _showSupportSheet(_T t) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: t.card,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),

@@ -441,6 +441,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
 
   void _showProfilePreview(BuildContext context, Map<String, dynamic> user) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: context.colors.bottomSheetBg,
       shape: const RoundedRectangleBorder(
@@ -489,6 +490,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
   void _showFilterSheet() {
     final filter = ref.read(nearbyFilterProvider);
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: context.colors.bottomSheetBg,
       shape: const RoundedRectangleBorder(

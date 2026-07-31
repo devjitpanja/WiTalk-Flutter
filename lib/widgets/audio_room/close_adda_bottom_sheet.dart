@@ -282,6 +282,7 @@ Future<void> showCloseAddaBottomSheet({
   bool isLoading = false,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

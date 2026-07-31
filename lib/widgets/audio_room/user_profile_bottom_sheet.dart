@@ -1255,6 +1255,7 @@ Future<void> showUserProfileBottomSheet({
   bool isParticipantInSeat = false,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

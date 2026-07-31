@@ -155,6 +155,7 @@ class _ChannelSubscribersScreenState extends State<ChannelSubscribersScreen> {
     final String subName = subscriber['name']?.toString() ?? 'User';
 
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(

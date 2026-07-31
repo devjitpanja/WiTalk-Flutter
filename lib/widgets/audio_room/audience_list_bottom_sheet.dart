@@ -14,6 +14,7 @@ class AudienceListBottomSheet extends StatelessWidget {
   static void show(BuildContext context, {required List<Map<String, dynamic>> audience, Function(Map<String, dynamic> user)? onUserTap}) {
     final c = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

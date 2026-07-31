@@ -1161,6 +1161,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     final c = context.colors;
     const emojis = ['👍','❤️','😂','😮','😢','🔥','🎉','👏'];
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -1523,6 +1524,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   void _attachSheet(ThemeColors c) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

@@ -502,6 +502,7 @@ Future<void> showMoreOptionsBottomSheet({
   VoidCallback? onGoogleAI,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

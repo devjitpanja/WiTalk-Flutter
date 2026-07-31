@@ -154,6 +154,7 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
   void _showReportBug(_T t) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: t.surface,
@@ -177,6 +178,7 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
   void _showSuggestIdea(_T t) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: t.surface,

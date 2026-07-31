@@ -247,6 +247,7 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
   void _showFollowOptionsSheet(String name) {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(
@@ -404,6 +405,7 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
   void _showMenuSheet(Map<String, dynamic> profile) {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),

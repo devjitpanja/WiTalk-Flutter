@@ -123,6 +123,7 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
   void _showImagePickerModal() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(

@@ -250,6 +250,7 @@ Future<void> showGoogleAIBottomSheet({
   String? initialQuery,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

@@ -230,6 +230,7 @@ Future<void> showChatGPTBottomSheet({
   String? roomContext,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

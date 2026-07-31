@@ -113,6 +113,7 @@ class _GroupListScreenState extends ConsumerState<GroupListScreen> {
 
   void _showGroupMenu(BuildContext context, ThemeColors c) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(

@@ -887,6 +887,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   void _showMoreMenuSheet(ThemeColors c) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(

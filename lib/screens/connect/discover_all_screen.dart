@@ -38,6 +38,7 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
 
   void _showPreview(BuildContext context, Map<String, dynamic> user) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: AppColors.bottomSheetBg,
       shape: const RoundedRectangleBorder(

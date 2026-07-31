@@ -26,6 +26,7 @@ class NotMemberBottomSheet extends StatelessWidget {
   }) {
     final c = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(

@@ -236,6 +236,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Future<void> _showPhotoOptions() async {
     final c = context.colors;
     final choice = await showModalBottomSheet<String>(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
@@ -303,6 +304,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final descCtrl = TextEditingController(text: _group?['description'] as String? ?? '');
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       isScrollControlled: true,
@@ -390,6 +392,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     ];
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
@@ -480,6 +483,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final rulesCtrl = TextEditingController(text: _groupRules ?? '');
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       isScrollControlled: true,
@@ -586,6 +590,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
   Future<void> _showDisappearSheet() async {
     final c = context.colors;
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
@@ -685,6 +690,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     final isMuted = member['is_muted'] == 1 || member['is_muted'] == true;
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(
@@ -819,6 +825,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
           };
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       isScrollControlled: true,
@@ -1008,6 +1015,7 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
     String selected = '1_day';
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(

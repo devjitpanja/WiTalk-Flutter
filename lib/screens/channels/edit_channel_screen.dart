@@ -169,6 +169,7 @@ class _EditChannelScreenState extends State<EditChannelScreen> {
   void _showImagePickerModal() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.surface,
       shape: const RoundedRectangleBorder(

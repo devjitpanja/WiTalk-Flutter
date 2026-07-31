@@ -403,6 +403,7 @@ Future<T?> _showOptionSheet<T>({
   required String current,
 }) {
   return showModalBottomSheet<T>(
+    useRootNavigator: true,
     context: context,
     backgroundColor: c.surface,
     shape: const RoundedRectangleBorder(

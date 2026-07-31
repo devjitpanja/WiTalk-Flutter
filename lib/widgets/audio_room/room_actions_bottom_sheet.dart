@@ -14,6 +14,7 @@ class RoomActionsBottomSheet extends StatelessWidget {
   static void show(BuildContext context, {required VoidCallback onMuteToggle, required VoidCallback onLeaveStage}) {
     final c = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

@@ -206,6 +206,7 @@ Future<void> showSeatRequestsBottomSheet({
   Function(dynamic)? onReject,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,

@@ -164,6 +164,7 @@ class _TutorialScreenState extends State<TutorialScreen> {
     }
 
     await showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       useSafeArea: true,

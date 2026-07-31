@@ -393,6 +393,7 @@ Future<void> showRatingBottomSheet({
   String variant = 'rate',
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

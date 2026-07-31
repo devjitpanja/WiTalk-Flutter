@@ -175,6 +175,7 @@ Future<void> showTimeLimitBottomSheet({
   required VoidCallback onJoinCommunity,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     backgroundColor: Colors.transparent,
     isDismissible: false,

@@ -735,6 +735,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void _showImagePickerSheet() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -753,6 +754,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void _showOccupationSheet() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: colors.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -773,6 +775,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void _showCountrySheet() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: colors.bottomSheetBg,
@@ -793,6 +796,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void _showInterestsSheet() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: colors.bottomSheetBg,
@@ -814,6 +818,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   void _showPurposeSheet() {
     final colors = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: colors.bottomSheetBg,

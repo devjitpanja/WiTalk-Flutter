@@ -445,6 +445,7 @@ class _ChatConversationScreenState
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isDismissible: false,
       enableDrag: false,
@@ -712,6 +713,7 @@ class _ChatConversationScreenState
     final verificationBadge = rawBadge0 is Map ? Map<String, dynamic>.from(rawBadge0) : null;
 
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       isScrollControlled: true,
@@ -1182,6 +1184,7 @@ class _ChatConversationScreenState
         DateTime.now().difference(message.createdAt).inHours < 24;
 
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -1668,6 +1671,7 @@ class _ChatConversationScreenState
       ('always', 'Always', 'Mute notifications until you unmute', Icons.notifications_off_outlined),
     ];
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(

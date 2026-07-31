@@ -2099,6 +2099,7 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
 
   void _showGroupInviteSheet(BuildContext context, String inviteCode) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -2734,6 +2735,7 @@ class _ReactionsRow extends StatelessWidget {
         return GestureDetector(
           onTap: () {
             showModalBottomSheet(
+              useRootNavigator: true,
               context: context,
               backgroundColor: Colors.transparent,
               isScrollControlled: true,

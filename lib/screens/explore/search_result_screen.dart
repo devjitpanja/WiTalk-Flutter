@@ -382,6 +382,7 @@ class _SearchResultScreenState extends ConsumerState<SearchResultScreen> {
 
   void _showPostMenu(String postId, String userId, ThemeColors c) {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

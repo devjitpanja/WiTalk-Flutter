@@ -9,6 +9,7 @@ class YouTubePickerBottomSheet extends StatefulWidget {
   static void show(BuildContext context, {required Function(String videoId) onSelectVideo}) {
     final c = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: c.bottomSheetBg,

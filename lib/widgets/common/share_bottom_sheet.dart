@@ -89,10 +89,10 @@ void showShareBottomSheet(
   ShareType shareType = ShareType.post,
 }) {
   showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    useRootNavigator: true,
     builder: (_) => _ShareSheet(
       postData: postData,
       addaData: addaData,

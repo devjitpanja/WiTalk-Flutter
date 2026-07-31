@@ -81,6 +81,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
     final isDark = ref.read(themeProvider);
     final t = _T(isDark);
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: t.surface,

@@ -11,10 +11,10 @@ import '../../theme/app_colors.dart';
 
 Future<void> showCreateActionSheet(BuildContext context) {
   return showModalBottomSheet<void>(
+    useRootNavigator: true,
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
-    useRootNavigator: true,
     builder: (_) => const _CreateActionSheet(),
   );
 }

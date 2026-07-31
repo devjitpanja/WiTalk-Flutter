@@ -516,6 +516,7 @@ Future<void> showReportBottomSheet({
   Function(Map<String, dynamic>, String)? onBanUser,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

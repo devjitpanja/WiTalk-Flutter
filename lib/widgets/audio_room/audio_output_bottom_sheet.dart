@@ -129,6 +129,7 @@ Future<void> showAudioOutputBottomSheet({
   required Function(String) onSelect,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     backgroundColor: Colors.transparent,
     builder: (context) => AudioOutputBottomSheet(

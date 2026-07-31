@@ -128,6 +128,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   void _handleOffStage() {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _ConfirmSheet(
@@ -143,6 +144,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   void _handleLeave() {
     final isHost = ref.read(audioRoomProvider).isHost;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _ConfirmSheet(
@@ -242,6 +244,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   void _showMoreOptions() {
     final s = ref.read(audioRoomProvider);
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -270,6 +273,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   void _showSeatRequests() {
     final queue = ref.read(audioRoomProvider).handRaiseQueue;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -286,6 +290,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   void _showAudienceList() {
     final audience = ref.read(audioRoomProvider).audience;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
@@ -1300,6 +1305,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   void _showAudioOutputOptions() {
     final s = ref.read(audioRoomProvider);
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => _AudioOutputSheet(

@@ -537,6 +537,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         (_permissions?['can_kick'] != false);
 
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,

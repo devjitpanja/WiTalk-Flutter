@@ -352,6 +352,7 @@ Future<void> showAskAIBottomSheet({
   Function(String)? onAskGemini,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

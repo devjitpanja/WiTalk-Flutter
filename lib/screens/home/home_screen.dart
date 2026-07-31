@@ -53,6 +53,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final currentUserId = ref.read(authProvider).uid ?? '';
 
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),

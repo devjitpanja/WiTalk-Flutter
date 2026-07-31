@@ -315,6 +315,7 @@ Future<void> showParticipantControlBottomSheet({
   required VoidCallback onDemoteAdmin,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,

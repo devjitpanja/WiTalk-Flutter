@@ -141,6 +141,7 @@ class _TopicsListViewState extends ConsumerState<TopicsListView>
 
   void _openCreateSheet() {
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,

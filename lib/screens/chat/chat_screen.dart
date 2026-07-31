@@ -1402,6 +1402,7 @@ String _formatChatListTime(DateTime dt) {
 void _showQuickActionsSheet(BuildContext context, ChatConversation conv,
     bool isMuted, String currentUserId) {
   showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
@@ -1578,6 +1579,7 @@ class _QuickActionsSheetState extends ConsumerState<_QuickActionsSheet> {
   void _showMuteDurationPicker() {
     final c = context.colors;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(

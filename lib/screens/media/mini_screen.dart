@@ -215,6 +215,7 @@ class _MiniScreenState extends ConsumerState<MiniScreen> {
     final postId = (post['id'] ?? '').toString();
     if (postId.isEmpty) return;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,

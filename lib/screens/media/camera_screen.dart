@@ -6,8 +6,8 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import 'package:modal_bottom_sheet/modal_bottom_sheet.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:photo_manager/photo_manager.dart';
 import '../../theme/app_colors.dart';
@@ -96,7 +96,6 @@ class _CameraScreenState extends State<CameraScreen>
 
   // ── Aspect ratio ────────────────────────────────────────────────────────────
   _AspectRatio _aspectRatio = _AspectRatio.square;
-  bool _showAspectSheet = false;
 
   // ── Alert ────────────────────────────────────────────────────────────────────
   bool _alertVisible = false;
@@ -478,6 +477,7 @@ class _CameraScreenState extends State<CameraScreen>
   void _showAlbumPickerSheet() {
     if (_albums.isEmpty) return;
     showModalBottomSheet(
+      useRootNavigator: true,
       context: context,
       backgroundColor: const Color(0xFF1C1C1E),
       shape: const RoundedRectangleBorder(
@@ -515,78 +515,41 @@ class _CameraScreenState extends State<CameraScreen>
   // Cropping + navigation
   // ─────────────────────────────────────────────────────────────────────────────
 
-  Future<void> _editSelectedImages() async {
-    if (_selected.isEmpty) {
-      _doNavigate(_selected);
-      return;
-    }
-    setState(() { _showAspectSheet = false; });
-    _isEditing = true;
+  // Auto-crops every selected image to the chosen aspect ratio (centre-crop).
+  Future<void> _autoCropAndNavigate() async {
+    if (_selected.isEmpty) { _doNavigate(_selected); return; }
+    setState(() => _isEditing = true);
 
-    final edited = List<Map<String, dynamic>>.from(_selected);
-    final dir = await getTemporaryDirectory();
+    try {
+      final dir = await getTemporaryDirectory();
+      final targetRatio = _aspectRatio.initRatio;
+      final edited = List<Map<String, dynamic>>.from(_selected);
 
-    for (int i = 0; i < edited.length; i++) {
-      final item = edited[i];
-      if (item['type'] != 'image') continue;
+      for (int i = 0; i < edited.length; i++) {
+        final item = edited[i];
+        if (item['type'] != 'image') continue;
 
-      final sourcePath = item['uri'] as String;
-      Uint8List? resultBytes;
+        final bytes = await File(item['uri'] as String).readAsBytes();
+        final cropped = await _centerCropToRatio(bytes, targetRatio);
 
-      if (!mounted) break;
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => ProImageEditor.file(
-            File(sourcePath),
-            callbacks: ProImageEditorCallbacks(
-              onImageEditingComplete: (bytes) async {
-                resultBytes = bytes;
-                Navigator.pop(context);
-              },
-            ),
-            configs: ProImageEditorConfigs(
-              designMode: ImageEditorDesignMode.material,
-              imageGeneration: ImageGenerationConfigs(
-                outputFormat: OutputFormat.jpg,
-                jpegQuality: 90,
-                maxOutputSize: const Size(2000, 2000),
-              ),
-              i18n: const I18n(
-                done: 'Done',
-                cancel: 'Cancel',
-              ),
-              cropRotateEditor: CropRotateEditorConfigs(
-                initAspectRatio: _aspectRatio.initRatio,
-              ),
-              paintEditor: const PaintEditorConfigs(),
-              textEditor: const TextEditorConfigs(),
-              filterEditor: const FilterEditorConfigs(),
-              tuneEditor: const TuneEditorConfigs(),
-              blurEditor: const BlurEditorConfigs(),
-              emojiEditor: const EmojiEditorConfigs(),
-              stickerEditor: const StickerEditorConfigs(),
-            ),
-          ),
-        ),
-      );
-
-      if (resultBytes != null) {
-        final outFile = File('${dir.path}/edited_${i}_${item['assetId'] ?? 'cam'}.jpg');
-        await outFile.writeAsBytes(resultBytes!);
+        final outFile = File('${dir.path}/crop_${i}_${item['assetId'] ?? 'cam'}.jpg');
+        await outFile.writeAsBytes(cropped);
         edited[i] = {...item, 'uri': outFile.path};
       }
-      // If resultBytes is null the user dismissed without saving — keep original
-    }
 
-    _isEditing = false;
-    if (mounted) _doNavigate(edited);
+      if (mounted) _doNavigate(edited);
+    } catch (e) {
+      debugPrint('[CameraScreen] crop error: $e');
+      if (mounted) _doNavigate(List<Map<String, dynamic>>.from(_selected));
+    } finally {
+      if (mounted) setState(() => _isEditing = false);
+    }
   }
 
   void _finishAndNavigate() {
     if (_selected.isEmpty) { context.pop(); return; }
     if (_selectedMode == 'Post' && _selected.every((s) => s['type'] == 'image')) {
-      setState(() => _showAspectSheet = true); // user picks aspect ratio, then _editSelectedImages is called
+      _showAspectRatioSheet();
     } else {
       _doNavigate(_selected);
     }
@@ -715,9 +678,16 @@ class _CameraScreenState extends State<CameraScreen>
               child: _buildSelectedStrip(),
             ),
 
-          // ── Aspect ratio sheet ────────────────────────────────────────────────
-          if (_showAspectSheet) _buildAspectRatioSheet(),
-
+          // ── Cropping progress overlay ─────────────────────────────────────────
+          if (_isEditing)
+            Positioned.fill(
+              child: Container(
+                color: Colors.black54,
+                child: const Center(
+                  child: CircularProgressIndicator(color: AppColors.primaryButton),
+                ),
+              ),
+            ),
 
           // ── Alert ─────────────────────────────────────────────────────────────
           CustomAlertDialog(
@@ -1161,123 +1131,98 @@ class _CameraScreenState extends State<CameraScreen>
   // Aspect ratio sheet
   // ─────────────────────────────────────────────────────────────────────────────
 
-  void _onAspectRatioSelected(_AspectRatio ratio) {
-    setState(() => _aspectRatio = ratio);
-    _editSelectedImages();
-  }
-
-  Widget _buildAspectRatioSheet() {
-    final safeBottom = MediaQuery.of(context).padding.bottom;
-
-    return Positioned.fill(
-      child: Stack(
-        children: [
-          // Backdrop — closes sheet without navigating
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() => _showAspectSheet = false),
-              child: Container(color: Colors.black.withValues(alpha: 0.8)),
-            ),
-          ),
-          // Sheet panel
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
+  void _showAspectRatioSheet() {
+    showMaterialModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1C1C1E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final safeBottom = MediaQuery.of(ctx).padding.bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(20, 12, 20, safeBottom + 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 36,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: const Color(0xFF8E8E93),
+                    borderRadius: BorderRadius.circular(3)),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Choose Image Format',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Colors.white,
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 20),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Select the aspect ratio for all images in this post',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: Color(0xFF8E8E93),
+                    fontFamily: 'Outfit',
+                    fontSize: 14),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  for (int i = 0; i < _AspectRatio.values.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 8),
+                    Expanded(child: _buildRatioCard(ctx, _AspectRatio.values[i])),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
                 width: double.infinity,
-                padding: EdgeInsets.fromLTRB(20, 12, 20, safeBottom + 20),
-                decoration: const BoxDecoration(
-                  color: Color(0xFF1C1C1E),
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Handle indicator — matches RN: #8E8E93, 36w × 5h
-                    Container(
-                      width: 36,
-                      height: 5,
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF8E8E93),
-                          borderRadius: BorderRadius.circular(3)),
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2C2C2E),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF3A3A3C), width: 1),
                     ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'Choose Image Format',
+                    child: const Text(
+                      'Cancel',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           color: Colors.white,
                           fontFamily: 'Outfit',
                           fontWeight: FontWeight.w600,
-                          fontSize: 20),
+                          fontSize: 16),
                     ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Select the aspect ratio for all images in this post',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: Color(0xFF8E8E93),
-                          fontFamily: 'Outfit',
-                          fontSize: 14),
-                    ),
-                    const SizedBox(height: 24),
-                    // 3 option cards — no selection highlight, matches RN
-                    Row(
-                      children: [
-                        for (int i = 0; i < _AspectRatio.values.length; i++) ...[
-                          if (i > 0) const SizedBox(width: 8),
-                          Expanded(
-                            child: _buildRatioCard(_AspectRatio.values[i]),
-                          ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    // Cancel button — #2c2c2e bg, #3a3a3c border width 1
-                    SizedBox(
-                      width: double.infinity,
-                      child: GestureDetector(
-                        onTap: () => setState(() => _showAspectSheet = false),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF2C2C2E),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: const Color(0xFF3A3A3C), width: 1),
-                          ),
-                          child: const Text(
-                            'Cancel',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  Widget _buildRatioCard(_AspectRatio ratio) {
+  Widget _buildRatioCard(BuildContext ctx, _AspectRatio ratio) {
     final label = ratio == _AspectRatio.square
         ? 'Square'
         : ratio == _AspectRatio.portrait
             ? 'Portrait'
             : 'Landscape';
     return GestureDetector(
-      onTap: () => _onAspectRatioSelected(ratio),
+      onTap: () {
+        Navigator.pop(ctx);
+        setState(() => _aspectRatio = ratio);
+        _autoCropAndNavigate();
+      },
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -1293,10 +1238,10 @@ class _CameraScreenState extends State<CameraScreen>
             Text(
               label,
               style: const TextStyle(
-                color: Colors.white,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w600,
-                fontSize: 14),
+                  color: Colors.white,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14),
             ),
             const SizedBox(height: 2),
             Text(
@@ -1311,6 +1256,45 @@ class _CameraScreenState extends State<CameraScreen>
       ),
     );
   }
+}
+
+// ── Centre-crop helper (main isolate — dart:ui requires it) ──────────────────
+
+Future<Uint8List> _centerCropToRatio(Uint8List bytes, double ratio) async {
+  final codec = await ui.instantiateImageCodecFromBuffer(
+    await ui.ImmutableBuffer.fromUint8List(bytes),
+  );
+  final frame = await codec.getNextFrame();
+  final src = frame.image;
+
+  final sw = src.width.toDouble();
+  final sh = src.height.toDouble();
+  final srcRatio = sw / sh;
+
+  double cropW, cropH;
+  if (srcRatio > ratio) {
+    cropH = sh;
+    cropW = sh * ratio;
+  } else {
+    cropW = sw;
+    cropH = sw / ratio;
+  }
+
+  final left = (sw - cropW) / 2;
+  final top = (sh - cropH) / 2;
+
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder);
+  canvas.drawImageRect(
+    src,
+    Rect.fromLTWH(left, top, cropW, cropH),
+    Rect.fromLTWH(0, 0, cropW, cropH),
+    Paint(),
+  );
+  final picture = recorder.endRecording();
+  final output = await picture.toImage(cropW.round(), cropH.round());
+  final pngData = await output.toByteData(format: ui.ImageByteFormat.png);
+  return pngData!.buffer.asUint8List();
 }
 
 // ── Supporting widgets ────────────────────────────────────────────────────────

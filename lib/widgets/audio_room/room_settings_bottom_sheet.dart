@@ -875,6 +875,7 @@ Future<void> showRoomSettingsBottomSheet({
   VoidCallback? onCollapseSeats,
 }) {
   return showModalBottomSheet(
+    useRootNavigator: true,
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
