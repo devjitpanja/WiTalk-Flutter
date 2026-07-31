@@ -10,6 +10,7 @@ import UIKit
     GeneratedPluginRegistrant.register(with: self)
     VpnDetectorPlugin.register(with: registrar(forPlugin: "VpnDetectorPlugin")!)
     InstallReferrerPlugin.register(with: registrar(forPlugin: "InstallReferrerPlugin")!)
+    AudioRoomServicePlugin.register(with: registrar(forPlugin: "AudioRoomServicePlugin")!)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }

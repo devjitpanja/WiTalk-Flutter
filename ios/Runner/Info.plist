@@ -61,7 +61,12 @@
 	<key>NSCameraUsageDescription</key>
 	<string>WiTalk needs camera access to take photos and record videos for posts.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>WiTalk needs microphone access to record audio with videos.</string>
+	<string>WiTalk needs microphone access for Live Adda audio rooms and recording videos.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+		<string>voip</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>WiTalk needs access to your photo library to select media for posts.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

@@ -9,6 +9,7 @@ import '../services/socket_service.dart';
 import '../services/audio_room_service.dart';
 import '../services/seat_manager.dart';
 import '../services/participant_manager.dart';
+import '../services/audio_room_foreground_service.dart';
 import 'auth_provider.dart';
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -407,6 +408,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   // ── Subscriptions / timers ─────────────────────────────────────────────────
   final List<StreamSubscription> _liveKitSubs = [];
   final List<StreamSubscription> _managerSubs = [];
+  StreamSubscription<AudioRoomServiceEvent>? _bgServiceSub;
   Timer? _heartbeatTimer;
   Timer? _healthCheckTimer;
   Timer? _hostDepartureTimer;
@@ -786,6 +788,14 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       if (groupId != null && groupId.isNotEmpty) {
         _fetchCommunityRoles(roomId);
       }
+
+      // ── Step 9: Start background / foreground service ─────────────────────
+      _startBgService(
+        roomName: data['room_name']?.toString() ?? 'WiTalk Adda',
+        isHost: actualIsHost,
+        isInSeat: actualIsHost,
+        isMuted: !actualIsHost,
+      );
 
       return true;
     } catch (e) {
@@ -1920,6 +1930,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       await liveKitAudioManager.setMicrophoneEnabled(false);
       state = state.copyWith(
           isMuted: true, isSpeaker: true, currentSeatIndex: seatIndex);
+      _updateBgService();
     } catch (e) {
       if (kDebugMode) {
         print('[AudioRoomProvider] _onSeatAssigned failed: $e');
@@ -2113,9 +2124,50 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       sub.cancel();
     }
     _managerSubs.clear();
+    _bgServiceSub?.cancel();
+    _bgServiceSub = null;
     _removeSocketListeners();
     _participantManager.dispose();
     _seatManager.dispose();
+    await audioRoomForegroundService.stopService();
+  }
+
+  // ── Background / foreground service helpers ────────────────────────────────
+
+  void _startBgService({
+    required String roomName,
+    required bool isHost,
+    required bool isInSeat,
+    required bool isMuted,
+  }) {
+    audioRoomForegroundService.startService(
+      roomName: roomName,
+      isHost: isHost,
+      isInSeat: isInSeat,
+      isMuted: isMuted,
+    );
+    _bgServiceSub?.cancel();
+    _bgServiceSub = audioRoomForegroundService.events.listen((event) {
+      if (!mounted) return;
+      switch (event) {
+        case AudioRoomServiceEvent.micToggle:
+          toggleMic();
+          break;
+        case AudioRoomServiceEvent.leaveRoom:
+          leaveRoom();
+          break;
+      }
+    });
+  }
+
+  void _updateBgService() {
+    if (state.roomId == null) return;
+    audioRoomForegroundService.updateService(
+      roomName: state.roomName,
+      isHost: state.isHost,
+      isInSeat: state.isInSeat,
+      isMuted: state.isMuted,
+    );
   }
 
   // ── leaveRoom ──────────────────────────────────────────────────────────────
@@ -2141,7 +2193,11 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
 
     await liveKitAudioManager.leaveRoom();
 
-    state = const AudioRoomState();
+    // Set shouldNavigateBack BEFORE wiping state so the screen listener fires
+    // and calls context.pop(). Without this, leaveRoom() from the notification
+    // (while app is backgrounded) resets to empty state and the screen shows
+    // "Syncing..." when the user returns instead of popping.
+    state = const AudioRoomState(shouldNavigateBack: true);
   }
 
   void _removeSocketListeners() {
@@ -2214,6 +2270,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         state = state.copyWith(mutedByHost: false);
       }
       state = state.copyWith(isMuted: !newMicOn, isMicLoading: false);
+      _updateBgService();
 
       // Broadcast mic state to all participants via LiveKit data channel
       if (_myUid != null) {
@@ -2288,6 +2345,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       isMuted: true,
       mutedByHost: false,
     );
+    _updateBgService();
   }
 
   void toggleHandRaise() {
