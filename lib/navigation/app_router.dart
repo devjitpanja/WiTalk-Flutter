@@ -343,7 +343,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/channel-banned-users/:id', builder: (_, s) => ChannelBannedUsersScreen(channelId: s.pathParameters['id']!)),
 
       // Connect
-      GoRoute(path: '/live-audio/:id', builder: (_, s) => LiveAudioRoomScreen(roomId: s.pathParameters['id']!)),
+      GoRoute(path: '/live-audio/:id', builder: (_, s) {
+        final extra = s.extra as Map<String, dynamic>? ?? {};
+        return LiveAudioRoomScreen(
+          roomId: s.pathParameters['id']!,
+          isHost: extra['is_host'] == true,
+          restore: extra['restore'] == true,
+        );
+      }),
       GoRoute(path: '/create-audio-room', builder: (_, __) => const CreateAudioRoomScreen()),
       GoRoute(path: '/community-adda-list/:id', builder: (_, s) => CommunityAddaListScreen(groupId: s.pathParameters['id']!)),
       GoRoute(path: '/adda-reviews', builder: (_, __) => const AddaReviewsScreen()),

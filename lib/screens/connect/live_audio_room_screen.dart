@@ -22,7 +22,9 @@ const Color _kPrimaryGlow = Color(0x332563EB);
 
 class LiveAudioRoomScreen extends ConsumerStatefulWidget {
   final String roomId;
-  const LiveAudioRoomScreen({super.key, required this.roomId});
+  final bool isHost;
+  final bool restore;
+  const LiveAudioRoomScreen({super.key, required this.roomId, this.isHost = false, this.restore = false});
 
   @override
   ConsumerState<LiveAudioRoomScreen> createState() =>
@@ -49,7 +51,12 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     )..repeat(reverse: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(audioRoomProvider.notifier).joinRoom(widget.roomId);
+      final notifier = ref.read(audioRoomProvider.notifier);
+      if (widget.restore) {
+        notifier.restoreRoom();
+      } else {
+        notifier.joinRoom(widget.roomId, isHost: widget.isHost);
+      }
     });
   }
 
