@@ -18,6 +18,9 @@ import '../../widgets/audio_room/user_profile_bottom_sheet.dart';
 import '../../widgets/audio_room/report_bottom_sheet.dart';
 import '../../widgets/audio_room/more_options_bottom_sheet.dart';
 import '../../widgets/audio_room/youtube_picker_bottom_sheet.dart';
+import '../../widgets/audio_room/chat_gpt_bottom_sheet.dart';
+import '../../widgets/audio_room/google_ai_bottom_sheet.dart';
+import '../../widgets/audio_room/ask_ai_bottom_sheet.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _kBg = Color(0xFF080C17);
@@ -46,6 +49,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   final List<_FloatingReaction> _reactions = [];
   late AnimationController _pulseCtrl;
   bool _isRoomEnded = false;
+
+  // ── ChatGPT / Google AI state (mirrors RN) ──────────────────────────────────
+  bool _showChatGPT = false;
+  bool _showGoogleAI = false;
+  String? _googleAIQuery;   // pre-filled query from "Ask AI" chat context menu
+  bool _showAskAI = false;
+  Map<String, dynamic>? _askAIMessage; // selected chat message for AskAI sheet
+
+  // Admin feature flags (loaded from settings in RN; default true in Flutter)
+  bool _chatgptFeatureEnabled = true;
+  bool _googleAiFeatureEnabled = true;
 
   // ── YouTube player ──────────────────────────────────────────────────────────
   YoutubePlayerController? _ytController;
@@ -396,12 +410,12 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       screenShareFeatureEnabled: true,
       videoShareFeatureEnabled: true,
       youtubeFeatureEnabled: true,
-      chatgptFeatureEnabled: true,
-      googleAiFeatureEnabled: true,
+      chatgptFeatureEnabled: _chatgptFeatureEnabled,
+      googleAiFeatureEnabled: _googleAiFeatureEnabled,
       isYoutubeActive: isYoutubeActive,
       onYoutubeVideo: () => _handleYoutubeOptionPress(s),
-      onChatGPT: () => _showSnack('ChatGPT coming soon'),
-      onGoogleAI: () => _showSnack('Google AI coming soon'),
+      onChatGPT: _handleChatGPTPress,
+      onGoogleAI: _handleGoogleAIPress,
       onRoomSettings: isHostOrAdmin ? _showRoomSettingsSheet : null,
       handRaiseCount: s.handRaiseQueue.length,
       onViewRequests: isHostOrAdmin && s.handRaiseQueue.isNotEmpty ? _showSeatRequests : null,
@@ -727,9 +741,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       ),
       child: Scaffold(
         backgroundColor: _kBg,
-        body: SafeArea(
-          bottom: false,
-          child: Column(
+        body: Stack(
+          children: [
+            SafeArea(
+              bottom: false,
+              child: Column(
             children: [
               // ── Header ─────────────────────────────────────
               _buildHeader(roomState),
@@ -832,6 +848,66 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               ),
             ],
           ),
+        ),
+
+        // ── ChatGPT overlay (persistent, slides in/out) ──────────────
+        ChatGPTBottomSheet(
+          visible: _showChatGPT,
+          roomContext: 'Room: ${roomState.roomName}',
+          onMinimize: () => setState(() => _showChatGPT = false),
+          onClose: () => setState(() => _showChatGPT = false),
+        ),
+
+        // ── Google AI overlay (persistent, slides in/out) ────────────
+        GoogleAIBottomSheet(
+          visible: _showGoogleAI,
+          roomContext: 'Room: ${roomState.roomName}',
+          initialQuery: _googleAIQuery,
+          onMinimize: () => setState(() {
+            _showGoogleAI = false;
+            _googleAIQuery = null;
+          }),
+          onClose: () => setState(() {
+            _showGoogleAI = false;
+            _googleAIQuery = null;
+          }),
+        ),
+
+        // ── Ask AI sheet (shown via long-press on chat message) ───────
+        if (_showAskAI && _askAIMessage != null)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _showAskAI = false;
+                _askAIMessage = null;
+              }),
+              behavior: HitTestBehavior.opaque,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: GestureDetector(
+                  onTap: () {}, // absorb taps inside sheet
+                  child: AskAIBottomSheet(
+                    message: (_askAIMessage!['text'] ??
+                            _askAIMessage!['content'] ??
+                            '')
+                        .toString(),
+                    onAskGemini: (prompt) {
+                      setState(() {
+                        _showAskAI = false;
+                        _askAIMessage = null;
+                      });
+                      _handleAskGemini(prompt);
+                    },
+                    onClose: () => setState(() {
+                      _showAskAI = false;
+                      _askAIMessage = null;
+                    }),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
         ),
       ),
     );
@@ -1589,62 +1665,74 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         ?.toString();
     final isMe = msg['isSelf'] == true;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _ChatAvatar(name: sender, picUrl: senderPic),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Text(
-                      sender,
-                      style: TextStyle(
-                        color: isMe ? const Color(0xFF60A5FA) : const Color(0xFF93C5FD),
-                        fontSize: 11,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.1,
+    final canAskAI = _chatgptFeatureEnabled || _googleAiFeatureEnabled;
+
+    return GestureDetector(
+      onLongPress: canAskAI
+          ? () {
+              setState(() {
+                _askAIMessage = msg;
+                _showAskAI = true;
+              });
+            }
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _ChatAvatar(name: sender, picUrl: senderPic),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        sender,
+                        style: TextStyle(
+                          color: isMe ? const Color(0xFF60A5FA) : const Color(0xFF93C5FD),
+                          fontSize: 11,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.1,
+                        ),
+                      ),
+                      if (time.isNotEmpty) ...[
+                        const SizedBox(width: 5),
+                        Text(time, style: const TextStyle(color: Color(0x38FFFFFF), fontSize: 9, fontFamily: 'Outfit')),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: isMe ? const Color(0x182563EB) : const Color(0x0EFFFFFF),
+                      borderRadius: const BorderRadius.only(
+                        topLeft: Radius.circular(2),
+                        topRight: Radius.circular(12),
+                        bottomLeft: Radius.circular(12),
+                        bottomRight: Radius.circular(12),
+                      ),
+                      border: Border.all(
+                        color: isMe
+                            ? const Color(0xFF2563EB).withValues(alpha: 0.22)
+                            : Colors.white.withValues(alpha: 0.07),
+                        width: 1,
                       ),
                     ),
-                    if (time.isNotEmpty) ...[
-                      const SizedBox(width: 5),
-                      Text(time, style: const TextStyle(color: Color(0x38FFFFFF), fontSize: 9, fontFamily: 'Outfit')),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                  decoration: BoxDecoration(
-                    color: isMe ? const Color(0x182563EB) : const Color(0x0EFFFFFF),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(2),
-                      topRight: Radius.circular(12),
-                      bottomLeft: Radius.circular(12),
-                      bottomRight: Radius.circular(12),
-                    ),
-                    border: Border.all(
-                      color: isMe
-                          ? const Color(0xFF2563EB).withValues(alpha: 0.22)
-                          : Colors.white.withValues(alpha: 0.07),
-                      width: 1,
+                    child: Text(
+                      text,
+                      style: const TextStyle(color: Color(0xE0EBEBF5), fontSize: 13, fontFamily: 'Outfit', height: 1.4),
                     ),
                   ),
-                  child: Text(
-                    text,
-                    style: const TextStyle(color: Color(0xE0EBEBF5), fontSize: 13, fontFamily: 'Outfit', height: 1.4),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1873,6 +1961,36 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             }
           : null,
     );
+  }
+
+  // ── ChatGPT / Google AI handlers ───────────────────────────────────────────
+
+  void _handleChatGPTPress() {
+    if (!_chatgptFeatureEnabled) {
+      _showSnack('ChatGPT AI is currently disabled by admin');
+      return;
+    }
+    setState(() => _showChatGPT = true);
+  }
+
+  void _handleGoogleAIPress() {
+    if (!_googleAiFeatureEnabled) {
+      _showSnack('Google AI is currently disabled by admin');
+      return;
+    }
+    setState(() => _showGoogleAI = true);
+  }
+
+  // Called from AskAI sheet — opens Google AI pre-filled with a prompt
+  void _handleAskGemini(String prompt) {
+    if (!_googleAiFeatureEnabled) {
+      _showSnack('Google AI is currently disabled by admin');
+      return;
+    }
+    setState(() {
+      _googleAIQuery = prompt;
+      _showGoogleAI = true;
+    });
   }
 
   // ── Audio output ───────────────────────────────────────────────────────────

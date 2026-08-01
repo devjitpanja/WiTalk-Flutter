@@ -107,6 +107,7 @@ dependencies:
   crypto: ^3.0.6
   livekit_client: ^2.3.1+hotfix.1
   flutter_webrtc: ^0.12.12
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:

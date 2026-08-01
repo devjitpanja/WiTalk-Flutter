@@ -3,11 +3,13 @@ import 'package:flutter/material.dart';
 class AskAIBottomSheet extends StatefulWidget {
   final String? message;
   final Function(String)? onAskGemini;
+  final VoidCallback? onClose;
 
   const AskAIBottomSheet({
     super.key,
     this.message,
     this.onAskGemini,
+    this.onClose,
   });
 
   @override
@@ -23,15 +25,15 @@ class _AskAIBottomSheetState extends State<AskAIBottomSheet> {
     super.dispose();
   }
 
+  void _dismiss() => widget.onClose?.call();
+
   void _handleAsk() {
     final customPrompt = _promptController.text.trim();
     if (customPrompt.isEmpty) return;
 
     final fullPrompt = 'Regarding this message: "${widget.message}"\n\nUser\'s question: $customPrompt';
     widget.onAskGemini?.call(fullPrompt);
-    
     _promptController.clear();
-    Navigator.pop(context);
   }
 
   void _handleQuickAction(String action) {
@@ -53,7 +55,6 @@ class _AskAIBottomSheetState extends State<AskAIBottomSheet> {
 
     if (prompt.isNotEmpty) {
       widget.onAskGemini?.call(prompt);
-      Navigator.pop(context);
     }
   }
 
@@ -116,7 +117,7 @@ class _AskAIBottomSheetState extends State<AskAIBottomSheet> {
                 ),
                 IconButton(
                   icon: Icon(Icons.close, size: 20, color: const Color(0xFFC8D2FF).withOpacity(0.8)),
-                  onPressed: () => Navigator.pop(context),
+                  onPressed: _dismiss,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   splashRadius: 20,
