@@ -1,17 +1,23 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:livekit_client/livekit_client.dart' show VideoTrack, VideoTrackRenderer, VideoViewMirrorMode, TrackSource;
+import 'package:youtube_player_flutter/youtube_player_flutter.dart' show YoutubePlayerController, YoutubePlayerFlags, YoutubePlayer, PlayerState;
 import '../../providers/audio_room_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/livekit_audio_manager.dart';
 import '../../widgets/audio_room/grid_seating_layout.dart';
 import '../../widgets/common/share_bottom_sheet.dart';
 import '../../widgets/audio_room/audio_room_bottom_bar.dart';
 import '../../widgets/audio_room/room_rules_banner.dart';
 import '../../widgets/audio_room/user_profile_bottom_sheet.dart';
 import '../../widgets/audio_room/report_bottom_sheet.dart';
+import '../../widgets/audio_room/more_options_bottom_sheet.dart';
+import '../../widgets/audio_room/youtube_picker_bottom_sheet.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _kBg = Color(0xFF080C17);
@@ -40,6 +46,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   final List<_FloatingReaction> _reactions = [];
   late AnimationController _pulseCtrl;
   bool _isRoomEnded = false;
+
+  // ── YouTube player ──────────────────────────────────────────────────────────
+  YoutubePlayerController? _ytController;
+  bool _youtubeControlsVisible = true;
+  Timer? _youtubeControlsHideTimer;
 
   @override
   void initState() {
@@ -79,10 +90,119 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     _chatFocus.dispose();
     _scrollCtrl.dispose();
     _pulseCtrl.dispose();
+    _youtubeControlsHideTimer?.cancel();
+    _ytController?.dispose();
     super.dispose();
   }
 
-  // ── Business logic — unchanged ─────────────────────────────────────────────
+  // ── YouTube helpers ─────────────────────────────────────────────────────────
+
+  void _initYoutubeController(String videoId, {double startAt = 0}) {
+    _ytController?.dispose();
+    _ytController = YoutubePlayerController(
+      initialVideoId: videoId,
+      flags: YoutubePlayerFlags(
+        autoPlay: true,
+        mute: false,
+        startAt: startAt.toInt(),
+        forceHD: false,
+        enableCaption: false,
+      ),
+    )..addListener(_onYoutubePlayerUpdate);
+    setState(() {});
+  }
+
+  void _onYoutubePlayerUpdate() {
+    if (_ytController == null) return;
+    final notifier = ref.read(audioRoomProvider.notifier);
+    final player = _ytController!;
+
+    if (!player.value.isReady) return;
+    final isBuffering = player.value.playerState == PlayerState.buffering;
+    notifier.updateYoutubeTime(player.value.position.inSeconds.toDouble());
+    notifier.setYoutubeBuffering(isBuffering);
+  }
+
+  void _resetYoutubeControlsHideTimer() {
+    _youtubeControlsHideTimer?.cancel();
+    setState(() => _youtubeControlsVisible = true);
+    _youtubeControlsHideTimer = Timer(const Duration(seconds: 5), () {
+      if (mounted) setState(() => _youtubeControlsVisible = false);
+    });
+  }
+
+  void _handleYoutubeOptionPress(AudioRoomState s) {
+    if (s.showYoutubeSection || s.youtubeVideoId != null) {
+      // Stop YouTube
+      ref.read(audioRoomProvider.notifier).stopYoutube();
+      _ytController?.dispose();
+      _ytController = null;
+    } else {
+      // Open picker (host/admin only)
+      if (!s.isHost && !s.isAdmin) return;
+      YouTubePickerBottomSheet.show(
+        context,
+        onSelectVideo: (videoId) {
+          ref.read(audioRoomProvider.notifier).selectYoutubeVideo(videoId);
+        },
+      );
+    }
+  }
+
+  void _showYoutubeFullscreen() {
+    if (_ytController == null) return;
+    showDialog(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (_) {
+        final ctrl = YoutubePlayerController(
+          initialVideoId: _ytController!.metadata.videoId.isNotEmpty
+              ? _ytController!.metadata.videoId
+              : '',
+          flags: YoutubePlayerFlags(
+            autoPlay: true,
+            startAt: _ytController!.value.position.inSeconds,
+          ),
+        );
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: [
+              Center(child: YoutubePlayer(controller: ctrl, aspectRatio: 16 / 9)),
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                right: 12,
+                child: GestureDetector(
+                  onTap: () { ctrl.dispose(); Navigator.pop(context); },
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                    child: const Icon(Icons.close, color: Colors.white, size: 20),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleYoutubePlayPause(AudioRoomState s) {
+    if (!s.isHost && !s.isAdmin) return;
+    final ts = _ytController?.value.position.inSeconds.toDouble() ?? s.youtubeCurrentTime;
+    if (s.youtubeIsPlaying) {
+      // Pause locally first, then emit to others
+      _ytController?.pause();
+      ref.read(audioRoomProvider.notifier).pauseYoutube(ts);
+    } else {
+      // Play locally first, then emit to others
+      _ytController?.play();
+      ref.read(audioRoomProvider.notifier).playYoutube(ts);
+    }
+  }
+
+  // ── Business logic ──────────────────────────────────────────────────────────
 
   void _handleEmptySeatPress(int seatIndex) {
     final s = ref.read(audioRoomProvider);
@@ -250,31 +370,46 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   void _showMoreOptions() {
     final s = ref.read(audioRoomProvider);
-    showModalBottomSheet(
-      useRootNavigator: true,
+    final isHostOrAdmin = s.isHost || s.isAdmin;
+
+    final isYoutubeActive = s.showYoutubeSection || s.youtubeVideoId != null;
+    final screenShareBlocked = s.isCameraSharing || s.cameraShareInfos.isNotEmpty || isYoutubeActive;
+    final cameraBlocked = s.isScreenSharing || s.screenShareInfo != null || isYoutubeActive;
+    final youtubeBlocked = s.isScreenSharing || s.screenShareInfo != null || s.isCameraSharing || s.cameraShareInfos.isNotEmpty;
+    final activeCameraCount = (s.isCameraSharing ? 1 : 0) + s.cameraShareInfos.length;
+
+    showMoreOptionsBottomSheet(
       context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _MoreOptionsSheet(
-        isHost: s.isHost,
-        isInSeat: s.isInSeat,
-        handRaiseCount: s.handRaiseQueue.length,
-        onOffStage: _handleOffStage,
-        onViewRequests: () {
-          Navigator.pop(context);
-          _showSeatRequests();
-        },
-        onViewAudience: () {
-          Navigator.pop(context);
-          _showAudienceList();
-        },
-        onReaction: (e) {
-          Navigator.pop(context);
-          _triggerReaction(e);
-          ref.read(audioRoomProvider.notifier).sendReaction(e);
-        },
-      ),
+      isHost: isHostOrAdmin,
+      isScreenSharing: s.isScreenSharing,
+      isCameraSharing: s.isCameraSharing,
+      activeCameraCount: activeCameraCount,
+      onToggleScreenShare: () {
+        ref.read(audioRoomProvider.notifier).toggleScreenShare();
+      },
+      onToggleCameraShare: () {
+        ref.read(audioRoomProvider.notifier).toggleCameraShare();
+      },
+      screenShareBlocked: screenShareBlocked,
+      cameraBlocked: cameraBlocked,
+      youtubeBlocked: youtubeBlocked,
+      screenShareFeatureEnabled: true,
+      videoShareFeatureEnabled: true,
+      youtubeFeatureEnabled: true,
+      chatgptFeatureEnabled: true,
+      googleAiFeatureEnabled: true,
+      isYoutubeActive: isYoutubeActive,
+      onYoutubeVideo: () => _handleYoutubeOptionPress(s),
+      onChatGPT: () => _showSnack('ChatGPT coming soon'),
+      onGoogleAI: () => _showSnack('Google AI coming soon'),
+      onRoomSettings: isHostOrAdmin ? _showRoomSettingsSheet : null,
+      handRaiseCount: s.handRaiseQueue.length,
+      onViewRequests: isHostOrAdmin && s.handRaiseQueue.isNotEmpty ? _showSeatRequests : null,
     );
+  }
+
+  void _showRoomSettingsSheet() {
+    _showSnack('Room settings');
   }
 
   void _showSeatRequests() {
@@ -487,6 +622,53 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           });
         });
       }
+
+      // ── React to YouTube state changes from socket ──────────────────────────
+      final wasYt = prev?.youtubeVideoId;
+      final nowYt = next.youtubeVideoId;
+      if (wasYt != nowYt) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          if (nowYt != null && nowYt.isNotEmpty) {
+            _initYoutubeController(nowYt, startAt: next.youtubeCurrentTime);
+            _resetYoutubeControlsHideTimer();
+          } else {
+            _ytController?.dispose();
+            _ytController = null;
+            _youtubeControlsHideTimer?.cancel();
+            setState(() {});
+          }
+        });
+      }
+
+      // Non-host: react to yt_play / yt_pause / yt_seek from socket
+      // Host controls the player directly — no feedback from state to player for host
+      if (!(next.isHost || next.isAdmin) && _ytController != null) {
+        // yt_play received
+        if (next.youtubeIsPlaying && !(prev?.youtubeIsPlaying ?? false)) {
+          _ytController!.play();
+          // Seek to synced position on play (handles late-joiner resync)
+          if (next.youtubeCurrentTime > 1) {
+            _ytController!.seekTo(Duration(seconds: next.youtubeCurrentTime.toInt()));
+          }
+        }
+        // yt_pause received
+        if (!next.youtubeIsPlaying && (prev?.youtubeIsPlaying ?? false)) {
+          _ytController!.pause();
+          if (next.youtubeCurrentTime > 0) {
+            Future.delayed(const Duration(milliseconds: 100), () {
+              _ytController?.seekTo(Duration(seconds: next.youtubeCurrentTime.toInt()));
+            });
+          }
+        }
+        // yt_seek received: large time jump while playing (not caused by normal play progress)
+        final timeDelta = (next.youtubeCurrentTime - (prev?.youtubeCurrentTime ?? 0)).abs();
+        final wasPlaying = prev?.youtubeIsPlaying ?? false;
+        final playStateUnchanged = next.youtubeIsPlaying == wasPlaying;
+        if (playStateUnchanged && timeDelta > 3) {
+          _ytController!.seekTo(Duration(seconds: next.youtubeCurrentTime.toInt()));
+        }
+      }
     });
 
     // ── Loading state ──────────────────────────────────────────────────────
@@ -530,6 +712,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     }
 
     final seatsList = _buildSeatsList(roomState, myUid);
+    final isYoutubeActive = roomState.showYoutubeSection || roomState.youtubeVideoId != null;
+    final isScreenShareActive = roomState.isScreenSharing || roomState.screenShareInfo != null;
+    final isCameraShareActive = roomState.isCameraSharing || roomState.cameraShareInfos.isNotEmpty;
+    final hasAnyShare = roomState.isScreenSharing || roomState.isCameraSharing;
+
+    // compact grid when any sharing is active (but no camera panel — camera replaces grid)
+    final compactGrid = isYoutubeActive || isScreenShareActive;
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -545,27 +734,39 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               // ── Header ─────────────────────────────────────
               _buildHeader(roomState),
 
-              // ── Stage + rules (fixed) ───────────────────────
-              GridSeatingLayout(
-                seats: seatsList,
-                maxSeats: roomState.maxSeats,
-                hostUid: roomState.hostUid,
-                myUid: myUid,
-                activeSpeakerUid: roomState.activeSpeakerUid,
-                stageRequestEnabled: roomState.stageRequestEnabled,
-                isHost: roomState.isHost,
-                seatsInitialized: roomState.seatsInitialized,
-                audience: roomState.audience,
-                onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
-                onEmptySeatTap: _handleEmptySeatPress,
-                onEmptySeatLongPress: (idx) {
-                  if (roomState.isHost) {
-                    ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
-                  }
-                },
-                onShowAudienceList: _showAudienceList,
-                onAudienceMemberTap: (m) => _showParticipantSheet(m),
-              ),
+              // ── YouTube section ─────────────────────────────
+              if (isYoutubeActive) _buildYoutubeSection(roomState),
+
+              // ── Screen share section ─────────────────────────
+              if (isScreenShareActive) _buildScreenShareSection(roomState),
+
+              // ── Camera share section (replaces seats) ────────
+              if (isCameraShareActive)
+                _buildCameraShareSection(roomState, seatsList, myUid)
+              else ...[
+                // ── Stage + rules (normal grid) ──────────────
+                GridSeatingLayout(
+                  seats: seatsList,
+                  maxSeats: roomState.maxSeats,
+                  hostUid: roomState.hostUid,
+                  myUid: myUid,
+                  activeSpeakerUid: roomState.activeSpeakerUid,
+                  stageRequestEnabled: roomState.stageRequestEnabled,
+                  isHost: roomState.isHost,
+                  seatsInitialized: roomState.seatsInitialized,
+                  audience: roomState.audience,
+                  compact: compactGrid,
+                  onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
+                  onEmptySeatTap: _handleEmptySeatPress,
+                  onEmptySeatLongPress: (idx) {
+                    if (roomState.isHost) {
+                      ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
+                    }
+                  },
+                  onShowAudienceList: _showAudienceList,
+                  onAudienceMemberTap: (m) => _showParticipantSheet(m),
+                ),
+              ],
 
               if (roomState.roomRules != null &&
                   roomState.roomRules!.isNotEmpty &&
@@ -617,6 +818,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 hasPendingRequest: roomState.isHandRaised,
                 stageRequestEnabled: roomState.stageRequestEnabled,
                 audioOutputMode: roomState.audioOutputMode,
+                hasActiveShare: hasAnyShare,
                 chatController: _chatCtrl,
                 chatFocusNode: _chatFocus,
                 onToggleMic: () =>
@@ -635,18 +837,454 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
+  // ── YouTube section ────────────────────────────────────────────────────────
+  Widget _buildYoutubeSection(AudioRoomState s) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final playerHeight = (screenWidth * 9 / 16).roundToDouble();
+    final isHostOrAdmin = s.isHost || s.isAdmin;
+
+    return GestureDetector(
+      onTap: () {
+        _resetYoutubeControlsHideTimer();
+        setState(() => _youtubeControlsVisible = !_youtubeControlsVisible);
+      },
+      child: Container(
+        width: screenWidth,
+        height: playerHeight,
+        color: Colors.black,
+        child: Stack(
+          children: [
+            // Player
+            if (_ytController != null)
+              YoutubePlayer(
+                controller: _ytController!,
+                showVideoProgressIndicator: false,
+              )
+            else
+              Container(
+                color: Colors.black,
+                alignment: Alignment.center,
+                child: const CircularProgressIndicator(color: Color(0xFFFF0000)),
+              ),
+
+            // Transparent overlay (captures taps for controls toggle)
+            Positioned.fill(
+              child: Container(color: Colors.transparent),
+            ),
+
+            // Controls overlay
+            if (_youtubeControlsVisible)
+              Positioned.fill(
+                child: AnimatedOpacity(
+                  opacity: _youtubeControlsVisible ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Container(
+                    color: Colors.black.withValues(alpha: 0.40),
+                    child: Column(
+                      children: [
+                        // Top row: buffering + fullscreen
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          child: Row(
+                            children: [
+                              if (s.youtubeIsBuffering)
+                                const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white70),
+                                ),
+                              const Spacer(),
+                              if (isHostOrAdmin) ...[
+                                // Change video
+                                GestureDetector(
+                                  onTap: () {
+                                    YouTubePickerBottomSheet.show(
+                                      context,
+                                      onSelectVideo: (videoId) {
+                                        ref.read(audioRoomProvider.notifier).selectYoutubeVideo(videoId);
+                                      },
+                                    );
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    margin: const EdgeInsets.only(right: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text('Change', style: TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Outfit')),
+                                  ),
+                                ),
+                                // Stop
+                                GestureDetector(
+                                  onTap: () {
+                                    ref.read(audioRoomProvider.notifier).stopYoutube();
+                                    _ytController?.dispose();
+                                    _ytController = null;
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFF3B30).withValues(alpha: 0.80),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: const Text('Stop', style: TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+                                  ),
+                                ),
+                              ],
+                              // Fullscreen
+                              GestureDetector(
+                                onTap: () {
+                                  if (_ytController != null) {
+                                    _showYoutubeFullscreen();
+                                  }
+                                },
+                                child: const Padding(
+                                  padding: EdgeInsets.only(left: 8),
+                                  child: Icon(Icons.fullscreen, color: Colors.white, size: 22),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const Spacer(),
+
+                        // Center play/pause (host only)
+                        if (isHostOrAdmin)
+                          GestureDetector(
+                            onTap: () => _handleYoutubePlayPause(s),
+                            child: Container(
+                              width: 52,
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.20),
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: Icon(
+                                s.youtubeIsPlaying ? Icons.pause : Icons.play_arrow,
+                                color: Colors.white,
+                                size: 30,
+                              ),
+                            ),
+                          ),
+
+                        const Spacer(),
+
+                        // Seek slider (host only)
+                        if (isHostOrAdmin && s.youtubeDuration > 0)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              children: [
+                                Text(
+                                  _formatDuration(s.youtubeCurrentTime),
+                                  style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Outfit'),
+                                ),
+                                Expanded(
+                                  child: SliderTheme(
+                                    data: SliderTheme.of(context).copyWith(
+                                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                                      trackHeight: 2,
+                                      activeTrackColor: const Color(0xFFFF0000),
+                                      inactiveTrackColor: Colors.white24,
+                                      thumbColor: Colors.white,
+                                      overlayShape: SliderComponentShape.noOverlay,
+                                    ),
+                                    child: Slider(
+                                      value: s.youtubeCurrentTime.clamp(0, s.youtubeDuration),
+                                      min: 0,
+                                      max: s.youtubeDuration,
+                                      onChanged: (v) {
+                                        _ytController?.seekTo(Duration(seconds: v.toInt()));
+                                        ref.read(audioRoomProvider.notifier).seekYoutube(v);
+                                      },
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  _formatDuration(s.youtubeDuration),
+                                  style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Outfit'),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const SizedBox(height: 6),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDuration(double seconds) {
+    final d = Duration(seconds: seconds.toInt());
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '${d.inHours > 0 ? '${d.inHours}:' : ''}$m:$s';
+  }
+
+  // ── Screen share section ────────────────────────────────────────────────────
+  Widget _buildScreenShareSection(AudioRoomState s) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    // Local sharer sees "Broadcasting" banner
+    if (s.isScreenSharing) {
+      return Container(
+        width: screenWidth,
+        height: 60,
+        color: const Color(0xFF0D1220),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            const Icon(Icons.screen_share, color: Color(0xFF2563EB), size: 20),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'You are broadcasting your screen',
+                style: TextStyle(color: Color(0xFFEBEBF5), fontFamily: 'Outfit', fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => ref.read(audioRoomProvider.notifier).toggleScreenShare(),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF3B30).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFF3B30).withValues(alpha: 0.4)),
+                ),
+                child: const Text('Stop', style: TextStyle(color: Color(0xFFFF3B30), fontSize: 12, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Remote screen share: show video feed
+    final shareInfo = s.screenShareInfo;
+    if (shareInfo == null) return const SizedBox.shrink();
+
+    final uid = shareInfo['uid']?.toString() ?? '';
+    final userName = shareInfo['userName']?.toString() ?? 'User';
+
+    final vtv = s.videoTrackVersion;
+    final videoTrack = uid.isNotEmpty
+        ? liveKitAudioManager.getRemoteVideoTrack(uid)
+        : null;
+
+    return GestureDetector(
+      onTap: () => _showScreenShareFullscreen(videoTrack, userName),
+      child: Container(
+        width: screenWidth,
+        height: 160,
+        color: Colors.black,
+        child: Stack(
+          children: [
+            if (videoTrack != null)
+              Positioned.fill(
+                child: _RemoteVideoView(
+                  key: ValueKey('screen_${uid}_$vtv'),
+                  track: videoTrack,
+                ),
+              )
+            else
+              Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.screen_share, color: Color(0xFF2563EB), size: 32),
+                    const SizedBox(height: 6),
+                    Text('$userName is sharing their screen',
+                        style: const TextStyle(color: Colors.white70, fontFamily: 'Outfit', fontSize: 12)),
+                  ],
+                ),
+              ),
+            // Tap hint
+            const Positioned(
+              right: 8,
+              bottom: 6,
+              child: Icon(Icons.fullscreen, color: Colors.white54, size: 18),
+            ),
+            // Label
+            Positioned(
+              left: 8,
+              bottom: 6,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(userName,
+                    style: const TextStyle(color: Colors.white70, fontSize: 10, fontFamily: 'Outfit')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showScreenShareFullscreen(VideoTrack? track, String userName) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (_) => Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            if (track != null)
+              Center(child: _RemoteVideoView(key: ValueKey('fs_screen'), track: track))
+            else
+              const Center(child: Icon(Icons.screen_share, color: Colors.white54, size: 60)),
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 8,
+              right: 12,
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                  child: const Icon(Icons.close, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Camera share section ────────────────────────────────────────────────────
+  Widget _buildCameraShareSection(AudioRoomState s, List<Map<String, dynamic>> seats, String? myUid) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final panelHeight = (MediaQuery.of(context).size.height * 0.30).roundToDouble();
+
+    return SizedBox(
+      width: screenWidth,
+      height: panelHeight,
+      child: Stack(
+        children: [
+          // Background: camera video feeds fill panel
+          Positioned.fill(
+            child: _buildCameraFeeds(s),
+          ),
+
+          // Horizontal seat grid overlaid at bottom
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.55),
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: GridSeatingLayout(
+                seats: seats,
+                maxSeats: s.maxSeats,
+                hostUid: s.hostUid,
+                myUid: myUid,
+                activeSpeakerUid: s.activeSpeakerUid,
+                stageRequestEnabled: s.stageRequestEnabled,
+                isHost: s.isHost,
+                seatsInitialized: s.seatsInitialized,
+                audience: s.audience,
+                compact: true,
+                horizontal: true,
+                hideAudience: true,
+                onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
+                onEmptySeatTap: _handleEmptySeatPress,
+                onEmptySeatLongPress: (idx) {
+                  if (s.isHost) {
+                    ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
+                  }
+                },
+              ),
+            ),
+          ),
+
+          // Camera flip + stop button for local sharer
+          if (s.isCameraSharing)
+            Positioned(
+              top: 8,
+              right: 8,
+              child: Row(
+                children: [
+                  _CamControl(
+                    icon: Icons.flip_camera_ios,
+                    onTap: () => ref.read(audioRoomProvider.notifier).switchCameraFacing(),
+                  ),
+                  const SizedBox(width: 8),
+                  _CamControl(
+                    icon: Icons.videocam_off,
+                    color: const Color(0xFFFF3B30),
+                    onTap: () => ref.read(audioRoomProvider.notifier).toggleCameraShare(),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCameraFeeds(AudioRoomState s) {
+    final feeds = <Widget>[];
+
+    final vtv = s.videoTrackVersion;
+
+    // Local camera
+    if (s.isCameraSharing) {
+      final localTrack = liveKitAudioManager.localCameraTrack;
+      feeds.add(
+        localTrack != null
+            ? _RemoteVideoView(key: ValueKey('local_cam_$vtv'), track: localTrack, mirror: true)
+            : Container(color: Colors.black, alignment: Alignment.center,
+                child: const Icon(Icons.videocam, color: Colors.white54, size: 32)),
+      );
+    }
+
+    // Remote camera feeds
+    for (final info in s.cameraShareInfos) {
+      final uid = info['uid']?.toString() ?? '';
+      final track = uid.isNotEmpty
+          ? liveKitAudioManager.getRemoteVideoTrack(uid, source: TrackSource.camera)
+          : null;
+      feeds.add(
+        track != null
+            ? _RemoteVideoView(key: ValueKey('cam_${uid}_$vtv'), track: track)
+            : Container(color: const Color(0xFF111828), alignment: Alignment.center,
+                child: const Icon(Icons.videocam, color: Colors.white38, size: 28)),
+      );
+    }
+
+    if (feeds.isEmpty) {
+      return Container(color: Colors.black);
+    }
+    if (feeds.length == 1) {
+      return feeds[0];
+    }
+    return Row(
+      children: feeds.map((f) => Expanded(child: f)).toList(),
+    );
+  }
+
   // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader(AudioRoomState s) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
+        gradient: const LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFF0E1525),
-            _kSurface,
-          ],
+          colors: [Color(0xFF0E1525), _kSurface],
         ),
         border: Border(
           bottom: BorderSide(
@@ -664,7 +1302,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       ),
       child: Row(
         children: [
-          // Minimize button
           _HeaderIconBtn(
             onTap: () {
               ref.read(audioRoomProvider.notifier).toggleMinimised();
@@ -673,10 +1310,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             icon: Icons.keyboard_arrow_down_rounded,
             size: 38,
           ),
-
           const SizedBox(width: 12),
-
-          // Room name + badges
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -707,8 +1341,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       bgColor: const Color(0x22DC3C1E),
                       borderColor: const Color(0x55DC501E),
                     ),
-                    if (s.cloudRecordingActive)
-                      _RecBadge(),
+                    if (s.cloudRecordingActive) _RecBadge(),
                     if (s.averageRating != null && s.averageRating! > 0)
                       _RatingBadge(rating: s.averageRating!),
                   ],
@@ -716,10 +1349,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               ],
             ),
           ),
-
           const SizedBox(width: 12),
-
-          // Share button
           _HeaderIconBtn(
             onTap: _handleShareRoom,
             icon: Icons.ios_share_rounded,
@@ -730,7 +1360,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  // ── Chat section divider ───────────────────────────────────────────────────
+  // ── Chat divider ───────────────────────────────────────────────────────────
   Widget _buildChatDivider() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
@@ -797,7 +1427,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  // ── Emoji reaction strip ───────────────────────────────────────────────────
+  // ── Emoji strip ────────────────────────────────────────────────────────────
   Widget _buildEmojiStrip() {
     final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
 
@@ -807,10 +1437,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       decoration: BoxDecoration(
         color: const Color(0xE0121930),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.10),
-          width: 1,
-        ),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.10), width: 1),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.40),
@@ -896,10 +1523,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         msg['senderUid'] == 'system' ||
         msg['type'] == 'system' ||
         msg['senderName'] == 'System';
-    final text =
-        msg['text']?.toString() ?? msg['content']?.toString() ?? '';
+    final text = msg['text']?.toString() ?? msg['content']?.toString() ?? '';
 
-    // System message
     if (isSystem) {
       return Container(
         margin: const EdgeInsets.only(bottom: 5),
@@ -912,23 +1537,19 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _kPrimaryGlow,
-                border: Border.all(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.35)),
+                border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.35)),
               ),
               alignment: Alignment.center,
-              child: const Icon(Icons.campaign_rounded,
-                  size: 12, color: Colors.white),
+              child: const Icon(Icons.campaign_rounded, size: 12, color: Colors.white),
             ),
             const SizedBox(width: 8),
             Expanded(
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: const Color(0x0C2563EB),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: const Color(0xFF2563EB).withValues(alpha: 0.15)),
+                  border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.15)),
                 ),
                 child: Text(
                   text,
@@ -957,8 +1578,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     String time = '';
     if (ts is int) {
       final dt = DateTime.fromMillisecondsSinceEpoch(ts);
-      time =
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+      time = '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     }
 
     final senderPic = (msg['sender_profile_picture'] ??
@@ -976,7 +1596,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         children: [
           _ChatAvatar(name: sender, picUrl: senderPic),
           const SizedBox(width: 8),
-
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -986,9 +1605,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                     Text(
                       sender,
                       style: TextStyle(
-                        color: isMe
-                            ? const Color(0xFF60A5FA)
-                            : const Color(0xFF93C5FD),
+                        color: isMe ? const Color(0xFF60A5FA) : const Color(0xFF93C5FD),
                         fontSize: 11,
                         fontFamily: 'Outfit',
                         fontWeight: FontWeight.w700,
@@ -997,26 +1614,15 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                     ),
                     if (time.isNotEmpty) ...[
                       const SizedBox(width: 5),
-                      Text(
-                        time,
-                        style: const TextStyle(
-                          color: Color(0x38FFFFFF),
-                          fontSize: 9,
-                          fontFamily: 'Outfit',
-                        ),
-                      ),
+                      Text(time, style: const TextStyle(color: Color(0x38FFFFFF), fontSize: 9, fontFamily: 'Outfit')),
                     ],
                   ],
                 ),
                 const SizedBox(height: 3),
-
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                   decoration: BoxDecoration(
-                    color: isMe
-                        ? const Color(0x182563EB)
-                        : const Color(0x0EFFFFFF),
+                    color: isMe ? const Color(0x182563EB) : const Color(0x0EFFFFFF),
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(2),
                       topRight: Radius.circular(12),
@@ -1032,12 +1638,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                   ),
                   child: Text(
                     text,
-                    style: const TextStyle(
-                      color: Color(0xE0EBEBF5),
-                      fontSize: 13,
-                      fontFamily: 'Outfit',
-                      height: 1.4,
-                    ),
+                    style: const TextStyle(color: Color(0xE0EBEBF5), fontSize: 13, fontFamily: 'Outfit', height: 1.4),
                   ),
                 ),
               ],
@@ -1071,7 +1672,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  // ── Error / ended screen ───────────────────────────────────────────────────
+  // ── Error / ended ──────────────────────────────────────────────────────────
   Widget _buildErrorScreen(AudioRoomState s) {
     final isJoinError = !s.isConnected && s.error != null;
     return Scaffold(
@@ -1101,10 +1702,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               Text(
                 isJoinError ? 'Could Not Join Adda' : 'This Adda Has Ended',
                 style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700,
+                  color: Colors.white, fontSize: 22, fontFamily: 'Outfit', fontWeight: FontWeight.w700,
                 ),
               ),
               const SizedBox(height: 10),
@@ -1112,12 +1710,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 isJoinError
                     ? (s.error ?? 'Unable to join this room. Please try again.')
                     : 'The host has wrapped up this room.\nCheck out other live addas.',
-                style: const TextStyle(
-                  color: Color(0x80FFFFFF),
-                  fontSize: 14,
-                  fontFamily: 'Outfit',
-                  height: 1.5,
-                ),
+                style: const TextStyle(color: Color(0x80FFFFFF), fontSize: 14, fontFamily: 'Outfit', height: 1.5),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 32),
@@ -1133,17 +1726,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                     backgroundColor: _kPrimary,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
                   child: const Text(
                     'Back to Addas',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(color: Colors.white, fontSize: 15, fontFamily: 'Outfit', fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -1154,7 +1741,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  // ── Participant profile sheet ───────────────────────────────────────────────
+  // ── Participant sheet ──────────────────────────────────────────────────────
   void _showParticipantSheet(Map<String, dynamic> seat) {
     final s = ref.read(audioRoomProvider);
     final myUid = ref.read(authProvider).uid;
@@ -1163,33 +1750,22 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     final isAuthority = s.isHost || s.isAdmin || s.isCoHost;
 
     final isGhost = seat['isEmpty'] != true &&
-        (seat['name'] == null ||
-            seat['name'] == 'User' ||
-            seat['name'] == uid);
+        (seat['name'] == null || seat['name'] == 'User' || seat['name'] == uid);
     if (isGhost && !isSelf && isAuthority) {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
           backgroundColor: _kCard,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Unknown User in Seat',
-              style: TextStyle(
-                  color: Color(0xFFEBEBF5),
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700)),
+              style: TextStyle(color: Color(0xFFEBEBF5), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
           content: const Text(
               'This seat has a disconnected user blocking the spot. Would you like to remove them?',
-              style: TextStyle(
-                  color: Color(0x99EBEBF5),
-                  fontFamily: 'Outfit',
-                  fontSize: 14)),
+              style: TextStyle(color: Color(0x99EBEBF5), fontFamily: 'Outfit', fontSize: 14)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel',
-                  style: TextStyle(
-                      color: Color(0x73EBEBF5), fontFamily: 'Outfit')),
+              child: const Text('Cancel', style: TextStyle(color: Color(0x73EBEBF5), fontFamily: 'Outfit')),
             ),
             TextButton(
               onPressed: () {
@@ -1197,10 +1773,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 ref.read(audioRoomProvider.notifier).removeGhostFromSeat(uid);
               },
               child: const Text('Remove',
-                  style: TextStyle(
-                      color: Color(0xFFFF3B30),
-                      fontFamily: 'Outfit',
-                      fontWeight: FontWeight.w700)),
+                  style: TextStyle(color: Color(0xFFFF3B30), fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
             ),
           ],
         ),
@@ -1224,8 +1797,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       'userID': uid,
       'userName': seat['name']?.toString() ?? uid,
       'avatar': seat['profile_pic']?.toString() ?? seat['avatar']?.toString(),
-      'avatar_frame_url':
-          (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
+      'avatar_frame_url': (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
       'isHost': seat['isHost'] == true,
       'isAdmin': seat['isAdmin'] == true,
       'isMicOn': seat['isMuted'] != true,
@@ -1275,8 +1847,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           ? (p) => ref.read(audioRoomProvider.notifier).demoteAdmin(uid)
           : null,
       onMoveToSeat: !isSelf && isAuthority && isParticipantInSeat
-          ? (p, seatIdx) =>
-              ref.read(audioRoomProvider.notifier).moveParticipantToSeat(uid, seatIdx)
+          ? (p, seatIdx) => ref.read(audioRoomProvider.notifier).moveParticipantToSeat(uid, seatIdx)
           : null,
       onReportUser: !isSelf
           ? (p, canBan) {
@@ -1292,23 +1863,19 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       onCommunityKick: canDoCommunityActions
           ? (p, reason) {
               final name = seat['name']?.toString() ?? uid;
-              ref
-                  .read(audioRoomProvider.notifier)
-                  .communityKick(uid, name, reason: reason);
+              ref.read(audioRoomProvider.notifier).communityKick(uid, name, reason: reason);
             }
           : null,
       onCommunityBan: canDoCommunityActions
           ? (p, reason) {
               final name = seat['name']?.toString() ?? uid;
-              ref
-                  .read(audioRoomProvider.notifier)
-                  .communityBan(uid, name, reason: reason);
+              ref.read(audioRoomProvider.notifier).communityBan(uid, name, reason: reason);
             }
           : null,
     );
   }
 
-  // ── Audio output options ───────────────────────────────────────────────────
+  // ── Audio output ───────────────────────────────────────────────────────────
   void _showAudioOutputOptions() {
     final s = ref.read(audioRoomProvider);
     showModalBottomSheet(
@@ -1321,6 +1888,51 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         onSelect: (mode) {
           ref.read(audioRoomProvider.notifier).setAudioOutputMode(mode);
         },
+      ),
+    );
+  }
+}
+
+// ── Remote video view widget ───────────────────────────────────────────────────
+/// Wraps VideoTrackRenderer and re-keys on track identity changes to fix
+/// Android black-screen bug on screen share.
+class _RemoteVideoView extends StatelessWidget {
+  final VideoTrack track;
+  final bool mirror;
+
+  const _RemoteVideoView({super.key, required this.track, this.mirror = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return VideoTrackRenderer(
+      track,
+      mirrorMode: mirror ? VideoViewMirrorMode.mirror : VideoViewMirrorMode.off,
+    );
+  }
+}
+
+// ── Camera control button ─────────────────────────────────────────────────────
+class _CamControl extends StatelessWidget {
+  final IconData icon;
+  final Color? color;
+  final VoidCallback? onTap;
+
+  const _CamControl({required this.icon, this.color, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black.withValues(alpha: 0.55),
+          border: Border.all(color: (color ?? Colors.white).withValues(alpha: 0.4)),
+        ),
+        alignment: Alignment.center,
+        child: Icon(icon, color: color ?? Colors.white, size: 18),
       ),
     );
   }
@@ -1345,16 +1957,9 @@ class _HeaderIconBtn extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.white.withValues(alpha: 0.10),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.18),
-            width: 1,
-          ),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1),
           boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.20),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
+            BoxShadow(color: Colors.black.withValues(alpha: 0.20), blurRadius: 6, offset: const Offset(0, 2)),
           ],
         ),
         alignment: Alignment.center,
@@ -1366,47 +1971,21 @@ class _HeaderIconBtn extends StatelessWidget {
 
 class _HeaderBadge extends StatelessWidget {
   final String label;
-  final Color dotColor;
-  final Color labelColor;
-  final Color bgColor;
-  final Color borderColor;
+  final Color dotColor, labelColor, bgColor, borderColor;
 
-  const _HeaderBadge({
-    required this.label,
-    required this.dotColor,
-    required this.labelColor,
-    required this.bgColor,
-    required this.borderColor,
-  });
+  const _HeaderBadge({required this.label, required this.dotColor, required this.labelColor, required this.bgColor, required this.borderColor});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: borderColor),
-      ),
+      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(7), border: Border.all(color: borderColor)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 5,
-            height: 5,
-            decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor),
-          ),
+          Container(width: 5, height: 5, decoration: BoxDecoration(shape: BoxShape.circle, color: dotColor)),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: labelColor,
-              fontSize: 9,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4,
-            ),
-          ),
+          Text(label, style: TextStyle(color: labelColor, fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w700, letterSpacing: 1.4)),
         ],
       ),
     );
@@ -1418,26 +1997,13 @@ class _RecBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0x22EF4444),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0x55EF4444)),
-      ),
+      decoration: BoxDecoration(color: const Color(0x22EF4444), borderRadius: BorderRadius.circular(7), border: Border.all(color: const Color(0x55EF4444))),
       child: const Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _BlinkingRecDot(),
           SizedBox(width: 4),
-          Text(
-            'REC',
-            style: TextStyle(
-              color: Color(0xFFEF4444),
-              fontSize: 9,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.4,
-            ),
-          ),
+          Text('REC', style: TextStyle(color: Color(0xFFEF4444), fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w700, letterSpacing: 1.4)),
         ],
       ),
     );
@@ -1452,32 +2018,20 @@ class _RatingBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0x22FFA726),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0x55FFA726)),
-      ),
+      decoration: BoxDecoration(color: const Color(0x22FFA726), borderRadius: BorderRadius.circular(7), border: Border.all(color: const Color(0x55FFA726))),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.star_rounded, size: 9, color: Color(0xFFFFA726)),
           const SizedBox(width: 3),
-          Text(
-            rating.toStringAsFixed(1),
-            style: const TextStyle(
-              color: Color(0xFFFFA726),
-              fontSize: 9,
-              fontFamily: 'Outfit',
-              fontWeight: FontWeight.w700,
-            ),
-          ),
+          Text(rating.toStringAsFixed(1), style: const TextStyle(color: Color(0xFFFFA726), fontSize: 9, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 }
 
-// ── Chat avatar ───────────────────────────────────────────────────────────────
+// ── Chat avatar ────────────────────────────────────────────────────────────────
 class _ChatAvatar extends StatelessWidget {
   final String name;
   final String? picUrl;
@@ -1512,20 +2066,12 @@ class _ChatAvatar extends StatelessWidget {
 
   Widget _letter(String initial) {
     return Center(
-      child: Text(
-        initial,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontFamily: 'Outfit',
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+      child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 11, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
     );
   }
 }
 
-// ── Blinking REC dot ──────────────────────────────────────────────────────────
+// ── Blinking REC dot ───────────────────────────────────────────────────────────
 class _BlinkingRecDot extends StatefulWidget {
   const _BlinkingRecDot();
 
@@ -1533,47 +2079,32 @@ class _BlinkingRecDot extends StatefulWidget {
   State<_BlinkingRecDot> createState() => _BlinkingRecDotState();
 }
 
-class _BlinkingRecDotState extends State<_BlinkingRecDot>
-    with SingleTickerProviderStateMixin {
+class _BlinkingRecDotState extends State<_BlinkingRecDot> with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..repeat(reverse: true);
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..repeat(reverse: true);
   }
 
   @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
       opacity: _ctrl,
-      child: Container(
-        width: 5,
-        height: 5,
-        decoration: const BoxDecoration(
-          shape: BoxShape.circle,
-          color: Color(0xFFEF4444),
-        ),
-      ),
+      child: Container(width: 5, height: 5, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFFEF4444))),
     );
   }
 }
 
-// ── Floating reaction data ────────────────────────────────────────────────────
+// ── Floating reaction ──────────────────────────────────────────────────────────
 class _FloatingReaction {
   final String id, emoji;
   final double x, y;
-  const _FloatingReaction(
-      {required this.id, required this.emoji, required this.x, required this.y});
+  const _FloatingReaction({required this.id, required this.emoji, required this.x, required this.y});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1585,39 +2116,21 @@ class _ConfirmSheet extends StatelessWidget {
   final Color confirmColor;
   final VoidCallback onConfirm;
 
-  const _ConfirmSheet({
-    required this.title,
-    required this.message,
-    required this.confirmText,
-    required this.confirmColor,
-    required this.onConfirm,
-  });
+  const _ConfirmSheet({required this.title, required this.message, required this.confirmText, required this.confirmColor, required this.onConfirm});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111828),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(color: Color(0xFF111828), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           _SheetHandle(),
           const SizedBox(height: 16),
-          Text(title,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700)),
+          Text(title, style: const TextStyle(color: Colors.white, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
           const SizedBox(height: 8),
-          Text(message,
-              style: const TextStyle(
-                  color: Color(0x80FFFFFF), fontSize: 14, fontFamily: 'Outfit'),
-              textAlign: TextAlign.center),
+          Text(message, style: const TextStyle(color: Color(0x80FFFFFF), fontSize: 14, fontFamily: 'Outfit'), textAlign: TextAlign.center),
           const SizedBox(height: 24),
           Row(
             children: [
@@ -1627,33 +2140,22 @@ class _ConfirmSheet extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: Color(0x30FFFFFF)),
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: const Text('Cancel',
-                      style: TextStyle(
-                          color: Color(0xAAFFFFFF), fontFamily: 'Outfit')),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xAAFFFFFF), fontFamily: 'Outfit')),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
                 child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    onConfirm();
-                  },
+                  onPressed: () { Navigator.pop(context); onConfirm(); },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: confirmColor,
                     elevation: 0,
                     padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                  child: Text(confirmText,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w700)),
+                  child: Text(confirmText, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
@@ -1664,175 +2166,37 @@ class _ConfirmSheet extends StatelessWidget {
   }
 }
 
-class _MoreOptionsSheet extends StatelessWidget {
-  final bool isHost;
-  final bool isInSeat;
-  final int handRaiseCount;
-  final VoidCallback? onOffStage;
-  final VoidCallback? onViewRequests;
-  final VoidCallback? onViewAudience;
-  final void Function(String emoji)? onReaction;
-
-  const _MoreOptionsSheet({
-    required this.isHost,
-    required this.isInSeat,
-    required this.handRaiseCount,
-    this.onOffStage,
-    this.onViewRequests,
-    this.onViewAudience,
-    this.onReaction,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final emojis = ['❤️', '👍', '👎', '👏', '😂', '😭', '😔', '🥺'];
-    return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111828),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(child: _SheetHandle()),
-          const SizedBox(height: 16),
-          const Text('Reactions',
-              style: TextStyle(
-                  color: Color(0x60FFFFFF),
-                  fontSize: 11,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.8)),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: emojis
-                .map((e) => GestureDetector(
-                      onTap: () => onReaction?.call(e),
-                      child: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: const Color(0x14FFFFFF),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: const Color(0x20FFFFFF)),
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(e, style: const TextStyle(fontSize: 18)),
-                      ),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-          const Divider(color: Color(0x14FFFFFF)),
-          const SizedBox(height: 6),
-          if (isInSeat)
-            _OptionTile(
-              icon: Icons.person_remove_outlined,
-              label: 'Leave Stage',
-              color: const Color(0xFFEF4444),
-              onTap: () {
-                Navigator.pop(context);
-                onOffStage?.call();
-              },
-            ),
-          _OptionTile(
-            icon: Icons.people_outline_rounded,
-            label: 'View Audience',
-            onTap: onViewAudience,
-          ),
-          if (isHost && handRaiseCount > 0)
-            _OptionTile(
-              icon: Icons.pan_tool_outlined,
-              label: 'Seat Requests ($handRaiseCount)',
-              color: const Color(0xFFFF9800),
-              onTap: onViewRequests,
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OptionTile extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color? color;
-  final VoidCallback? onTap;
-
-  const _OptionTile({
-    required this.icon,
-    required this.label,
-    this.color,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: color ?? const Color(0xAAFFFFFF), size: 20),
-      title: Text(label,
-          style: TextStyle(
-              color: color ?? Colors.white,
-              fontFamily: 'Outfit',
-              fontSize: 14)),
-      onTap: onTap,
-      contentPadding: EdgeInsets.zero,
-      minLeadingWidth: 28,
-    );
-  }
-}
-
 class _SeatRequestsSheet extends StatelessWidget {
   final List<Map<String, dynamic>> queue;
   final void Function(String uid) onAccept;
   final void Function(String uid) onReject;
 
-  const _SeatRequestsSheet({
-    required this.queue,
-    required this.onAccept,
-    required this.onReject,
-  });
+  const _SeatRequestsSheet({required this.queue, required this.onAccept, required this.onReject});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111828),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(color: Color(0xFF111828), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Center(child: _SheetHandle()),
           const SizedBox(height: 14),
-          const Text('Seat Requests',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700)),
+          const Text('Seat Requests', style: TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (queue.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Text('No pending requests',
-                  style: TextStyle(
-                      color: Color(0x60FFFFFF), fontFamily: 'Outfit')),
+              child: Text('No pending requests', style: TextStyle(color: Color(0x60FFFFFF), fontFamily: 'Outfit')),
             )
           else
             Flexible(
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: queue.length,
-                separatorBuilder: (_, __) =>
-                    const Divider(color: Color(0x10FFFFFF), height: 1),
+                separatorBuilder: (_, __) => const Divider(color: Color(0x10FFFFFF), height: 1),
                 itemBuilder: (_, i) {
                   final req = queue[i];
                   final uid = req['uid']?.toString() ?? '';
@@ -1842,35 +2206,20 @@ class _SeatRequestsSheet extends StatelessWidget {
                     leading: CircleAvatar(
                       radius: 18,
                       backgroundColor: const Color(0x142563EB),
-                      child: Text(
-                        name.isNotEmpty ? name[0].toUpperCase() : 'U',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'Outfit',
-                            fontWeight: FontWeight.w600),
-                      ),
+                      child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
+                          style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
                     ),
-                    title: Text(name,
-                        style: const TextStyle(
-                            color: Colors.white, fontFamily: 'Outfit')),
+                    title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.check_circle_outline_rounded,
-                              color: Color(0xFF34C759), size: 28),
-                          onPressed: () {
-                            Navigator.pop(context);
-                            onAccept(uid);
-                          },
+                          icon: const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF34C759), size: 28),
+                          onPressed: () { Navigator.pop(context); onAccept(uid); },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.cancel_outlined,
-                              color: Color(0xFFFF3B30), size: 28),
-                          onPressed: () {
-                            Navigator.pop(context);
-                            onReject(uid);
-                          },
+                          icon: const Icon(Icons.cancel_outlined, color: Color(0xFFFF3B30), size: 28),
+                          onPressed: () { Navigator.pop(context); onReject(uid); },
                         ),
                       ],
                     ),
@@ -1891,69 +2240,43 @@ class _AudienceListSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111828),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(color: Color(0xFF111828), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.65),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Center(child: _SheetHandle()),
           const SizedBox(height: 14),
-          Text('Audience (${audience.length})',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700)),
+          Text('Audience (${audience.length})', style: const TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (audience.isEmpty)
             const Padding(
               padding: EdgeInsets.all(24),
-              child: Text('No audience members yet',
-                  style: TextStyle(
-                      color: Color(0x60FFFFFF), fontFamily: 'Outfit')),
+              child: Text('No audience members yet', style: TextStyle(color: Color(0x60FFFFFF), fontFamily: 'Outfit')),
             )
           else
             Flexible(
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: audience.length,
-                separatorBuilder: (_, __) =>
-                    const Divider(color: Color(0x10FFFFFF), height: 1),
+                separatorBuilder: (_, __) => const Divider(color: Color(0x10FFFFFF), height: 1),
                 itemBuilder: (_, i) {
                   final m = audience[i];
-                  final name = m['name']?.toString() ??
-                      m['uid']?.toString() ??
-                      'User';
+                  final name = m['name']?.toString() ?? m['uid']?.toString() ?? 'User';
                   final pic = m['profile_pic']?.toString();
                   return ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: Container(
                       width: 36,
                       height: 36,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(
-                          colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)],
-                        ),
-                      ),
+                      decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)])),
                       clipBehavior: Clip.antiAlias,
                       child: (pic != null && pic.isNotEmpty)
-                          ? CachedNetworkImage(
-                              imageUrl: pic,
-                              fit: BoxFit.cover,
-                              errorWidget: (_, __, ___) => _letterWidget(name),
-                              placeholder: (_, __) => _letterWidget(name),
-                            )
+                          ? CachedNetworkImage(imageUrl: pic, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letterWidget(name), placeholder: (_, __) => _letterWidget(name))
                           : _letterWidget(name),
                     ),
-                    title: Text(name,
-                        style: const TextStyle(
-                            color: Colors.white, fontFamily: 'Outfit')),
+                    title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),
                   );
                 },
               ),
@@ -1964,15 +2287,8 @@ class _AudienceListSheet extends StatelessWidget {
   }
 
   Widget _letterWidget(String name) {
-    return Center(
-      child: Text(
-        name.isNotEmpty ? name[0].toUpperCase() : 'U',
-        style: const TextStyle(
-            color: Colors.white,
-            fontFamily: 'Outfit',
-            fontWeight: FontWeight.w600),
-      ),
-    );
+    return Center(child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
+        style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)));
   }
 }
 
@@ -1981,76 +2297,47 @@ class _AudioOutputSheet extends StatelessWidget {
   final bool bluetoothAvailable;
   final void Function(String mode) onSelect;
 
-  const _AudioOutputSheet({
-    required this.currentMode,
-    required this.onSelect,
-    this.bluetoothAvailable = false,
-  });
+  const _AudioOutputSheet({required this.currentMode, required this.onSelect, this.bluetoothAvailable = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: const BoxDecoration(
-        color: Color(0xFF111828),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.fromLTRB(
-          20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
+      decoration: const BoxDecoration(color: Color(0xFF111828), borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Center(child: _SheetHandle()),
           const SizedBox(height: 14),
-          const Text('Audio Output',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w700)),
+          const Text('Audio Output', style: TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           _audioOption(context, 'speaker', Icons.volume_up_rounded, 'Loudspeaker'),
           _audioOption(context, 'earpiece', Icons.hearing_rounded, 'Earpiece'),
-          if (bluetoothAvailable)
-            _audioOption(
-                context, 'bluetooth', Icons.bluetooth_audio_rounded, 'Bluetooth'),
+          if (bluetoothAvailable) _audioOption(context, 'bluetooth', Icons.bluetooth_audio_rounded, 'Bluetooth'),
         ],
       ),
     );
   }
 
-  Widget _audioOption(
-      BuildContext context, String mode, IconData icon, String label) {
+  Widget _audioOption(BuildContext context, String mode, IconData icon, String label) {
     final isSelected = currentMode == mode;
     return ListTile(
-      leading: Icon(icon,
-          color: isSelected ? const Color(0xFF2563EB) : Colors.white60),
-      title: Text(label,
-          style: TextStyle(
-              color: isSelected ? const Color(0xFF2563EB) : Colors.white,
-              fontFamily: 'Outfit')),
-      trailing: isSelected
-          ? const Icon(Icons.check_rounded, color: Color(0xFF2563EB))
-          : null,
-      onTap: () {
-        Navigator.pop(context);
-        onSelect(mode);
-      },
+      leading: Icon(icon, color: isSelected ? const Color(0xFF2563EB) : Colors.white60),
+      title: Text(label, style: TextStyle(color: isSelected ? const Color(0xFF2563EB) : Colors.white, fontFamily: 'Outfit')),
+      trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFF2563EB)) : null,
+      onTap: () { Navigator.pop(context); onSelect(mode); },
       contentPadding: EdgeInsets.zero,
     );
   }
 }
 
-// ── Sheet handle widget ───────────────────────────────────────────────────────
 class _SheetHandle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
       width: 40,
       height: 4,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.22),
-        borderRadius: BorderRadius.circular(100),
-      ),
+      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(100)),
     );
   }
 }

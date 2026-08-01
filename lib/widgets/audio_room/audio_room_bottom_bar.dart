@@ -12,6 +12,8 @@ class AudioRoomBottomBar extends StatelessWidget {
   final bool hasPendingRequest;
   final bool stageRequestEnabled;
 
+  final bool hasActiveShare;
+
   final VoidCallback? onToggleMic;
   final VoidCallback? onToggleSpeaker;
   final VoidCallback? onGoOnStage;
@@ -32,6 +34,7 @@ class AudioRoomBottomBar extends StatelessWidget {
     this.isInSeat = false,
     this.hasPendingRequest = false,
     this.stageRequestEnabled = true,
+    this.hasActiveShare = false,
     this.onToggleMic,
     this.onToggleSpeaker,
     this.onGoOnStage,
@@ -127,8 +130,9 @@ class AudioRoomBottomBar extends StatelessWidget {
           _IconBtn(
             onTap: onMorePress,
             icon: Icons.dashboard_rounded,
-            bgColor: const Color(0x16FFFFFF),
-            borderColor: const Color(0x22FFFFFF),
+            iconColor: hasActiveShare ? const Color(0xFFFF6B6B) : Colors.white70,
+            bgColor: hasActiveShare ? const Color(0x22FF3B30) : const Color(0x16FFFFFF),
+            borderColor: hasActiveShare ? const Color(0x55FF3B30) : const Color(0x22FFFFFF),
           ),
           const SizedBox(width: 8),
 

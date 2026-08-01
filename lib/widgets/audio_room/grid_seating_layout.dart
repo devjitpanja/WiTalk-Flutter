@@ -5,6 +5,8 @@ import 'participant_avatar.dart';
 
 /// Premium redesigned GridSeatingLayout.
 /// 4-column flex-wrap grid with improved visual hierarchy.
+/// Supports [compact] (70% avatar size, no labels) and [horizontal] (single scrollable row)
+/// for when screen/camera/YouTube sharing is active.
 class GridSeatingLayout extends StatelessWidget {
   final List<Map<String, dynamic>> seats;
   final int maxSeats;
@@ -15,6 +17,15 @@ class GridSeatingLayout extends StatelessWidget {
   final bool isHost;
   final bool seatsInitialized;
   final List<Map<String, dynamic>> audience;
+
+  /// Compact mode: reduces avatar size to ~70%, used when sharing is active.
+  final bool compact;
+
+  /// Horizontal mode: single scrollable row of small avatars, used in camera panel overlay.
+  final bool horizontal;
+
+  /// When true, the audience strip is suppressed (parent renders it separately).
+  final bool hideAudience;
 
   final void Function(Map<String, dynamic> speaker)? onSpeakerTap;
   final void Function(int seatIndex)? onEmptySeatTap;
@@ -34,6 +45,9 @@ class GridSeatingLayout extends StatelessWidget {
     this.isHost = false,
     this.seatsInitialized = true,
     this.audience = const [],
+    this.compact = false,
+    this.horizontal = false,
+    this.hideAudience = false,
     this.onSpeakerTap,
     this.onEmptySeatTap,
     this.onLockedSeatTap,
@@ -43,86 +57,178 @@ class GridSeatingLayout extends StatelessWidget {
   });
 
   static const double _edgePadding = 8.0;
+  static const double _horizAvatarSize = 36.0;
 
   @override
   Widget build(BuildContext context) {
+    if (horizontal) {
+      return _buildHorizontalLayout(context);
+    }
+    return _buildGridLayout(context);
+  }
+
+  Widget _buildHorizontalLayout(BuildContext context) {
+    return SizedBox(
+      height: _horizAvatarSize + 20,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        physics: const BouncingScrollPhysics(),
+        child: Row(
+          children: List.generate(maxSeats, (index) {
+            final seat = index < seats.length ? seats[index] : null;
+            return _buildHorizontalSeat(seat, index);
+          }),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHorizontalSeat(Map<String, dynamic>? seat, int index) {
+    final uidStr = seat?['uid']?.toString().trim();
+    final bool isEmpty = seat == null ||
+        seat['isEmpty'] == true ||
+        uidStr == null ||
+        uidStr.isEmpty ||
+        uidStr == 'null';
+
+    const size = _horizAvatarSize;
+
+    if (!isEmpty) {
+      final uid = uidStr!;
+      final isSpeaking = activeSpeakerUid != null && uid == activeSpeakerUid;
+      final isMuted = seat!['isMuted'] == true;
+      final isHostSeat = uid == hostUid || seat['isHost'] == true;
+
+      return GestureDetector(
+        onTap: () => onSpeakerTap?.call(seat),
+        child: Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ParticipantAvatar(
+            uid: uid,
+            name: seat['name']?.toString(),
+            avatarUrl: seat['profile_pic']?.toString(),
+            avatarFrameUrl: (seat['avatarFrameUrl'] ?? seat['avatar_frame_url'])?.toString(),
+            isHost: isHostSeat,
+            isAdmin: seat['isAdmin'] == true,
+            communityRole: seat['communityRole']?.toString(),
+            isVerified: seat['isVerified'] == true,
+            verificationBadge: seat['verificationBadge'] as Map<String, dynamic>?,
+            isMuted: isMuted,
+            isSpeaking: isSpeaking,
+            isSelf: uid == myUid,
+            size: size,
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: const DashedCirclePainter(
+            color: Color(0x33FFFFFF),
+            strokeWidth: 1.5,
+            dashLength: 4.0,
+            dashGap: 3.0,
+          ),
+          child: Container(
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: Color(0x0AFFFFFF),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridLayout(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final seatWidth = (screenWidth - _edgePadding * 2) / 4;
-    final avatarSize = (seatWidth * 0.60).clamp(40.0, 62.0);
-    // Tighter seatHeight: outerSize (avatarSize * 1.5) + name label height.
-    // Matches RN: effectiveAvatarSize + nameMarginTop + nameFontSize + 4.
-    final nameFontSize = (avatarSize * 0.20).clamp(9.0, 11.0);
-    final seatHeight = avatarSize * 1.5 + 1 + nameFontSize + 6;
+
+    // Determine columns: compact+12seats → 6 per row, otherwise 4 per row
+    final int seatsPerRow = (compact && maxSeats == 12) ? 6 : 4;
+    final seatWidth = (screenWidth - _edgePadding * 2) / seatsPerRow;
+
+    // Compact mode: 70% avatar size
+    final double avatarSizeRaw = seatWidth * (compact ? 0.42 : 0.60);
+    final avatarSize = avatarSizeRaw.clamp(compact ? 28.0 : 40.0, compact ? 44.0 : 62.0);
+
+    final nameFontSize = compact ? 0.0 : (avatarSize * 0.20).clamp(9.0, 11.0);
+    final seatHeight = compact
+        ? avatarSize * 1.3
+        : avatarSize * 1.5 + 1 + nameFontSize + 6;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ── BAITHAK header ──────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: const Color(0x140751DF),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0x260751DF)),
-                ),
-                child: const Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.people_alt_rounded, size: 11, color: Color(0xFF6E8FE0)),
-                    SizedBox(width: 5),
-                    Text(
-                      'BAITHAK',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontFamily: 'Outfit',
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6E8FE0),
-                        letterSpacing: 1.6,
+        if (!compact)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0x140751DF),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0x260751DF)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.people_alt_rounded, size: 11, color: Color(0xFF6E8FE0)),
+                      SizedBox(width: 5),
+                      Text(
+                        'BAITHAK',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF6E8FE0),
+                          letterSpacing: 1.6,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  height: 1,
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Color(0x330751DF), Colors.transparent],
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Container(
+                    height: 1,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0x330751DF), Colors.transparent],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
 
-        // ── Stage Grid ──────────────────────────────────────
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: _edgePadding, vertical: 2),
           child: Wrap(
             spacing: 0,
-            runSpacing: 2,
+            runSpacing: compact ? 0 : 2,
             children: List.generate(maxSeats, (index) {
               final seat = index < seats.length ? seats[index] : null;
-              return _buildSeat(context, seat, index, seatWidth, avatarSize, seatHeight);
+              return _buildSeat(context, seat, index, seatWidth, avatarSize, seatHeight, compact);
             }),
           ),
         ),
 
-        // ── Audience row ────────────────────────────────────
-        if (audience.isNotEmpty) _buildAudienceRow(context),
+        if (!hideAudience && audience.isNotEmpty) _buildAudienceRow(context),
       ],
     );
   }
 
   Widget _buildSeat(BuildContext context, Map<String, dynamic>? seat, int index,
-      double seatWidth, double avatarSize, double seatHeight) {
+      double seatWidth, double avatarSize, double seatHeight, bool isCompact) {
     final uidStr = seat?['uid']?.toString().trim();
     final bool isEmpty = seat == null ||
         seat['isEmpty'] == true ||
@@ -131,9 +237,9 @@ class GridSeatingLayout extends StatelessWidget {
         uidStr == 'null';
 
     if (!isEmpty) {
-      final uid = uidStr;
+      final uid = uidStr!;
       final isSpeaking = activeSpeakerUid != null && uid == activeSpeakerUid;
-      final isMuted = seat['isMuted'] == true;
+      final isMuted = seat!['isMuted'] == true;
       final isHostSeat = uid == hostUid || seat['isHost'] == true;
 
       return SizedBox(
@@ -156,6 +262,7 @@ class GridSeatingLayout extends StatelessWidget {
               isSpeaking: isSpeaking,
               isSelf: uid == myUid,
               size: avatarSize,
+              showName: !isCompact,
             ),
           ),
         ),
@@ -164,12 +271,12 @@ class GridSeatingLayout extends StatelessWidget {
 
     final bool isLocked = seat?['isLocked'] == true;
     if (isLocked) {
-      return _buildLockedSeat(index, seatWidth, avatarSize, seatHeight);
+      return _buildLockedSeat(index, seatWidth, avatarSize, seatHeight, isCompact);
     }
-    return _buildEmptySeat(index, seatWidth, avatarSize, seatHeight);
+    return _buildEmptySeat(index, seatWidth, avatarSize, seatHeight, isCompact);
   }
 
-  Widget _buildEmptySeat(int index, double seatWidth, double avatarSize, double seatHeight) {
+  Widget _buildEmptySeat(int index, double seatWidth, double avatarSize, double seatHeight, bool isCompact) {
     final String seatText = seatsInitialized
         ? (isHost ? 'Hold to lock' : 'Join')
         : 'Syncing...';
@@ -223,26 +330,28 @@ class GridSeatingLayout extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 5),
-            Text(
-              seatText,
-              style: const TextStyle(
-                color: Color(0x73FFFFFF),
-                fontSize: 9,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w500,
+            if (!isCompact) ...[
+              const SizedBox(height: 5),
+              Text(
+                seatText,
+                style: const TextStyle(
+                  color: Color(0x73FFFFFF),
+                  fontSize: 9,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildLockedSeat(int index, double seatWidth, double avatarSize, double seatHeight) {
+  Widget _buildLockedSeat(int index, double seatWidth, double avatarSize, double seatHeight, bool isCompact) {
     final String label = isHost ? 'Hold to unlock' : 'Seat ${index + 1}';
 
     return SizedBox(
@@ -279,19 +388,21 @@ class GridSeatingLayout extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0x73FFFFFF),
-                fontSize: 9,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w500,
+            if (!isCompact) ...[
+              const SizedBox(height: 5),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0x73FFFFFF),
+                  fontSize: 9,
+                  fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            ],
           ],
         ),
       ),

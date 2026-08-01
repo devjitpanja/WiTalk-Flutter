@@ -21,6 +21,8 @@ class MoreOptionsBottomSheet extends StatelessWidget {
   final VoidCallback? onYoutubeVideo;
   final VoidCallback? onChatGPT;
   final VoidCallback? onGoogleAI;
+  final int handRaiseCount;
+  final VoidCallback? onViewRequests;
 
   const MoreOptionsBottomSheet({
     super.key,
@@ -43,6 +45,8 @@ class MoreOptionsBottomSheet extends StatelessWidget {
     this.onYoutubeVideo,
     this.onChatGPT,
     this.onGoogleAI,
+    this.handRaiseCount = 0,
+    this.onViewRequests,
   });
 
   @override
@@ -281,6 +285,38 @@ class MoreOptionsBottomSheet extends StatelessWidget {
                   textAlign: TextAlign.center,
                 ),
               ),
+            if (handRaiseCount > 0 && onViewRequests != null) ...[
+              const SizedBox(height: 14),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Navigator.pop(context);
+                    Future.delayed(const Duration(milliseconds: 200), onViewRequests);
+                  },
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF9800).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFFF9800).withOpacity(0.25), width: 1),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.pan_tool_outlined, color: Color(0xFFFF9800), size: 20),
+                        const SizedBox(width: 10),
+                        Text(
+                          'Seat Requests ($handRaiseCount)',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFFFF9800)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -500,6 +536,8 @@ Future<void> showMoreOptionsBottomSheet({
   VoidCallback? onYoutubeVideo,
   VoidCallback? onChatGPT,
   VoidCallback? onGoogleAI,
+  int handRaiseCount = 0,
+  VoidCallback? onViewRequests,
 }) {
   return showModalBottomSheet(
     useRootNavigator: true,
@@ -526,6 +564,8 @@ Future<void> showMoreOptionsBottomSheet({
       onYoutubeVideo: onYoutubeVideo,
       onChatGPT: onChatGPT,
       onGoogleAI: onGoogleAI,
+      handRaiseCount: handRaiseCount,
+      onViewRequests: onViewRequests,
     ),
   );
 }

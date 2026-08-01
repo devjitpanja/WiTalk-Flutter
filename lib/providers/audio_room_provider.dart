@@ -107,6 +107,7 @@ class AudioRoomState {
   // ── Screen / camera share ──────────────────────────────────────────────────
   final Map<String, dynamic>? screenShareInfo;
   final bool isScreenSharing;
+  final bool isCameraSharing;
   final List<Map<String, dynamic>> cameraShareInfos;
 
   // ── UI helpers ─────────────────────────────────────────────────────────────
@@ -127,6 +128,10 @@ class AudioRoomState {
   final bool shouldNavigateBack; // host ends own room → just pop, no ended screen
   final bool kickedFromRoom;     // kicked → toast + navigate back
   final bool bannedFromRoom;     // banned → toast + navigate back
+
+  // ── Video track version (bumped on every remote video subscribe/unsubscribe) ─
+  // Forces VideoTrackRenderer widgets to rebuild when tracks arrive late.
+  final int videoTrackVersion;
 
   const AudioRoomState({
     this.roomId,
@@ -194,6 +199,7 @@ class AudioRoomState {
     this.showYoutubeSection = false,
     this.screenShareInfo,
     this.isScreenSharing = false,
+    this.isCameraSharing = false,
     this.cameraShareInfos = const [],
     this.activeReactions = const [],
     this.alertDialogConfig,
@@ -206,6 +212,7 @@ class AudioRoomState {
     this.shouldNavigateBack = false,
     this.kickedFromRoom = false,
     this.bannedFromRoom = false,
+    this.videoTrackVersion = 0,
   });
 
   AudioRoomState copyWith({
@@ -274,6 +281,7 @@ class AudioRoomState {
     bool? showYoutubeSection,
     Object? screenShareInfo = _sentinel,
     bool? isScreenSharing,
+    bool? isCameraSharing,
     List<Map<String, dynamic>>? cameraShareInfos,
     List<Map<String, dynamic>>? activeReactions,
     Object? alertDialogConfig = _sentinel,
@@ -286,6 +294,7 @@ class AudioRoomState {
     bool? shouldNavigateBack,
     bool? kickedFromRoom,
     bool? bannedFromRoom,
+    int? videoTrackVersion,
   }) {
     return AudioRoomState(
       roomId: roomId ?? this.roomId,
@@ -369,6 +378,7 @@ class AudioRoomState {
           ? this.screenShareInfo
           : screenShareInfo as Map<String, dynamic>?,
       isScreenSharing: isScreenSharing ?? this.isScreenSharing,
+      isCameraSharing: isCameraSharing ?? this.isCameraSharing,
       cameraShareInfos: cameraShareInfos ?? this.cameraShareInfos,
       activeReactions: activeReactions ?? this.activeReactions,
       alertDialogConfig: alertDialogConfig == _sentinel
@@ -389,6 +399,7 @@ class AudioRoomState {
       shouldNavigateBack: shouldNavigateBack ?? this.shouldNavigateBack,
       kickedFromRoom: kickedFromRoom ?? this.kickedFromRoom,
       bannedFromRoom: bannedFromRoom ?? this.bannedFromRoom,
+      videoTrackVersion: videoTrackVersion ?? this.videoTrackVersion,
     );
   }
 }
@@ -1001,6 +1012,73 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
             audioOutputMode: mode,
             isBluetoothAvailable: btAvail ?? state.isBluetoothAvailable,
           );
+          break;
+
+        // ── Video track subscribed: screen share ───────────────────────────
+        case LiveKitAudioEvents.screenShareStreamAdded:
+          final uid = event['userID']?.toString();
+          final userName = event['userName']?.toString() ?? 'User';
+          final streamID = event['streamID']?.toString() ?? '';
+          if (uid != null && uid != myUid) {
+            // Only set if not already set (data command may have arrived first)
+            if (state.screenShareInfo == null) {
+              state = state.copyWith(
+                screenShareInfo: {'uid': uid, 'userName': userName, 'streamID': streamID},
+              );
+            }
+            // Always bump videoTrackVersion so VideoTrackRenderer rebuilds
+            state = state.copyWith(videoTrackVersion: state.videoTrackVersion + 1);
+          }
+          break;
+
+        case LiveKitAudioEvents.screenShareStreamRemoved:
+          final uid = event['userID']?.toString();
+          final streamID = event['streamID']?.toString();
+          if (state.screenShareInfo != null) {
+            final existing = state.screenShareInfo!;
+            if (existing['uid'] == uid || existing['streamID'] == streamID) {
+              state = state.copyWith(
+                screenShareInfo: null,
+                videoTrackVersion: state.videoTrackVersion + 1,
+              );
+            }
+          }
+          break;
+
+        // ── Video track subscribed: camera share ────────────────────────────
+        case LiveKitAudioEvents.cameraShareStreamAdded:
+          final uid = event['userID']?.toString();
+          final userName = event['userName']?.toString() ?? 'User';
+          final streamID = event['streamID']?.toString() ?? '';
+          if (uid != null && uid != myUid) {
+            final updated = List<Map<String, dynamic>>.from(state.cameraShareInfos);
+            final existingIdx = updated.indexWhere((c) => c['uid'] == uid);
+            if (existingIdx >= 0) {
+              updated[existingIdx] = {'uid': uid, 'userName': userName, 'streamID': streamID};
+            } else if (updated.length < 2) {
+              updated.add({'uid': uid, 'userName': userName, 'streamID': streamID});
+            }
+            state = state.copyWith(
+              cameraShareInfos: updated,
+              videoTrackVersion: state.videoTrackVersion + 1,
+            );
+          }
+          break;
+
+        case LiveKitAudioEvents.cameraShareStreamRemoved:
+          final uid = event['userID']?.toString();
+          final streamID = event['streamID']?.toString();
+          if (uid != null || streamID != null) {
+            final updated = state.cameraShareInfos.where((c) {
+              if (streamID != null && c['streamID'] == streamID) return false;
+              if (uid != null && c['uid'] == uid && c['streamID'] == '${uid}_camera') return false;
+              return true;
+            }).toList();
+            state = state.copyWith(
+              cameraShareInfos: updated,
+              videoTrackVersion: state.videoTrackVersion + 1,
+            );
+          }
           break;
 
         // ── LiveKit data channel roomCommands ──────────────────────────────
@@ -2707,6 +2785,164 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   // ══════════════════════════════════════════════════════════════════
   // ── YouTube ──────────────────────────────────────════════════════
   // ══════════════════════════════════════════════════════════════════
+
+  // ══════════════════════════════════════════════════════════════════
+  // ── Screen share ─────────────────────────────────════════════════
+  // ══════════════════════════════════════════════════════════════════
+
+  Future<void> toggleScreenShare() async {
+    if (state.isScreenSharing) {
+      // Stop sharing
+      try {
+        await liveKitAudioManager.stopScreenShare();
+      } catch (_) {}
+      state = state.copyWith(isScreenSharing: false);
+      if (_myUid != null) {
+        liveKitAudioManager.sendRoomCommand(
+          'SCREEN_SHARE_STOPPED',
+          data: {'userID': _myUid},
+        );
+      }
+    } else {
+      // Guard: must be in seat
+      if (!state.isInSeat && !state.isHost) {
+        _showAlert(
+          title: 'Not on Stage',
+          message: 'You need to be on stage to share your screen.',
+          type: 'warning',
+        );
+        return;
+      }
+      // Mutual exclusivity
+      if (state.isCameraSharing || state.cameraShareInfos.isNotEmpty) {
+        _showAlert(
+          title: 'Camera Active',
+          message: 'Stop camera sharing before starting screen share.',
+          type: 'warning',
+        );
+        return;
+      }
+      if (state.youtubeVideoId != null) {
+        _showAlert(
+          title: 'YouTube Active',
+          message: 'Stop YouTube before starting screen share.',
+          type: 'warning',
+        );
+        return;
+      }
+      if (state.screenShareInfo != null) {
+        _showAlert(
+          title: 'Screen Share Active',
+          message: 'Another user is already sharing their screen.',
+          type: 'warning',
+        );
+        return;
+      }
+      try {
+        final sid = await liveKitAudioManager.startScreenShare();
+        state = state.copyWith(isScreenSharing: true);
+        if (_myUid != null) {
+          liveKitAudioManager.sendRoomCommand(
+            'SCREEN_SHARE_STARTED',
+            data: {
+              'userID': _myUid,
+              'userName': _joinParams?['name'] ?? _myUid,
+              'streamID': sid ?? '',
+            },
+          );
+        }
+      } catch (e) {
+        _showAlert(
+          title: 'Screen Share Failed',
+          message: 'Could not start screen sharing. Please try again.',
+          type: 'danger',
+        );
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════
+  // ── Camera share ─────────────────────────────────════════════════
+  // ══════════════════════════════════════════════════════════════════
+
+  Future<void> toggleCameraShare() async {
+    if (state.isCameraSharing) {
+      // Stop sharing
+      try {
+        await liveKitAudioManager.stopCameraShare();
+      } catch (_) {}
+      state = state.copyWith(isCameraSharing: false);
+      if (_myUid != null) {
+        liveKitAudioManager.sendRoomCommand(
+          'CAMERA_SHARE_STOPPED',
+          data: {'userID': _myUid},
+        );
+      }
+    } else {
+      // Guard: must be in seat
+      if (!state.isInSeat && !state.isHost) {
+        _showAlert(
+          title: 'Not on Stage',
+          message: 'You need to be on stage to share your camera.',
+          type: 'warning',
+        );
+        return;
+      }
+      // Mutual exclusivity
+      if (state.isScreenSharing || state.screenShareInfo != null) {
+        _showAlert(
+          title: 'Screen Share Active',
+          message: 'Stop screen sharing before starting camera share.',
+          type: 'warning',
+        );
+        return;
+      }
+      if (state.youtubeVideoId != null) {
+        _showAlert(
+          title: 'YouTube Active',
+          message: 'Stop YouTube before starting camera share.',
+          type: 'warning',
+        );
+        return;
+      }
+      // Max 2 camera streams total
+      final totalActive = state.cameraShareInfos.length + (state.isCameraSharing ? 1 : 0);
+      if (totalActive >= 2) {
+        _showAlert(
+          title: 'Camera Limit Reached',
+          message: 'Maximum 2 camera streams are allowed at once.',
+          type: 'warning',
+        );
+        return;
+      }
+      try {
+        final track = await liveKitAudioManager.startCameraShare();
+        if (track != null) {
+          state = state.copyWith(isCameraSharing: true);
+          if (_myUid != null) {
+            liveKitAudioManager.sendRoomCommand(
+              'CAMERA_SHARE_STARTED',
+              data: {
+                'userID': _myUid,
+                'userName': _joinParams?['name'] ?? _myUid,
+                'streamID': '',
+              },
+            );
+          }
+        }
+      } catch (e) {
+        _showAlert(
+          title: 'Camera Share Failed',
+          message: 'Could not start camera sharing. Please try again.',
+          type: 'danger',
+        );
+      }
+    }
+  }
+
+  Future<void> switchCameraFacing() async {
+    await liveKitAudioManager.switchCameraFacing();
+  }
 
   void selectYoutubeVideo(String videoId) {
     state = state.copyWith(

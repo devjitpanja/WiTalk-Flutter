@@ -15,6 +15,11 @@ class LiveKitAudioEvents {
   static const String speakerStateChanged = 'speakerStateChanged';
   static const String streamUpdate = 'streamUpdate';
   static const String activeSpeakerChanged = 'activeSpeakerChanged';
+  // Video track subscription events
+  static const String screenShareStreamAdded = 'screenShareStreamAdded';
+  static const String screenShareStreamRemoved = 'screenShareStreamRemoved';
+  static const String cameraShareStreamAdded = 'cameraShareStreamAdded';
+  static const String cameraShareStreamRemoved = 'cameraShareStreamRemoved';
 }
 
 class RoomUpdateType {
@@ -266,15 +271,53 @@ class LiveKitAudioManager {
         final track = event.track;
         final participant = event.participant;
         final publication = event.publication;
+        final uid = participant.identity;
         if (track.kind == TrackType.AUDIO) {
           final isMicOn = !publication.muted;
           _emit(LiveKitAudioEvents.streamUpdate, {
             'roomID': roomId,
             'updateType': RoomUpdateType.add,
-            'userID': participant.identity,
-            'userName': participant.name ?? participant.identity,
+            'userID': uid,
+            'userName': participant.name ?? uid,
             'isMicOn': isMicOn,
           });
+        } else if (track.kind == TrackType.VIDEO) {
+          final source = publication.source;
+          final name = participant.name ?? uid;
+          if (source == TrackSource.screenShareVideo) {
+            _emit(LiveKitAudioEvents.screenShareStreamAdded, {
+              'streamID': publication.sid,
+              'userID': uid,
+              'userName': name,
+            });
+          } else if (source == TrackSource.camera && uid != myUserId) {
+            // Skip own camera — local preview is handled directly via localCameraTrack
+            _emit(LiveKitAudioEvents.cameraShareStreamAdded, {
+              'streamID': publication.sid,
+              'userID': uid,
+              'userName': name,
+            });
+          }
+        }
+      })
+      ..on<TrackUnsubscribedEvent>((event) {
+        final track = event.track;
+        final participant = event.participant;
+        final publication = event.publication;
+        if (track.kind == TrackType.VIDEO) {
+          final source = publication.source;
+          final uid = participant.identity;
+          if (source == TrackSource.screenShareVideo) {
+            _emit(LiveKitAudioEvents.screenShareStreamRemoved, {
+              'streamID': publication.sid,
+              'userID': uid,
+            });
+          } else if (source == TrackSource.camera) {
+            _emit(LiveKitAudioEvents.cameraShareStreamRemoved, {
+              'streamID': publication.sid,
+              'userID': uid,
+            });
+          }
         }
       })
       ..on<TrackMutedEvent>((event) {
@@ -457,6 +500,116 @@ class LiveKitAudioManager {
     currentUserId = null;
     currentUserName = null;
     isInitialized = false;
+    _screenShareTrack = null;
+    _cameraTrack = null;
+  }
+
+  // ── Screen share ───────────────────────────────────────────────────────────
+  LocalVideoTrack? _screenShareTrack;
+  LocalVideoTrack? _cameraTrack;
+  bool _isFrontCamera = true;
+
+  bool get isScreenSharing => _screenShareTrack != null;
+  bool get isCameraSharing => _cameraTrack != null;
+  bool get isFrontCamera => _isFrontCamera;
+
+  /// Start publishing screen share video. Returns the track SID (streamID) on success.
+  Future<String?> startScreenShare() async {
+    if (_room?.localParticipant == null) return null;
+    try {
+      final pub = await _room!.localParticipant!.setScreenShareEnabled(
+        true,
+        captureScreenAudio: true,
+      );
+      _screenShareTrack = pub?.track as LocalVideoTrack?;
+      if (kDebugMode) print('[LiveKitAudioManager] Screen share started: ${pub?.sid}');
+      return pub?.sid;
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] startScreenShare failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> stopScreenShare() async {
+    if (_room?.localParticipant == null) return;
+    try {
+      await _room!.localParticipant!.setScreenShareEnabled(false);
+      _screenShareTrack = null;
+      if (kDebugMode) print('[LiveKitAudioManager] Screen share stopped');
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] stopScreenShare failed: $e');
+    }
+  }
+
+  /// Start publishing camera video. Returns the local track on success.
+  Future<LocalVideoTrack?> startCameraShare({bool front = true}) async {
+    if (_room?.localParticipant == null) return null;
+    try {
+      _isFrontCamera = front;
+      final track = await LocalVideoTrack.createCameraTrack(
+        CameraCaptureOptions(
+          cameraPosition: front ? CameraPosition.front : CameraPosition.back,
+        ),
+      );
+      await _room!.localParticipant!.publishVideoTrack(track);
+      _cameraTrack = track;
+      if (kDebugMode) print('[LiveKitAudioManager] Camera share started');
+      return track;
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] startCameraShare failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> stopCameraShare() async {
+    try {
+      if (_cameraTrack != null && _room?.localParticipant != null) {
+        // Find the publication for the camera track and unpublish it
+        final local = _room!.localParticipant!;
+        for (final pub in local.trackPublications.values) {
+          if (pub.track == _cameraTrack) {
+            await local.removePublishedTrack(pub.sid);
+            break;
+          }
+        }
+      }
+      await _cameraTrack?.stop();
+      _cameraTrack = null;
+      if (kDebugMode) print('[LiveKitAudioManager] Camera share stopped');
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] stopCameraShare failed: $e');
+    }
+  }
+
+  /// Switch between front and back camera while sharing.
+  Future<void> switchCameraFacing() async {
+    if (_cameraTrack == null) return;
+    try {
+      _isFrontCamera = !_isFrontCamera;
+      await _cameraTrack!.restartTrack(
+        CameraCaptureOptions(
+          cameraPosition: _isFrontCamera ? CameraPosition.front : CameraPosition.back,
+        ),
+      );
+    } catch (e) {
+      if (kDebugMode) print('[LiveKitAudioManager] switchCameraFacing failed: $e');
+    }
+  }
+
+  /// Returns the local camera track (for VideoTrackRenderer).
+  LocalVideoTrack? get localCameraTrack => _cameraTrack;
+
+  /// Returns the local screen-share track (for VideoTrackRenderer).
+  LocalVideoTrack? get localScreenShareTrack => _screenShareTrack;
+
+  /// Find the remote video track for a given participant identity and source.
+  VideoTrack? getRemoteVideoTrack(String participantIdentity, {TrackSource source = TrackSource.screenShareVideo}) {
+    if (_room == null) return null;
+    final participant = _room!.remoteParticipants[participantIdentity];
+    if (participant == null) return null;
+    final pub = participant.getTrackPublicationBySource(source);
+    if (pub?.track is VideoTrack) return pub!.track as VideoTrack;
+    return null;
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

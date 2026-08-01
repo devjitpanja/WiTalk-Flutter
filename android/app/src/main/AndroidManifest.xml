@@ -14,6 +14,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE"
         android:minSdkVersion="31"/>
+    <!-- Required for screen capture on Android 10+ (API 29+) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION"
+        android:minSdkVersion="29"/>
     <!-- Notification permission (Android 13+) -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"
         android:minSdkVersion="33"/>
@@ -55,7 +58,7 @@
         <!-- Audio room foreground service (WhatsApp-style persistent notification) -->
         <service
             android:name=".AudioRoomForegroundService"
-            android:foregroundServiceType="mediaPlayback|microphone"
+            android:foregroundServiceType="mediaPlayback|microphone|mediaProjection"
             android:exported="false"
             android:stopWithTask="false"/>
 
