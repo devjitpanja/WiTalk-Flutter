@@ -244,6 +244,7 @@ class _StartGroupAddaScreenState extends State<StartGroupAddaScreen> {
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
               hintText: 'What\'s your adda about?',
               hintStyle: TextStyle(color: c.placeholder, fontFamily: 'Outfit'),
             ),

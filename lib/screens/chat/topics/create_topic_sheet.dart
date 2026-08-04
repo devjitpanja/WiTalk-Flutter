@@ -142,7 +142,7 @@ class _CreateTopicSheetState extends ConsumerState<CreateTopicSheet> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: c.primary, width: 1.5),
+          borderSide: BorderSide(color: c.border),
         ),
       );
 

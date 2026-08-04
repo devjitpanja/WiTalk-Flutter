@@ -208,7 +208,7 @@ class _AddGroupMembersScreenState
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: c.primaryButton, width: 1.5),
+                  borderSide: BorderSide(color: c.border),
                 ),
               ),
             ),

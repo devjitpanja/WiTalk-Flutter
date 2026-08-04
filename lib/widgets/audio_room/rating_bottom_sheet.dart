@@ -270,7 +270,7 @@ class _RatingBottomSheetState extends State<RatingBottomSheet> {
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(14),
-                                    borderSide: const BorderSide(color: Color(0xFF4A90E2)),
+                                    borderSide: BorderSide(color: Colors.white.withOpacity(0.12)),
                                   ),
                                   counterStyle: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11),
                                 ),

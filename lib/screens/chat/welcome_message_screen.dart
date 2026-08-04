@@ -304,7 +304,7 @@ class _WelcomeMessageScreenState extends ConsumerState<WelcomeMessageScreen> {
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: c.primary, width: 1.5),
+                      borderSide: BorderSide(color: c.border),
                     ),
                     contentPadding: const EdgeInsets.all(14),
                   ),

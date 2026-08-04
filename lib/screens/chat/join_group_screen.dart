@@ -236,7 +236,7 @@ class _JoinGroupScreenState extends ConsumerState<JoinGroupScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: c.primaryButton, width: 1.5),
+                  borderSide: BorderSide(color: c.border),
                 ),
               ),
             ),

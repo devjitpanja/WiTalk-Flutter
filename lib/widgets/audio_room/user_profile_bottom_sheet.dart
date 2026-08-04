@@ -1172,7 +1172,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                     fillColor: Colors.white.withOpacity(0.05),
                     contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withOpacity(0.3))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.white.withOpacity(0.15))),
                     counterStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
                   ),
                 ),

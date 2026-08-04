@@ -232,7 +232,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                     focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide:
-                            BorderSide(color: c.primary)),
+                            BorderSide(color: c.border)),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 12),
                   ),
@@ -260,7 +260,7 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
                     focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
                         borderSide:
-                            BorderSide(color: c.primary)),
+                            BorderSide(color: c.border)),
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 12),
                   ),

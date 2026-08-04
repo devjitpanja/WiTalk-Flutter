@@ -710,7 +710,7 @@ class _CreateTopicSheetState extends State<CreateTopicSheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: c.primary),
+                  borderSide: BorderSide(color: c.border),
                 ),
               ),
             ),
@@ -737,7 +737,7 @@ class _CreateTopicSheetState extends State<CreateTopicSheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(10),
-                  borderSide: BorderSide(color: c.primary),
+                  borderSide: BorderSide(color: c.border),
                 ),
               ),
             ),
@@ -782,7 +782,7 @@ class _CreateTopicSheetState extends State<CreateTopicSheet> {
                             ),
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide(color: c.primary),
+                              borderSide: BorderSide(color: c.border),
                             ),
                           ),
                         ),

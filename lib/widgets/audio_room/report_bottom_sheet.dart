@@ -381,7 +381,7 @@ class _ReportBottomSheetState extends State<ReportBottomSheet> {
               fillColor: Colors.white.withOpacity(0.06),
               contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withOpacity(0.12))),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFF4A90E2))),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: Colors.white.withOpacity(0.12))),
               counterStyle: TextStyle(color: Colors.white.withOpacity(0.35), fontSize: 11),
             ),
           ),

@@ -461,7 +461,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1),
+                        borderSide: BorderSide(color: const Color(0xFF4A90E2).withOpacity(0.4), width: 1),
                       ),
                       counterStyle: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
                     ),

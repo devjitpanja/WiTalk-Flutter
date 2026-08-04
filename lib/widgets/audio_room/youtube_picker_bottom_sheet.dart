@@ -72,6 +72,8 @@ class _YouTubePickerBottomSheetState extends State<YouTubePickerBottomSheet> {
                 filled: true,
                 fillColor: c.surface,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c.border)),
               ),
             ),
             const SizedBox(height: 16),
