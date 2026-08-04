@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 // All hex values are sourced from RN colors.js lightTheme / darkTheme.
 
@@ -24,6 +25,12 @@ class AppTheme {
             fontWeight: FontWeight.w600,
             fontSize: 18,
             color: Color(0xFFFFFFFF),
+          ),
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.light,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: Brightness.light,
           ),
         ),
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(
@@ -97,6 +104,12 @@ class AppTheme {
             fontWeight: FontWeight.w600,
             fontSize: 18,
             color: Color(0xFF000000),
+          ),
+          systemOverlayStyle: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            statusBarIconBrightness: Brightness.dark,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarIconBrightness: Brightness.dark,
           ),
         ),
         bottomNavigationBarTheme: const BottomNavigationBarThemeData(

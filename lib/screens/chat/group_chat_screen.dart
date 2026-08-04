@@ -880,9 +880,16 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               c.background.computeLuminance() > 0.5
                   ? Brightness.dark
                   : Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness:
+              c.background.computeLuminance() > 0.5
+                  ? Brightness.dark
+                  : Brightness.light,
         ),
       ),
-      body: Column(children: [
+      body: SafeArea(
+        top: false,
+        child: Column(children: [
         // Pinned message banner (Telegram-style, cycles through all pins)
         if (_pinnedMessages.isNotEmpty)
           _PinnedBanner(
@@ -1001,6 +1008,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             onOpenGiphyPicker: _openGiphyPicker,
           ),
       ]),
+      ),
     );
   }
 

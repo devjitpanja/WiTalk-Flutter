@@ -1458,9 +1458,15 @@ class _ChatConversationScreenState
           statusBarIconBrightness: c.surface.computeLuminance() > 0.5
               ? Brightness.dark
               : Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+          systemNavigationBarIconBrightness: c.surface.computeLuminance() > 0.5
+              ? Brightness.dark
+              : Brightness.light,
         ),
       ),
-      body: Column(children: [
+      body: SafeArea(
+        top: false,
+        child: Column(children: [
         Expanded(
           child: Stack(children: [
             // Chat background image
@@ -1629,6 +1635,7 @@ class _ChatConversationScreenState
           onBlockUnblock: _toggleBlock,
         ),
       ]),
+      ),
     );
   }
 

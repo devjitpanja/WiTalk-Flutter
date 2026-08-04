@@ -186,16 +186,16 @@ class _RankScreenState extends ConsumerState<RankScreen>
     final errorColor =
         isDark ? const Color(0xFFFF453A) : const Color(0xFFF44336);
 
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
         statusBarColor: accentColor,
         statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
       ),
-    );
-
-    return Scaffold(
-      backgroundColor: backgroundColor,
-      body: Column(
+      child: Scaffold(
+        backgroundColor: backgroundColor,
+        body: Column(
         children: [
           // Header
           Container(
@@ -283,6 +283,7 @@ class _RankScreenState extends ConsumerState<RankScreen>
                         : _renderList(size, isDark, insets),
           ),
         ],
+      ),
       ),
     );
   }

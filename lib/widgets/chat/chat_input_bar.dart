@@ -217,7 +217,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final bottomPad = MediaQuery.of(context).viewPadding.bottom;
+    const bottomPad = 0.0;
 
     return Column(
       mainAxisSize: MainAxisSize.min,
