@@ -24,7 +24,7 @@ class UploadService {
   Future<void> deleteUploadedFile(String fileName) async {
     try {
       final token = await _getAccessToken();
-      final url = '${AppConfig.apiBaseUrl}/v1/files/delete';
+      final url = AppConfig.filesDeleteUrl;
       await Dio().delete(
         url,
         options: Options(headers: {'Authorization': 'Bearer $token'}),
@@ -50,7 +50,7 @@ class UploadService {
 
     try {
       final token = await _getAccessToken();
-      final uploadUrl = '${AppConfig.apiBaseUrl}/v1/files';
+      final uploadUrl = AppConfig.filesApiUrl;
 
       final mimeType = mediaType == 'video' ? 'video/mp4' : 'image/jpeg';
 
