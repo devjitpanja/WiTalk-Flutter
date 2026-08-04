@@ -355,6 +355,32 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     }
   }
 
+  // ── Content tap: single → post view, double → like + heart ─────────────────
+  void _handleContentTap() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const doubleTapMs = 300;
+    if (_lastTap != null && now - _lastTap! < doubleTapMs) {
+      _singleTapTimer?.cancel();
+      _singleTapTimer = null;
+      if (!_isLiked && !_liking) _toggleLike();
+      _triggerHeart();
+      _lastTap = null;
+      return;
+    }
+    _lastTap = now;
+    _singleTapTimer?.cancel();
+    _singleTapTimer = Timer(const Duration(milliseconds: doubleTapMs), () {
+      _lastTap = null;
+      if (!mounted) return;
+      final suffix = _p['suffix'] as String?;
+      if (suffix != null && suffix.isNotEmpty) {
+        context.push('/post-view/$suffix');
+      } else {
+        context.push('/post/$_postId');
+      }
+    });
+  }
+
   // ── Double-tap ─────────────────────────────────────────────────────────────
   void _handleMediaTap(int index) {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -517,26 +543,29 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
           });
         }
       }
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text.rich(
-            TextSpan(children: spans,
-                style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'Outfit', height: 1.43)),
-            maxLines: _expanded ? null : lineLimit,
-            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
-          ),
-          if (_showReadMore)
-            GestureDetector(
-              onTap: () => setState(() => _expanded = !_expanded),
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(_expanded ? 'Show less' : 'Read more',
-                    style: TextStyle(color: c.primaryButton, fontSize: 13,
-                        fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-              ),
+      return GestureDetector(
+        onTap: () => _handleContentTap(),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text.rich(
+              TextSpan(children: spans,
+                  style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'Outfit', height: 1.43)),
+              maxLines: _expanded ? null : lineLimit,
+              overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
             ),
-        ]),
+            if (_showReadMore)
+              GestureDetector(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(_expanded ? 'Show less' : 'Read more',
+                      style: TextStyle(color: c.primaryButton, fontSize: 13,
+                          fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                ),
+              ),
+          ]),
+        ),
       );
     });
   }

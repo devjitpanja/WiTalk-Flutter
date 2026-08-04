@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:dio/dio.dart' show DioException;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -372,24 +372,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   // ── Media ─────────────────────────────────────────────────────────────────────
 
-  Future<void> _pickImages() async {
-    final remaining = _maxImages - _selectedImages.length;
-    if (remaining <= 0) return;
-
-    final picker = ImagePicker();
-    final picked = await picker.pickMultiImage(imageQuality: 85);
-
-    if (picked.isNotEmpty && mounted) {
-      setState(() {
-        for (final x in picked.take(remaining)) {
-          _selectedImages.add(File(x.path));
-          _selectedImagesMeta.add({'width': 0, 'height': 0});
-        }
-        _selectedVideo = null;
-      });
-    }
-  }
-
   Future<void> _initVideoPreviewPlayer(File videoFile) async {
     _videoPlayerController?.dispose();
     _videoPlayerController = VideoPlayerController.file(videoFile)
@@ -572,6 +554,17 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     );
 
     try {
+      if (_uid == null || _uid!.isEmpty) {
+        progressNotifier.update(
+          text: 'User not authenticated',
+          icon: 'error',
+          backgroundColor: Colors.red.shade700,
+          showProgressBar: false,
+          showDismiss: true,
+        );
+        return;
+      }
+
       final List<Map<String, dynamic>> mediaData = [];
 
       if (video != null) {
@@ -645,7 +638,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
       final payload = {
         'user_id': _uid,
-        'content': content,
+        'content': content.isNotEmpty ? content : null,
         'media': mediaData.isNotEmpty ? mediaData : null,
         if (location != null)
           'location': {
@@ -681,7 +674,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         throw Exception(response.data?['message'] ?? 'Failed to create post');
       }
     } catch (e) {
-      final errorMsg = e.toString().replaceFirst('Exception: ', '');
+      String errorMsg;
+      if (e is DioException) {
+        final data = e.response?.data;
+        errorMsg = (data is Map ? data['message'] ?? data['error'] : null)?.toString() ??
+            e.message ??
+            'Failed to create post. Please try again.';
+      } else {
+        errorMsg = e.toString().replaceFirst('Exception: ', '');
+      }
       progressNotifier.update(
         text: errorMsg,
         icon: 'error',
@@ -693,6 +694,28 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
+
+  Widget _buildCharCounter() {
+    final len = _contentCtrl.text.length;
+    final ratio = len / _maxCharacterCount;
+    Color color;
+    if (ratio >= 0.9) {
+      color = AppColors.error;
+    } else if (ratio >= 0.7) {
+      color = AppColors.warning;
+    } else {
+      color = AppColors.textTertiary;
+    }
+    return Text(
+      '$len / $_maxCharacterCount',
+      style: TextStyle(
+        color: color,
+        fontFamily: 'Outfit',
+        fontSize: 12,
+        fontWeight: FontWeight.w400,
+      ),
+    );
+  }
 
   String _formatTime(int seconds) {
     final mins = seconds ~/ 60;
@@ -710,7 +733,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final isVerified = _userProfile?['is_verified'] == true;
     final badgeColor = _userProfile?['verification_badge']?['color'];
 
-    // WillPopScope equivalent: block hardware back while editing-upload in progress
     return PopScope(
       canPop: !_uploading,
       onPopInvokedWithResult: (didPop, _) {
@@ -727,6 +749,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         appBar: AppBar(
           backgroundColor: AppColors.background,
           elevation: 0,
+          surfaceTintColor: Colors.transparent,
           leading: GestureDetector(
             onTap: () {
               if (_uploading) {
@@ -739,70 +762,66 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 context.pop();
               }
             },
-            child: Container(
-              margin: const EdgeInsets.all(8),
-              decoration: const BoxDecoration(
-                color: AppColors.cardBackground,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close, color: Colors.white, size: 22),
+            child: const Padding(
+              padding: EdgeInsets.all(14),
+              child: Icon(Icons.arrow_back_ios_new_rounded,
+                  color: Colors.white, size: 20),
             ),
           ),
-          title: Column(
-            children: [
-              Text(
-                widget.isEditing ? 'Edit Post' : 'Create Post',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600,
-                  fontSize: 17,
-                ),
-              ),
-              const Text(
-                'Share with your community',
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontFamily: 'Outfit',
-                  fontSize: 12,
-                ),
-              ),
-            ],
+          title: Text(
+            widget.isEditing ? 'Edit Post' : 'New Post',
+            style: const TextStyle(
+              color: Colors.white,
+              fontFamily: 'Outfit',
+              fontWeight: FontWeight.w700,
+              fontSize: 17,
+              letterSpacing: -0.3,
+            ),
           ),
           centerTitle: true,
           actions: [
             Padding(
-              padding: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
-              child: ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      _uploading ? AppColors.border : AppColors.primaryButton,
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(22)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                ),
-                onPressed: _uploading ? null : _handleShare,
-                icon: _uploading
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.send_rounded, size: 14, color: Colors.white),
-                label: Text(
-                  widget.isEditing ? 'Update' : 'Share',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+              padding: const EdgeInsets.only(right: 16, top: 10, bottom: 10),
+              child: GestureDetector(
+                onTap: _uploading ? null : _handleShare,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                  decoration: BoxDecoration(
+                    color: _uploading
+                        ? AppColors.primaryButton.withValues(alpha: 0.4)
+                        : AppColors.primaryButton,
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_uploading)
+                        const SizedBox(
+                          width: 13,
+                          height: 13,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white),
+                        ),
+                      Text(
+                        widget.isEditing ? 'Update' : 'Post',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontFamily: 'Outfit',
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
           ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(height: 1, color: AppColors.border),
+          ),
         ),
         body: Stack(
           children: [
@@ -813,161 +832,216 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // ── User Info Row ──────────────────────────────────────────
-                  if (_userProfile != null) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 23,
-                            backgroundColor: AppColors.border,
-                            backgroundImage: pic != null
-                                ? CachedNetworkImageProvider(pic)
-                                : null,
-                            child: pic == null
-                                ? Text(
-                                    (name.isNotEmpty ? name[0] : '?')
-                                        .toUpperCase(),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.bold),
-                                  )
-                                : null,
-                          ),
-                          const SizedBox(width: 12),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Text(
-                                    name,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontFamily: 'Outfit',
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 15,
-                                    ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Stack(
+                          children: [
+                            CircleAvatar(
+                              radius: 22,
+                              backgroundColor: AppColors.primaryButton,
+                              backgroundImage: pic != null
+                                  ? CachedNetworkImageProvider(pic)
+                                  : null,
+                              child: pic == null
+                                  ? Text(
+                                      (name.isNotEmpty ? name[0] : '?')
+                                          .toUpperCase(),
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 17),
+                                    )
+                                  : null,
+                            ),
+                            if (isVerified)
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: AppColors.background,
                                   ),
-                                  if (isVerified) ...[
-                                    const SizedBox(width: 4),
-                                    Icon(
-                                      Icons.verified,
-                                      size: 16,
-                                      color: badgeColor != null
-                                          ? Color(int.parse(
-                                              badgeColor.replaceFirst('#', '0xFF')))
-                                          : const Color(0xFF0751DF),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              Text(
-                                '@$username',
-                                style: const TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontFamily: 'Outfit',
-                                  fontSize: 13,
+                                  child: Icon(
+                                    Icons.verified,
+                                    size: 14,
+                                    color: badgeColor != null
+                                        ? Color(int.parse(
+                                            badgeColor.replaceFirst('#', '0xFF')))
+                                        : AppColors.primaryButton,
+                                  ),
                                 ),
                               ),
+                          ],
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name.isNotEmpty ? name : 'Loading...',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              if (username.isNotEmpty)
+                                Text(
+                                  '@$username',
+                                  style: const TextStyle(
+                                    color: AppColors.textTertiary,
+                                    fontFamily: 'Outfit',
+                                    fontSize: 13,
+                                  ),
+                                ),
                             ],
                           ),
-                        ],
-                      ),
-                    ),
-                    const Divider(color: AppColors.border, height: 1),
-                  ],
-
-                  // ── Content Input ──────────────────────────────────────────
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        TextField(
-                          controller: _contentCtrl,
-                          focusNode: _contentFocusNode,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontFamily: 'Outfit',
-                            fontSize: 16,
-                            height: 1.4,
-                          ),
-                          maxLines: null,
-                          maxLength: _maxCharacterCount,
-                          onChanged: _onContentChanged,
-                          onTap: () {
-                            if (_contentCtrl.selection.isValid) {
-                              setState(() {
-                                _cursorPosition =
-                                    _contentCtrl.selection.baseOffset;
-                              });
-                            }
-                          },
-                          decoration: const InputDecoration(
-                            hintText: "What's on your mind?",
-                            hintStyle: TextStyle(
-                              color: AppColors.placeholder,
-                              fontFamily: 'Outfit',
-                              fontSize: 16,
-                            ),
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            counterText: '',
-                          ),
                         ),
-                        Text(
-                          '${_contentCtrl.text.length}/$_maxCharacterCount',
-                          style: const TextStyle(
-                            color: AppColors.textTertiary,
-                            fontFamily: 'Outfit',
-                            fontSize: 12,
+                        GestureDetector(
+                          onTap: () {},
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: AppColors.cardBackground,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppColors.border),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.public_rounded,
+                                    size: 13, color: Colors.white),
+                                SizedBox(width: 5),
+                                Text(
+                                  'Everyone',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'Outfit',
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                                SizedBox(width: 4),
+                                Icon(Icons.keyboard_arrow_down_rounded,
+                                    size: 16, color: AppColors.textTertiary),
+                              ],
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
 
-                  // ── Tag People / Hashtag Chips (hidden in edit mode) ──────
-                  if (!widget.isEditing) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-                      child: Row(
+                  // ── Content Input ──────────────────────────────────────────
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.cardBackground,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: AppColors.border),
+                      ),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          _ActionChip(
-                            icon: Icons.alternate_email,
-                            label: 'Tag People',
-                            color: const Color(0xFF6366F1),
-                            onTap: () => _insertAtCursor('@'),
+                          TextField(
+                            controller: _contentCtrl,
+                            focusNode: _contentFocusNode,
+                            style: const TextStyle(
+                              color: AppColors.text,
+                              fontFamily: 'Outfit',
+                              fontSize: 16,
+                              height: 1.55,
+                              letterSpacing: 0.1,
+                            ),
+                            maxLines: null,
+                            minLines: 5,
+                            maxLength: _maxCharacterCount,
+                            onChanged: _onContentChanged,
+                            onTap: () {
+                              if (_contentCtrl.selection.isValid) {
+                                setState(() {
+                                  _cursorPosition =
+                                      _contentCtrl.selection.baseOffset;
+                                });
+                              }
+                            },
+                            decoration: const InputDecoration(
+                              hintText: "What's on your mind?",
+                              hintStyle: TextStyle(
+                                color: AppColors.placeholder,
+                                fontFamily: 'Outfit',
+                                fontSize: 16,
+                              ),
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              counterText: '',
+                              contentPadding: EdgeInsets.zero,
+                            ),
                           ),
-                          const SizedBox(width: 8),
-                          _ActionChip(
-                            icon: Icons.tag,
-                            label: 'Hashtag',
-                            color: const Color(0xFFEC4899),
-                            onTap: () => _insertAtCursor('#'),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [_buildCharCounter()],
                           ),
                         ],
                       ),
                     ),
-                    const Divider(color: AppColors.border, height: 1),
+                  ),
+
+                  // ── Tag People / Add Hashtag buttons ──────────────────────
+                  if (!widget.isEditing) ...[
+                    const SizedBox(height: 12),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _ActionChip(
+                              icon: Icons.person_outline_rounded,
+                              label: 'Tag People',
+                              color: AppColors.primaryButton,
+                              onTap: () => _insertAtCursor('@'),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: _ActionChip(
+                              icon: Icons.tag_rounded,
+                              label: 'Add Hashtag',
+                              color: AppColors.primaryButton,
+                              onTap: () => _insertAtCursor('#'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
 
                   // ── Popular Hashtags ──────────────────────────────────────
                   if (!widget.isEditing &&
                       _popularHashtags.isNotEmpty &&
                       !_showHashtagSuggestions) ...[
+                    const SizedBox(height: 20),
                     const Padding(
-                      padding: EdgeInsets.only(left: 16, top: 12, bottom: 6),
+                      padding: EdgeInsets.only(left: 16, right: 16, bottom: 10),
                       child: Text(
-                        'POPULAR',
+                        'Trending Hashtags',
                         style: TextStyle(
-                          color: AppColors.textTertiary,
+                          color: Colors.white,
                           fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600,
-                          fontSize: 11,
-                          letterSpacing: 0.5,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
                         ),
                       ),
                     ),
@@ -984,24 +1058,32 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                               : item.toString();
                           return Padding(
                             padding: const EdgeInsets.only(right: 8),
-                            child: ActionChip(
-                              backgroundColor: AppColors.cardBackground,
-                              side: const BorderSide(color: AppColors.border),
-                              label: Text(
-                                '#$tag',
-                                style: const TextStyle(
-                                  color: AppColors.primaryButton,
-                                  fontFamily: 'Outfit',
-                                  fontSize: 13,
+                            child: GestureDetector(
+                              onTap: () => _insertHashtag(tag),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 7),
+                                decoration: BoxDecoration(
+                                  color: AppColors.cardBackground,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: AppColors.border),
+                                ),
+                                child: Text(
+                                  '# $tag',
+                                  style: const TextStyle(
+                                    color: AppColors.textTertiary,
+                                    fontFamily: 'Outfit',
+                                    fontWeight: FontWeight.w500,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
-                              onPressed: () => _insertHashtag(tag),
                             ),
                           );
                         },
                       ),
                     ),
-                    const Divider(color: AppColors.border, height: 1),
+                    const SizedBox(height: 8),
                   ],
 
                   // ── Hashtag Suggestions ───────────────────────────────────
@@ -1011,17 +1093,28 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         final tag = h['hashtag'] ?? '';
                         final count = h['usage_count'] ?? 0;
                         return ListTile(
+                          leading: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: AppColors.primaryButton.withValues(alpha: 0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.tag_rounded,
+                                size: 16, color: AppColors.primaryButton),
+                          ),
                           title: Text(
                             '#$tag',
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontFamily: 'Outfit',
-                                fontSize: 14),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(
                             '${_formatCount(count)} public posts',
                             style: const TextStyle(
-                                color: AppColors.textSecondary,
+                                color: AppColors.textTertiary,
                                 fontFamily: 'Outfit',
                                 fontSize: 12),
                           ),
@@ -1043,12 +1136,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                             backgroundImage: uPic != null
                                 ? CachedNetworkImageProvider(uPic)
                                 : null,
-                            backgroundColor: AppColors.border,
+                            backgroundColor: AppColors.primaryButton,
                             child: uPic == null
                                 ? Text(
-                                    (uName.isNotEmpty
-                                            ? uName[0]
-                                            : '?')
+                                    (uName.isNotEmpty ? uName[0] : '?')
                                         .toUpperCase(),
                                     style: const TextStyle(
                                         color: Colors.white,
@@ -1062,12 +1153,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                             style: const TextStyle(
                                 color: Colors.white,
                                 fontFamily: 'Outfit',
-                                fontSize: 14),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(
                             '@${uMap['username'] ?? ''}',
                             style: const TextStyle(
-                                color: AppColors.textSecondary,
+                                color: AppColors.textTertiary,
                                 fontFamily: 'Outfit',
                                 fontSize: 12),
                           ),
@@ -1079,7 +1171,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   // ── Selected Video Preview ────────────────────────────────
                   if (!widget.isEditing && _selectedVideo != null)
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                       child: GestureDetector(
                         onTap: () {
                           setState(() => _showVideoPreviewModal = true);
@@ -1091,16 +1183,15 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                               height: 260,
                               width: double.infinity,
                               decoration: BoxDecoration(
-                                color: Colors.black,
-                                borderRadius: BorderRadius.circular(12),
+                                color: const Color(0xFF0D0D0D),
+                                borderRadius: BorderRadius.circular(14),
                                 border: Border.all(color: AppColors.border),
                               ),
                               child: const Center(
                                 child: Icon(Icons.play_circle_fill_rounded,
-                                    color: Colors.white70, size: 60),
+                                    color: Colors.white54, size: 60),
                               ),
                             ),
-                            // Duration badge
                             Positioned(
                               bottom: 12,
                               left: 12,
@@ -1108,13 +1199,13 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 8, vertical: 4),
                                 decoration: BoxDecoration(
-                                  color: Colors.black.withValues(alpha: 0.75),
+                                  color: Colors.black.withValues(alpha: 0.7),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.videocam,
-                                        color: Colors.white, size: 14),
+                                    const Icon(Icons.videocam_rounded,
+                                        color: Colors.white, size: 13),
                                     const SizedBox(width: 4),
                                     Text(
                                       _formatTime(_selectedVideoDuration),
@@ -1129,7 +1220,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                 ),
                               ),
                             ),
-                            // Remove button
                             Positioned(
                               top: 8,
                               right: 8,
@@ -1142,11 +1232,11 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                 child: Container(
                                   padding: const EdgeInsets.all(6),
                                   decoration: BoxDecoration(
-                                    color: Colors.black.withValues(alpha: 0.7),
+                                    color: Colors.black.withValues(alpha: 0.65),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.close,
-                                      color: Colors.white, size: 16),
+                                  child: const Icon(Icons.close_rounded,
+                                      color: Colors.white, size: 15),
                                 ),
                               ),
                             ),
@@ -1155,52 +1245,50 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                       ),
                     ),
 
-                  // ── Selected Images Horizontal Scroll ─────────────────────
+                  // ── Selected Images ───────────────────────────────────────
                   if (!widget.isEditing && _selectedImages.isNotEmpty)
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      padding: const EdgeInsets.fromLTRB(0, 16, 0, 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Padding(
-                            padding:
-                                const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+                            padding: const EdgeInsets.only(
+                                left: 16, right: 16, bottom: 10),
                             child: Row(
                               children: [
-                                Expanded(
-                                  child: Text(
-                                    '${_selectedImages.length} photo${_selectedImages.length > 1 ? 's' : ''} selected',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontFamily: 'Outfit',
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
+                                Text(
+                                  '${_selectedImages.length} ${_selectedImages.length > 1 ? 'Photos' : 'Photo'}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontFamily: 'Outfit',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
                                   ),
                                 ),
+                                const Spacer(),
+                                const Icon(Icons.drag_indicator_rounded,
+                                    size: 15,
+                                    color: AppColors.textTertiary),
+                                const SizedBox(width: 4),
                                 const Text(
-                                  'Long press to reorder',
+                                  'Hold & drag to reorder',
                                   style: TextStyle(
-                                    color: AppColors.textSecondary,
+                                    color: AppColors.textTertiary,
                                     fontFamily: 'Outfit',
                                     fontSize: 12,
                                   ),
                                 ),
-                                const SizedBox(width: 4),
-                                const Icon(Icons.reorder,
-                                    size: 18, color: AppColors.textSecondary),
                               ],
                             ),
                           ),
                           SizedBox(
-                            height: 118,
+                            height: 130,
                             child: ReorderableListView.builder(
                               scrollDirection: Axis.horizontal,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
                               buildDefaultDragHandles: false,
-                              itemCount: _selectedImages.length +
-                                  (_selectedImages.length < _maxImages ? 1 : 0),
+                              itemCount: _selectedImages.length,
                               onReorderItem: (oldIdx, newIdx) {
                                 if (oldIdx >= _selectedImages.length ||
                                     newIdx >= _selectedImages.length) {
@@ -1219,76 +1307,47 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                 });
                               },
                               itemBuilder: (_, index) {
-                                // "Add More" tile
-                                if (index == _selectedImages.length) {
-                                  return Padding(
-                                    key: const ValueKey('add-more'),
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: GestureDetector(
-                                      onTap: _pickImages,
-                                      child: Container(
-                                        width: 110,
-                                        height: 110,
-                                        decoration: BoxDecoration(
-                                          color: AppColors.background,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                          border: Border.all(
-                                            color: AppColors.border,
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: [
-                                            const Icon(Icons.add_rounded,
-                                                color: AppColors.primaryButton,
-                                                size: 28),
-                                            const SizedBox(height: 2),
-                                            const Text(
-                                              'Add More',
-                                              style: TextStyle(
-                                                color: AppColors.primaryButton,
-                                                fontFamily: 'Outfit',
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 12,
-                                              ),
-                                            ),
-                                            Text(
-                                              '(Up to $_maxImages)',
-                                              style: const TextStyle(
-                                                color: AppColors.textSecondary,
-                                                fontFamily: 'Outfit',
-                                                fontSize: 10,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }
-
                                 final file = _selectedImages[index];
                                 return ReorderableDragStartListener(
                                   key: ValueKey('img-$index-${file.path}'),
                                   index: index,
                                   child: Padding(
-                                    padding: const EdgeInsets.only(right: 8),
+                                    padding: const EdgeInsets.only(right: 10),
                                     child: Stack(
                                       children: [
                                         ClipRRect(
                                           borderRadius:
-                                              BorderRadius.circular(10),
+                                              BorderRadius.circular(12),
                                           child: Image.file(
                                             file,
-                                            width: 110,
-                                            height: 110,
+                                            width: 120,
+                                            height: 120,
                                             fit: BoxFit.cover,
                                           ),
                                         ),
-                                        // Index badge
+                                        Positioned(
+                                          bottom: 0,
+                                          left: 0,
+                                          right: 0,
+                                          child: Container(
+                                            height: 40,
+                                            decoration: BoxDecoration(
+                                              borderRadius:
+                                                  const BorderRadius.vertical(
+                                                      bottom:
+                                                          Radius.circular(12)),
+                                              gradient: LinearGradient(
+                                                begin: Alignment.bottomCenter,
+                                                end: Alignment.topCenter,
+                                                colors: [
+                                                  Colors.black
+                                                      .withValues(alpha: 0.55),
+                                                  Colors.transparent,
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
                                         Positioned(
                                           bottom: 6,
                                           left: 6,
@@ -1304,17 +1363,16 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                                 '${index + 1}',
                                                 style: const TextStyle(
                                                   color: Colors.white,
-                                                  fontSize: 11,
+                                                  fontSize: 10,
                                                   fontWeight: FontWeight.bold,
                                                 ),
                                               ),
                                             ),
                                           ),
                                         ),
-                                        // Remove button
                                         Positioned(
-                                          top: 6,
-                                          right: 6,
+                                          top: 5,
+                                          right: 5,
                                           child: GestureDetector(
                                             onTap: () {
                                               setState(() {
@@ -1333,9 +1391,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                                                     .withValues(alpha: 0.65),
                                                 shape: BoxShape.circle,
                                               ),
-                                              child: const Icon(Icons.close,
+                                              child: const Icon(Icons.close_rounded,
                                                   color: Colors.white,
-                                                  size: 14),
+                                                  size: 12),
                                             ),
                                           ),
                                         ),
@@ -1349,20 +1407,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                         ],
                       ),
                     ),
-
-                  const Divider(color: AppColors.border),
-
-                  // ── Media Picker Tile ─────────────────────────────────────
-                  ListTile(
-                    leading: const Icon(Icons.photo_library_outlined,
-                        color: AppColors.textTertiary),
-                    title: const Text(
-                      'Photo/Video',
-                      style: TextStyle(
-                          color: AppColors.textSecondary, fontFamily: 'Outfit'),
-                    ),
-                    onTap: _pickImages,
-                  ),
                 ],
               ),
             ),
@@ -1510,24 +1554,24 @@ class _ActionChip extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         decoration: BoxDecoration(
-          color: AppColors.cardBackground,
-          borderRadius: BorderRadius.circular(20),
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.border),
         ),
         child: Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 15, color: color),
-            const SizedBox(width: 5),
+            Icon(icon, size: 17, color: color),
+            const SizedBox(width: 7),
             Text(
               label,
               style: TextStyle(
                 color: color,
                 fontFamily: 'Outfit',
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
               ),
             ),
           ],
