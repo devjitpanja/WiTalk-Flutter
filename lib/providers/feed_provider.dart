@@ -304,6 +304,33 @@ class FeedNotifier extends StateNotifier<FeedState> {
       posts: state.posts.where((p) => p['id'].toString() != postId).toList(),
     );
   }
+
+  // Sync fresh REST API post data back into the feed so home screen stays consistent
+  // with PostViewScreen. Handles both flat (REST) and nested stats/interactions (GraphQL) formats.
+  void updatePost(Map<String, dynamic> freshPost) {
+    final id = (freshPost['id'] ?? '').toString();
+    if (id.isEmpty) return;
+    final idx = state.posts.indexWhere((p) => p['id'].toString() == id);
+    if (idx == -1) return;
+
+    final stats = freshPost['stats'] as Map<String, dynamic>?;
+    final interactions = freshPost['interactions'] as Map<String, dynamic>?;
+
+    final normalized = <String, dynamic>{
+      ...freshPost,
+      'likes': freshPost['likes'] ?? stats?['likes'] ?? 0,
+      'comments': freshPost['comments'] ?? stats?['comments'] ?? 0,
+      'shares': freshPost['shares'] ?? stats?['shares'] ?? 0,
+      'views': freshPost['views'] ?? stats?['views'] ?? 0,
+      'isLiked': freshPost['isLiked'] ?? interactions?['isLiked'] ?? false,
+      'isFollowing': freshPost['isFollowing'] ?? interactions?['isFollowing'] ?? false,
+      'isSaved': freshPost['isSaved'] ?? interactions?['isSaved'] ?? false,
+    };
+
+    final updatedList = List<Map<String, dynamic>>.from(state.posts);
+    updatedList[idx] = normalized;
+    state = state.copyWith(posts: updatedList);
+  }
 }
 
 final feedNotifierProvider = StateNotifierProvider<FeedNotifier, FeedState>((ref) {

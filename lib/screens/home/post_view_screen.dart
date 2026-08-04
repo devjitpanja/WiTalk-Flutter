@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
+import '../../providers/feed_provider.dart';
 import '../../widgets/common/post_card.dart';
 import '../../widgets/common/verification_badge.dart';
 
@@ -185,6 +186,8 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
         }
 
         setState(() => _post = postData);
+        // Sync fresh data back into the feed so home screen stays consistent
+        ref.read(feedNotifierProvider.notifier).updatePost(postData);
 
         final authorId = (postData['user_id'] ?? '').toString();
         if (uid != null && authorId.isNotEmpty && authorId != uid) {
