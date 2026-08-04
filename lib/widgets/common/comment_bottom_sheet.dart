@@ -147,9 +147,7 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
   final int _limit = 30;
   bool _hasMore = false;
 
-  bool _deleteDialogVisible = false;
   _Comment? _commentToDelete;
-  bool _deletingComment = false;
 
   final _inputCtrl = TextEditingController();
   final _inputFocus = FocusNode();
@@ -444,24 +442,23 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
 
   void _handleLongPress(_Comment comment) {
     if (comment.userId == _uid) {
-      setState(() {
-        _commentToDelete = comment;
-        _deleteDialogVisible = true;
-      });
+      _commentToDelete = comment;
+      _showDeleteDialog();
     }
   }
 
   Future<void> _handleDeleteComment() async {
-    if (_commentToDelete == null || _deletingComment) return;
-    setState(() => _deletingComment = true);
+    if (_commentToDelete == null) return;
+    final toDelete = _commentToDelete!;
+    _commentToDelete = null;
     try {
       final res = await dioClient.delete(
-        '/v1/comments/${_commentToDelete!.id}',
+        '/v1/comments/${toDelete.id}',
         data: {'userId': _uid},
       );
       if (res.data?['success'] == true && mounted) {
         setState(() {
-          final isReply = _commentToDelete!.parentId != null;
+          final isReply = toDelete.parentId != null;
           if (isReply) {
             _comments = _comments.map((c) => _Comment(
                   id: c.id, userId: c.userId, username: c.username,
@@ -469,27 +466,16 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
                   likes: c.likes, isLiked: c.isLiked, time: c.time,
                   isVerified: c.isVerified, verificationBadge: c.verificationBadge,
                   parentId: c.parentId,
-                  replies: c.replies
-                      .where((r) => r.id != _commentToDelete!.id)
-                      .toList(),
+                  replies: c.replies.where((r) => r.id != toDelete.id).toList(),
                 )).toList();
           } else {
-            _comments = _comments.where((c) => c.id != _commentToDelete!.id).toList();
+            _comments = _comments.where((c) => c.id != toDelete.id).toList();
             _total = (_total - 1).clamp(0, _total);
           }
         });
         widget.onCommentAdded?.call();
       }
-    } catch (_) {
-    } finally {
-      if (mounted) {
-        setState(() {
-          _deletingComment = false;
-          _deleteDialogVisible = false;
-          _commentToDelete = null;
-        });
-      }
-    }
+    } catch (_) {}
   }
 
   // ── Mention search ─────────────────────────────────────────────────────────
@@ -567,15 +553,21 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
   Widget build(BuildContext context) {
     final c = context.colors;
     final mq = MediaQuery.of(context);
+    final keyboardH = mq.viewInsets.bottom;
+    final safeBottom = mq.padding.bottom;
 
-    return Container(
-      height: mq.size.height * 0.9,
-      decoration: BoxDecoration(
-        color: c.background,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Stack(children: [
-        Column(children: [
+    // Padding(bottom: keyboardH) places empty space where the keyboard is.
+    // The container shrinks by keyboardH so its bottom sits exactly at the
+    // keyboard top. This mirrors Android adjustResize behaviour.
+    return Padding(
+      padding: EdgeInsets.only(bottom: keyboardH),
+      child: Container(
+        height: mq.size.height * 0.9 - keyboardH,
+        decoration: BoxDecoration(
+          color: c.background,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(children: [
           // Drag handle
           Center(
             child: Container(
@@ -602,31 +594,37 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
               ],
             ]),
           ),
-          // List
+          // Comment list — fills all remaining space, footer sits below it naturally
           Expanded(child: _buildCommentList(c)),
+          // Footer — always at the bottom of the column, never overlaid
+          _buildFooter(c, safeBottom: safeBottom, keyboardH: keyboardH),
         ]),
-        // Footer pinned above keyboard
-        Positioned(
-          left: 0, right: 0, bottom: 0,
-          child: _buildFooter(c, mq),
-        ),
-        // Delete dialog overlay
-        if (_deleteDialogVisible)
-          CustomAlertDialog(
-            visible: true,
-            title: 'Delete Comment',
-            message: 'Are you sure you want to delete this comment? This action cannot be undone.',
-            confirmText: 'Delete',
-            cancelText: 'Cancel',
-            type: 'danger',
-            showCancel: true,
-            onConfirm: _handleDeleteComment,
-            onCancel: () => setState(() {
-              _deleteDialogVisible = false;
-              _commentToDelete = null;
-            }),
-          ),
-      ]),
+      ),
+    );
+  }
+
+  // Show delete dialog as a proper dialog overlay (no Stack needed)
+  void _showDeleteDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => CustomAlertDialog(
+        visible: true,
+        title: 'Delete Comment',
+        message: 'Are you sure you want to delete this comment? This action cannot be undone.',
+        confirmText: 'Delete',
+        cancelText: 'Cancel',
+        type: 'danger',
+        showCancel: true,
+        onConfirm: () {
+          Navigator.pop(context);
+          _handleDeleteComment();
+        },
+        onCancel: () {
+          Navigator.pop(context);
+          setState(() { _commentToDelete = null; });
+        },
+      ),
     );
   }
 
@@ -667,10 +665,9 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
       ]));
     }
 
-    final footerHeight = _estimateFooterHeight();
     return ListView.builder(
       controller: _scrollCtrl,
-      padding: EdgeInsets.only(top: 8, bottom: footerHeight + 16),
+      padding: const EdgeInsets.only(top: 8, bottom: 16),
       itemCount: items.length + (_hasMore ? 1 : 0),
       itemBuilder: (_, i) {
         if (i == items.length) return _buildLoadMore(c);
@@ -679,15 +676,6 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
         return _buildCommentItem(item.comment!, item.isReply, c);
       },
     );
-  }
-
-  double _estimateFooterHeight() {
-    double h = 110; // emoji row + input row + padding
-    if (_replyingTo != null) h += 42;
-    if (_showMentionSuggestions && _mentionSuggestions.isNotEmpty) {
-      h += (_mentionSuggestions.length * 56.0).clamp(0, 180);
-    }
-    return h;
   }
 
   Widget _buildLoadMore(ThemeColors c) {
@@ -851,9 +839,7 @@ class _CommentSheetState extends ConsumerState<_CommentSheet>
 
   // ── Footer ─────────────────────────────────────────────────────────────────
 
-  Widget _buildFooter(ThemeColors c, MediaQueryData mq) {
-    final keyboardH = mq.viewInsets.bottom;
-    final safeBottom = mq.padding.bottom;
+  Widget _buildFooter(ThemeColors c, {required double safeBottom, required double keyboardH}) {
     final bottomPad = keyboardH > 0 ? 12.0 : (safeBottom > 0 ? safeBottom : 12.0);
 
     return Container(
