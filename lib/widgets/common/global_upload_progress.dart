@@ -124,7 +124,7 @@ class GlobalUploadProgressOverlay extends ConsumerWidget {
     final clampedProgress = (uploadState.progress / 100.0).clamp(0.0, 1.0);
 
     return Positioned(
-      top: MediaQuery.of(context).padding.top + 8,
+      bottom: MediaQuery.of(context).padding.bottom + 16,
       left: 16,
       right: 16,
       child: Material(
@@ -157,6 +157,18 @@ class GlobalUploadProgressOverlay extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  if (uploadState.showProgressBar) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${uploadState.progress.toInt()}%',
+                      style: TextStyle(
+                        color: uploadState.textColor,
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
                   if (uploadState.showDismiss)
                     IconButton(
                       icon: Icon(Icons.close, color: uploadState.textColor, size: 20),
