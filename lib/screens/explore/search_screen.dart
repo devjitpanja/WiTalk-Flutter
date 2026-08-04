@@ -631,7 +631,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
             });
           },
           onShowMoreMenu: (postId, userId, extra) {
-            _showPostMenu(postId, userId, extra, c);
+            _showPostMenu(postId, userId, currentUserId, extra, c);
           },
         );
       },
@@ -640,7 +640,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
     );
   }
 
-  void _showPostMenu(String postId, String userId, Map<String, dynamic> extra, ThemeColors c) {
+  void _showPostMenu(String postId, String userId, String? currentUserId, Map<String, dynamic> extra, ThemeColors c) {
+    final isOwnPost = currentUserId != null && currentUserId.isNotEmpty && currentUserId == userId;
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
@@ -650,24 +651,83 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
         const SizedBox(height: 8),
         Container(width: 40, height: 4, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 8),
-        ListTile(
-          leading: Icon(Icons.bookmark_border, color: c.text),
-          title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () => Navigator.pop(context),
-        ),
-        ListTile(
-          leading: Icon(Icons.flag_outlined, color: c.text),
-          title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () { Navigator.pop(context); context.push('/report/post/$postId'); },
-        ),
-        ListTile(
-          leading: Icon(Icons.block, color: c.text),
-          title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () => Navigator.pop(context),
-        ),
+        if (isOwnPost) ...[
+          ListTile(
+            leading: Icon(Icons.edit_outlined, color: c.text),
+            title: Text('Edit post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/create-post', extra: {
+                'isEditing': true,
+                'postId': postId,
+                'initialContent': extra['content'],
+              });
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.red),
+            title: const Text('Delete post', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              _confirmDeletePost(postId, currentUserId ?? '', c);
+            },
+          ),
+        ] else ...[
+          ListTile(
+            leading: Icon(Icons.bookmark_border, color: c.text),
+            title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () => Navigator.pop(context),
+          ),
+          ListTile(
+            leading: Icon(Icons.flag_outlined, color: c.text),
+            title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () { Navigator.pop(context); context.push('/report/post/$postId'); },
+          ),
+          ListTile(
+            leading: Icon(Icons.block, color: c.text),
+            title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () => Navigator.pop(context),
+          ),
+        ],
         const SizedBox(height: 16),
       ]),
     );
+  }
+
+  Future<void> _confirmDeletePost(String postId, String userId, ThemeColors c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Delete post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+        content: Text('Are you sure you want to delete this post?',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await dioClient.delete('/v1/posts/$postId', data: {'userId': userId});
+      setState(() => _posts.removeWhere((p) => p['id'].toString() == postId));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post deleted')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete post')));
+      }
+    }
   }
 
   // ── Communities tab ───────────────────────────────────────────────────────

@@ -490,6 +490,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
                   post: _post!,
                   currentUserId: _currentUserId,
                   isRemoved: _isPostRemoved,
+                  disableContentNav: true,
                   onLikeUpdate: (id, liked, count) {
                     if (mounted) setState(() { _post!['isLiked'] = liked; _post!['likes'] = count; });
                   },
@@ -497,6 +498,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
                     if (mounted) setState(() => _post!['comments'] = count);
                   },
                   onCommentTap: (_) => _commentFocus.requestFocus(),
+                  onDeleted: (_) { if (mounted) context.pop(); },
                 ),
                 _buildCommentsSection(c),
               ]),

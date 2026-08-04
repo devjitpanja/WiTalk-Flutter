@@ -7,6 +7,7 @@ import 'package:shimmer/shimmer.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/feed_provider.dart';
+import '../../api/dio_client.dart';
 import '../../services/post_view_tracking_service.dart';
 import '../../services/post_feedback_service.dart';
 import '../../widgets/common/post_card.dart';
@@ -51,6 +52,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _onShowMoreMenu(String postId, String userId, Map<String, dynamic> extra) {
     final c = context.colors;
     final currentUserId = ref.read(authProvider).uid ?? '';
+    final isOwnPost = currentUserId.isNotEmpty && currentUserId == userId;
 
     showModalBottomSheet(
       useRootNavigator: true,
@@ -61,54 +63,113 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         const SizedBox(height: 8),
         Container(width: 40, height: 4, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 8),
-        ListTile(
-          leading: Icon(Icons.bookmark_border, color: c.text),
-          title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () {
-            Navigator.pop(context);
-            if (currentUserId.isNotEmpty) {
-              postFeedbackService.sendSaveFeedback(userId: currentUserId, postId: postId);
-            }
-          },
-        ),
-        ListTile(
-          leading: Icon(Icons.remove_circle_outline, color: c.text),
-          title: Text('Not interested', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () {
-            Navigator.pop(context);
-            if (currentUserId.isNotEmpty) {
-              postFeedbackService.sendNotInterestedFeedback(userId: currentUserId, postId: postId);
-            }
-          },
-        ),
-        ListTile(
-          leading: Icon(Icons.visibility_off_outlined, color: c.text),
-          title: Text('Hide post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () {
-            Navigator.pop(context);
-            if (currentUserId.isNotEmpty) {
-              postFeedbackService.sendHidePostFeedback(userId: currentUserId, postId: postId);
-            }
-          },
-        ),
-        ListTile(
-          leading: Icon(Icons.flag_outlined, color: c.text),
-          title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () {
-            Navigator.pop(context);
-            context.push('/report/post/$postId');
-          },
-        ),
-        ListTile(
-          leading: Icon(Icons.block, color: c.text),
-          title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-          onTap: () {
-            Navigator.pop(context);
-          },
-        ),
+        if (isOwnPost) ...[
+          ListTile(
+            leading: Icon(Icons.edit_outlined, color: c.text),
+            title: Text('Edit post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/create-post', extra: {
+                'isEditing': true,
+                'postId': postId,
+                'initialContent': extra['content'],
+              });
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.delete_outline, color: Colors.red),
+            title: const Text('Delete post', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              _confirmDeletePost(postId, currentUserId, c);
+            },
+          ),
+        ] else ...[
+          ListTile(
+            leading: Icon(Icons.bookmark_border, color: c.text),
+            title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              if (currentUserId.isNotEmpty) {
+                postFeedbackService.sendSaveFeedback(userId: currentUserId, postId: postId);
+              }
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.remove_circle_outline, color: c.text),
+            title: Text('Not interested', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              if (currentUserId.isNotEmpty) {
+                postFeedbackService.sendNotInterestedFeedback(userId: currentUserId, postId: postId);
+              }
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.visibility_off_outlined, color: c.text),
+            title: Text('Hide post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              if (currentUserId.isNotEmpty) {
+                postFeedbackService.sendHidePostFeedback(userId: currentUserId, postId: postId);
+              }
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.flag_outlined, color: c.text),
+            title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+              context.push('/report/post/$postId');
+            },
+          ),
+          ListTile(
+            leading: Icon(Icons.block, color: c.text),
+            title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+            onTap: () {
+              Navigator.pop(context);
+            },
+          ),
+        ],
         const SizedBox(height: 16),
       ]),
     );
+  }
+
+  Future<void> _confirmDeletePost(String postId, String currentUserId, ThemeColors c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Delete post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+        content: Text('Are you sure you want to delete this post?',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await dioClient.delete('/v1/posts/$postId', data: {'userId': currentUserId});
+      ref.read(feedNotifierProvider.notifier).removePost(postId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post deleted')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete post')));
+      }
+    }
   }
 
   @override

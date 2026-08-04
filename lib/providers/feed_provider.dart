@@ -298,6 +298,12 @@ class FeedNotifier extends StateNotifier<FeedState> {
     };
     state = state.copyWith(posts: updatedList);
   }
+
+  void removePost(String postId) {
+    state = state.copyWith(
+      posts: state.posts.where((p) => p['id'].toString() != postId).toList(),
+    );
+  }
 }
 
 final feedNotifierProvider = StateNotifierProvider<FeedNotifier, FeedState>((ref) {

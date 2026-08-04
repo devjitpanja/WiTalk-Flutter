@@ -79,6 +79,8 @@ class PostCard extends StatefulWidget {
   final void Function(String postId, int count)? onCommentUpdate;
   final void Function(String postId, String userId, Map<String, dynamic> extra)? onShowMoreMenu;
   final void Function(String postId)? onCommentTap;
+  final void Function(String postId)? onDeleted;
+  final bool disableContentNav;
 
   const PostCard({
     super.key,
@@ -89,6 +91,8 @@ class PostCard extends StatefulWidget {
     this.onCommentUpdate,
     this.onShowMoreMenu,
     this.onCommentTap,
+    this.onDeleted,
+    this.disableContentNav = false,
   });
 
   @override
@@ -371,7 +375,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     _singleTapTimer?.cancel();
     _singleTapTimer = Timer(const Duration(milliseconds: doubleTapMs), () {
       _lastTap = null;
-      if (!mounted) return;
+      if (!mounted || widget.disableContentNav) return;
       final suffix = _p['suffix'] as String?;
       if (suffix != null && suffix.isNotEmpty) {
         context.push('/post-view/$suffix');
@@ -915,6 +919,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   }
 
   void _showMoreMenuSheet(ThemeColors c) {
+    final isOwnPost = widget.currentUserId != null && widget.currentUserId == _userId;
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
@@ -926,12 +931,60 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         Container(width: 40, height: 4,
           decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
         const SizedBox(height: 8),
-        _menuItem(Icons.bookmark_border, 'Save post', () {}, c),
-        _menuItem(Icons.flag_outlined, 'Report', () => context.push('/report/post/$_postId'), c),
-        _menuItem(Icons.block, 'Block user', () {}, c),
+        if (isOwnPost) ...[
+          _menuItem(Icons.edit_outlined, 'Edit post', () {
+            context.push('/create-post', extra: {
+              'isEditing': true,
+              'postId': _postId,
+              'initialContent': _p['content'],
+            });
+          }, c),
+          _menuItem(Icons.delete_outline, 'Delete post', () => _confirmDelete(c), c),
+        ] else ...[
+          _menuItem(Icons.bookmark_border, 'Save post', () {}, c),
+          _menuItem(Icons.flag_outlined, 'Report', () => context.push('/report/post/$_postId'), c),
+          _menuItem(Icons.block, 'Block user', () {}, c),
+        ],
         const SizedBox(height: 16),
       ]),
     );
+  }
+
+  Future<void> _confirmDelete(ThemeColors c) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('Delete post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+        content: Text('Are you sure you want to delete this post?',
+            style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text('Delete', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      await dioClient.delete('/v1/posts/$_postId',
+          data: {'userId': widget.currentUserId ?? ''});
+      widget.onDeleted?.call(_postId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post deleted')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to delete post')));
+      }
+    }
   }
 
   Widget _menuItem(IconData icon, String label, VoidCallback onTap, ThemeColors c) {

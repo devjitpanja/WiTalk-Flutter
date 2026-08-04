@@ -649,23 +649,35 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
           controller: _tabCtrl,
           children: [
             // Posts tab
-            _postsLoading
-                ? Center(child: CircularProgressIndicator(color: colors.primary))
-                : _posts.isEmpty
-                    ? _EmptyPosts(isOwnProfile: widget.isOwnProfile, isBlocked: _isBlocked, colors: colors)
-                    : _PostsGrid(
-                        posts: _posts,
-                        colors: colors,
-                        scrollController: _postsScrollCtrl,
-                        loadingMore: _loadingMore,
-                        onPostTap: (post) {
-                          if (post['suffix'] != null) {
-                            context.push('/post-view/${post['suffix']}');
-                          } else {
-                            context.push('/post/${post['id']}');
-                          }
-                        },
+            RefreshIndicator(
+              color: colors.primary,
+              backgroundColor: colors.surface,
+              onRefresh: () => _fetchPosts(page: 1),
+              child: _postsLoading
+                  ? ListView(children: [
+                      SizedBox(
+                        height: 200,
+                        child: Center(child: CircularProgressIndicator(color: colors.primary)),
                       ),
+                    ])
+                  : _posts.isEmpty
+                      ? ListView(children: [
+                          _EmptyPosts(isOwnProfile: widget.isOwnProfile, isBlocked: _isBlocked, colors: colors),
+                        ])
+                      : _PostsGrid(
+                          posts: _posts,
+                          colors: colors,
+                          scrollController: _postsScrollCtrl,
+                          loadingMore: _loadingMore,
+                          onPostTap: (post) {
+                            if (post['suffix'] != null) {
+                              context.push('/post-view/${post['suffix']}');
+                            } else {
+                              context.push('/post/${post['id']}');
+                            }
+                          },
+                        ),
+            ),
             // About tab
             _AboutSection(
               profile: profile,
