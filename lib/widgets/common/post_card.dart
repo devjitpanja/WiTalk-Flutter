@@ -560,7 +560,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             ),
             if (_showReadMore)
               GestureDetector(
-                onTap: () => setState(() => _expanded = !_expanded),
+                onTap: () {
+                  _singleTapTimer?.cancel();
+                  _lastTap = null;
+                  setState(() => _expanded = !_expanded);
+                },
                 child: Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(_expanded ? 'Show less' : 'Read more',

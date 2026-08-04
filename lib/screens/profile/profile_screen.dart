@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -144,7 +145,7 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
   bool _postsLoading = true;
   bool _loadingMore = false;
   bool _hasMore = false;
-  final ScrollController _postsScrollCtrl = ScrollController();
+  final ScrollController _scrollCtrl = ScrollController();
 
   bool _isBlocked = false;
   bool _followerCountSeeded = false;
@@ -160,7 +161,7 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     _tabCtrl = TabController(length: 2, vsync: this);
     _checkBlockStatus();
     _fetchPosts(page: 1);
-    _postsScrollCtrl.addListener(_onPostsScroll);
+    _scrollCtrl.addListener(_onScroll);
     if (!widget.isOwnProfile && widget.viewerUid.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ref.read(followProvider.notifier).setCurrentUser(widget.viewerUid);
@@ -172,12 +173,12 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
   @override
   void dispose() {
     _tabCtrl.dispose();
-    _postsScrollCtrl.dispose();
+    _scrollCtrl.dispose();
     super.dispose();
   }
 
-  void _onPostsScroll() {
-    if (_postsScrollCtrl.position.pixels >= _postsScrollCtrl.position.maxScrollExtent - 200) {
+  void _onScroll() {
+    if (_scrollCtrl.position.pixels >= _scrollCtrl.position.maxScrollExtent - 200) {
       _loadMorePosts();
     }
   }
@@ -218,6 +219,14 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     if (_loadingMore || !_hasMore || _postsLoading) return;
     setState(() => _loadingMore = true);
     await _fetchPosts(page: _postsPage + 1, append: true);
+  }
+
+  Future<void> _onRefresh() async {
+    ref.invalidate(_profileProvider(widget.profileUid));
+    ref.invalidate(_levelProvider(widget.profileUid));
+    ref.invalidate(_streakProvider(widget.profileUid));
+    ref.invalidate(_groupsProvider(widget.profileUid));
+    await _fetchPosts(page: 1);
   }
 
   Future<void> _checkBlockStatus() async {
@@ -558,135 +567,160 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
       );
     }
 
+    // Current tab index to decide which content slivers to render
+    final tabIndex = _tabCtrl.index;
+
     return Scaffold(
       backgroundColor: colors.background,
-      body: NestedScrollView(
-        headerSliverBuilder: (_, __) => [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: colors.background,
-            surfaceTintColor: Colors.transparent,
-            elevation: 0,
-            leading: IconButton(
-              icon: Icon(Icons.arrow_back, color: colors.text),
-              onPressed: () => context.pop(),
-            ),
-            title: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(username, style: TextStyle(color: colors.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16)),
-              if (isVerified) ...[
-                const SizedBox(width: 4),
-                VerificationBadge(
-                  isVerified: isVerified,
-                  badge: verificationBadge is Map ? Map<String, dynamic>.from(verificationBadge as Map) : null,
-                  size: 18,
-                ),
+      body: SafeArea(
+        bottom: false,
+        child: CustomScrollView(
+          controller: _scrollCtrl,
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            // ── iOS pull-to-refresh ──────────────────────────────────────
+            CupertinoSliverRefreshControl(onRefresh: _onRefresh),
+
+            // ── App bar (pinned) ─────────────────────────────────────────
+            SliverAppBar(
+              pinned: true,
+              backgroundColor: colors.background,
+              surfaceTintColor: Colors.transparent,
+              elevation: 0,
+              automaticallyImplyLeading: false,
+              leading: IconButton(
+                icon: Icon(Icons.arrow_back, color: colors.text),
+                onPressed: () => context.pop(),
+              ),
+              title: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(username, style: TextStyle(color: colors.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16)),
+                if (isVerified) ...[
+                  const SizedBox(width: 4),
+                  VerificationBadge(
+                    isVerified: isVerified,
+                    badge: verificationBadge is Map ? Map<String, dynamic>.from(verificationBadge as Map) : null,
+                    size: 18,
+                  ),
+                ],
+              ]),
+              centerTitle: true,
+              actions: [
+                if (widget.isOwnProfile)
+                  const SizedBox(width: 48)
+                else
+                  IconButton(
+                    icon: Icon(Icons.more_vert, color: colors.text),
+                    onPressed: () => _showMenuSheet(profile),
+                  ),
               ],
-            ]),
-            centerTitle: true,
-            actions: [
-              if (widget.isOwnProfile)
-                const SizedBox(width: 48)
-              else
-                IconButton(
-                  icon: Icon(Icons.more_vert, color: colors.text),
-                  onPressed: () => _showMenuSheet(profile),
-                ),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(0),
-              child: Divider(height: 1, thickness: 0.5, color: colors.border),
+              bottom: PreferredSize(
+                preferredSize: const Size.fromHeight(0),
+                child: Divider(height: 1, thickness: 0.5, color: colors.border),
+              ),
             ),
-          ),
 
-          // ── Hero card ──────────────────────────────────────────────────
-          SliverToBoxAdapter(child: _HeroCard(
-            name: name,
-            username: username,
-            bio: bio,
-            profilePic: profilePic,
-            isVerified: isVerified,
-            verificationBadge: verificationBadge,
-            level: level,
-            levelTitle: levelTitle,
-            ringColors: ringColors,
-            avatarFrameUrl: avatarFrameUrl,
-            streak: streak,
-            totalPosts: totalPosts,
-            followerCount: followerCount,
-            friendsCount: friendsCount,
-            colors: colors,
-            onAvatarTap: profilePic != null ? () => setState(() { _showImageViewer = true; _imageViewerUrl = profilePic; }) : null,
-            onFollowersPress: () => context.push('/followers/${profile['id']}?tab=followers'),
-            onFriendsPress: () => context.push('/followers/${profile['id']}?tab=friends'),
-          )),
-
-          // ── Action buttons ─────────────────────────────────────────────
-          SliverToBoxAdapter(child: _ActionButtons(
-            isOwnProfile: widget.isOwnProfile,
-            isFollowing: isFollowing,
-            followLoading: followLoading,
-            colors: colors,
-            onEditProfile: () => context.push('/edit-profile'),
-            onShare: () => setState(() => _showQrModal = true),
-            onFollow: () => _onFollowButtonPressed(isFollowing, name),
-            onMessage: () => _openMessage(
-              otherUserId: profile['id'] as String,
+            // ── Hero card ────────────────────────────────────────────────
+            SliverToBoxAdapter(child: _HeroCard(
               name: name,
               username: username,
+              bio: bio,
               profilePic: profilePic,
-            ),
-          )),
-
-          // ── Tab bar (pinned) ───────────────────────────────────────────
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _TabBarDelegate(tabController: _tabCtrl, colors: colors),
-          ),
-        ],
-
-        // ── TabBarView is the direct body of NestedScrollView ──────────
-        body: TabBarView(
-          controller: _tabCtrl,
-          children: [
-            // Posts tab
-            RefreshIndicator(
-              color: colors.primary,
-              backgroundColor: colors.surface,
-              onRefresh: () => _fetchPosts(page: 1),
-              child: _postsLoading
-                  ? ListView(children: [
-                      SizedBox(
-                        height: 200,
-                        child: Center(child: CircularProgressIndicator(color: colors.primary)),
-                      ),
-                    ])
-                  : _posts.isEmpty
-                      ? ListView(children: [
-                          _EmptyPosts(isOwnProfile: widget.isOwnProfile, isBlocked: _isBlocked, colors: colors),
-                        ])
-                      : _PostsGrid(
-                          posts: _posts,
-                          colors: colors,
-                          scrollController: _postsScrollCtrl,
-                          loadingMore: _loadingMore,
-                          onPostTap: (post) {
-                            if (post['suffix'] != null) {
-                              context.push('/post-view/${post['suffix']}');
-                            } else {
-                              context.push('/post/${post['id']}');
-                            }
-                          },
-                        ),
-            ),
-            // About tab
-            _AboutSection(
-              profile: profile,
-              groups: groups,
-              privacy: privacy,
-              privacyOn: privacyOn,
+              isVerified: isVerified,
+              verificationBadge: verificationBadge,
+              level: level,
+              levelTitle: levelTitle,
+              ringColors: ringColors,
+              avatarFrameUrl: avatarFrameUrl,
+              streak: streak,
+              totalPosts: totalPosts,
+              followerCount: followerCount,
+              friendsCount: friendsCount,
               colors: colors,
-              onCommunityTap: (g) => context.push('/community-info/${g['id']}'),
+              onAvatarTap: profilePic != null ? () => setState(() { _showImageViewer = true; _imageViewerUrl = profilePic; }) : null,
+              onFollowersPress: () => context.push('/followers/${profile['id']}?tab=followers'),
+              onFriendsPress: () => context.push('/followers/${profile['id']}?tab=friends'),
+            )),
+
+            // ── Action buttons ───────────────────────────────────────────
+            SliverToBoxAdapter(child: _ActionButtons(
+              isOwnProfile: widget.isOwnProfile,
+              isFollowing: isFollowing,
+              followLoading: followLoading,
+              colors: colors,
+              onEditProfile: () => context.push('/edit-profile'),
+              onShare: () => setState(() => _showQrModal = true),
+              onFollow: () => _onFollowButtonPressed(isFollowing, name),
+              onMessage: () => _openMessage(
+                otherUserId: profile['id'] as String,
+                name: name,
+                username: username,
+                profilePic: profilePic,
+              ),
+            )),
+
+            // ── Tab bar (pinned) ─────────────────────────────────────────
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _TabBarDelegate(
+                tabController: _tabCtrl,
+                colors: colors,
+                onTabChanged: (i) => setState(() {}),
+              ),
             ),
+
+            // ── Tab content ──────────────────────────────────────────────
+            if (tabIndex == 0) ...[
+              if (_postsLoading)
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 200,
+                    child: Center(child: CircularProgressIndicator(color: colors.primary)),
+                  ),
+                )
+              else if (_posts.isEmpty)
+                SliverToBoxAdapter(
+                  child: _EmptyPosts(isOwnProfile: widget.isOwnProfile, isBlocked: _isBlocked, colors: colors),
+                )
+              else ...[
+                SliverGrid(
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1, childAspectRatio: 2 / 3,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => _PostTile(
+                      post: _posts[i],
+                      colors: colors,
+                      onTap: () {
+                        if (_posts[i]['suffix'] != null) {
+                          context.push('/post-view/${_posts[i]['suffix']}');
+                        } else {
+                          context.push('/post/${_posts[i]['id']}');
+                        }
+                      },
+                    ),
+                    childCount: _posts.length,
+                  ),
+                ),
+                if (_loadingMore)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator(color: colors.primary, strokeWidth: 2)),
+                    ),
+                  ),
+              ],
+            ] else ...[
+              SliverToBoxAdapter(
+                child: _AboutSection(
+                  profile: profile,
+                  groups: groups,
+                  privacy: privacy,
+                  privacyOn: privacyOn,
+                  colors: colors,
+                  onCommunityTap: (g) => context.push('/community-info/${g['id']}'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -941,13 +975,14 @@ class _ActionBtn extends StatelessWidget {
 class _TabBarDelegate extends SliverPersistentHeaderDelegate {
   final TabController tabController;
   final ThemeColors colors;
-  const _TabBarDelegate({required this.tabController, required this.colors});
+  final void Function(int)? onTabChanged;
+  const _TabBarDelegate({required this.tabController, required this.colors, this.onTabChanged});
 
   // Flutter's kTabHeight = 46; border is a decoration so it doesn't add to layout height
   static const double _kHeight = 46;
   @override double get minExtent => _kHeight;
   @override double get maxExtent => _kHeight;
-  @override bool shouldRebuild(covariant _TabBarDelegate old) => old.colors != colors;
+  @override bool shouldRebuild(covariant _TabBarDelegate old) => old.colors != colors || old.onTabChanged != onTabChanged;
 
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
@@ -958,6 +993,7 @@ class _TabBarDelegate extends SliverPersistentHeaderDelegate {
       ),
       child: TabBar(
         controller: tabController,
+        onTap: onTabChanged,
         labelColor: colors.primary,
         unselectedLabelColor: colors.textTertiary,
         indicatorColor: colors.primary,
@@ -995,46 +1031,7 @@ class _TabItem extends StatelessWidget {
   }
 }
 
-class _PostsGrid extends StatelessWidget {
-  final List<Map<String, dynamic>> posts;
-  final ThemeColors colors;
-  final ScrollController scrollController;
-  final bool loadingMore;
-  final void Function(Map<String, dynamic>) onPostTap;
 
-  const _PostsGrid({
-    required this.posts,
-    required this.colors,
-    required this.scrollController,
-    required this.loadingMore,
-    required this.onPostTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      controller: scrollController,
-      slivers: [
-        SliverGrid(
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1, childAspectRatio: 2 / 3,
-          ),
-          delegate: SliverChildBuilderDelegate(
-            (_, i) => _PostTile(post: posts[i], colors: colors, onTap: () => onPostTap(posts[i])),
-            childCount: posts.length,
-          ),
-        ),
-        if (loadingMore)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: CircularProgressIndicator(color: colors.primary, strokeWidth: 2)),
-            ),
-          ),
-      ],
-    );
-  }
-}
 
 class _PostTile extends StatelessWidget {
   final Map<String, dynamic> post;
@@ -1208,7 +1205,7 @@ class _AboutSection extends StatelessWidget {
     final showInterests = privacyOn('interests') && interestList.isNotEmpty;
     final hasAnyAbout = showGender || showCountry || showCity || createdAt != null || age != null || (school != null && school.isNotEmpty) || (occupation != null && occupation.isNotEmpty);
 
-    return ListView(padding: EdgeInsets.zero, children: [
+    return ListView(padding: EdgeInsets.zero, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), children: [
       _AboutCard(colors: colors, children: [
         if (!hasAnyAbout)
           Padding(padding: const EdgeInsets.symmetric(vertical: 32), child: Center(child: Column(children: [

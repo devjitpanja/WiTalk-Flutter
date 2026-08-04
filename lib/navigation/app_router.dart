@@ -189,7 +189,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/profile/:id', builder: (_, s) => UserProfileScreen(userId: s.pathParameters['id']!)),
       GoRoute(path: '/user/:id', builder: (_, s) => UserProfileScreen(userId: s.pathParameters['id']!)),
       GoRoute(path: '/edit-profile', builder: (_, __) => const EditProfileScreen()),
-      GoRoute(path: '/followers/:id', builder: (_, s) => FollowersScreen(userId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/followers/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return FollowersScreen(
+            userId: s.pathParameters['id']!,
+            username: extra?['username'] as String?,
+            initialTab: s.uri.queryParameters['tab'] ?? 'followers',
+          );
+        },
+      ),
       GoRoute(path: '/account-overview', builder: (_, __) => const AccountOverviewScreen()),
       GoRoute(path: '/account-settings', builder: (_, __) => const AccountScreen()),
       GoRoute(path: '/purchases', builder: (_, __) => const MyPurchasesScreen()),
