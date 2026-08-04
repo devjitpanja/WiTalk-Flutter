@@ -13,6 +13,7 @@ import '../../api/dio_client.dart';
 import '../../services/post_view_tracking_service.dart';
 import '../../services/post_feedback_service.dart';
 import '../../services/global_video_settings.dart';
+import 'comment_bottom_sheet.dart';
 import 'share_bottom_sheet.dart';
 import 'verification_badge.dart';
 
@@ -806,12 +807,16 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                   if (widget.onCommentTap != null) {
                     widget.onCommentTap!(_postId);
                   } else {
-                    final suffix = _p['suffix'] as String?;
-                    if (suffix != null) {
-                      context.push('/post-view/$suffix');
-                    } else {
-                      context.push('/post/$_postId');
-                    }
+                    showCommentBottomSheet(
+                      context,
+                      post: _p,
+                      currentUserId: widget.currentUserId,
+                      onCommentAdded: () {
+                        final newCount = _comments + 1;
+                        if (mounted) setState(() => _comments = newCount);
+                        widget.onCommentUpdate?.call(_postId, newCount);
+                      },
+                    );
                   }
                 },
           c: c,
