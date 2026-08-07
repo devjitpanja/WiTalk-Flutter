@@ -252,6 +252,17 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     if (convs.isEmpty && groups.isEmpty) {
       await _refresh(showLoading: false);
     } else {
+      // Conversations were pre-loaded from DB — still load muted chats so the
+      // bottom-tab badge is accurate from the start, without waiting for a manual refresh.
+      final uid = ref.read(authProvider).uid;
+      if (uid != null) {
+        final mutedChats = await _fetchMutedChats(uid);
+        final mutedGroups = await _fetchMutedGroups(uid);
+        if (mounted) {
+          ref.read(chatProvider.notifier).setMutedChats(mutedChats);
+          ref.read(chatProvider.notifier).setMutedGroups(mutedGroups);
+        }
+      }
       if (mounted) setState(() => _initialLoading = false);
     }
   }

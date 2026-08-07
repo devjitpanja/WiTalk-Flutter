@@ -2127,7 +2127,7 @@ final totalUnreadCountProvider = Provider<int>((ref) {
     }
   }
   for (final g in groups) {
-    if (!mutedGroups.containsKey(g.id) && g.unreadCount > 0) {
+    if (mutedGroups[g.id] != 'muted' && g.unreadCount > 0) {
       total += 1;
     }
   }
