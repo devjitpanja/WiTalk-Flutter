@@ -527,11 +527,15 @@ class GridSeatingLayout extends StatelessWidget {
         ),
         clipBehavior: Clip.antiAlias,
         child: avatar != null && avatar.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: avatar,
-                fit: BoxFit.cover,
-                errorWidget: (_, __, ___) => _buildLetterFallback(name),
-                placeholder: (_, __) => _buildLetterFallback(name),
+            ? ClipOval(
+                child: CachedNetworkImage(
+                  imageUrl: avatar,
+                  width: 30,
+                  height: 30,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => _buildLetterFallback(name),
+                  placeholder: (_, __) => _buildLetterFallback(name),
+                ),
               )
             : _buildLetterFallback(name),
       ),

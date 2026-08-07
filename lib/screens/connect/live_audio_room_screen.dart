@@ -2180,11 +2180,15 @@ class _ChatAvatar extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: picUrl != null && picUrl!.isNotEmpty
-          ? CachedNetworkImage(
-              imageUrl: picUrl!,
-              fit: BoxFit.cover,
-              errorWidget: (_, __, ___) => _letter(initial),
-              placeholder: (_, __) => _letter(initial),
+          ? ClipOval(
+              child: CachedNetworkImage(
+                imageUrl: picUrl!,
+                width: 28,
+                height: 28,
+                fit: BoxFit.cover,
+                errorWidget: (_, __, ___) => _letter(initial),
+                placeholder: (_, __) => _letter(initial),
+              ),
             )
           : _letter(initial),
     );
@@ -2399,7 +2403,7 @@ class _AudienceListSheet extends StatelessWidget {
                       decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)])),
                       clipBehavior: Clip.antiAlias,
                       child: (pic != null && pic.isNotEmpty)
-                          ? CachedNetworkImage(imageUrl: pic, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letterWidget(name), placeholder: (_, __) => _letterWidget(name))
+                          ? ClipOval(child: CachedNetworkImage(imageUrl: pic, width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letterWidget(name), placeholder: (_, __) => _letterWidget(name)))
                           : _letterWidget(name),
                     ),
                     title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),

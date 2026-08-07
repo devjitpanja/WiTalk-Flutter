@@ -351,11 +351,13 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                     clipBehavior: Clip.antiAlias,
                                     alignment: Alignment.center,
                                     child: avatarUrl != null
-                                        ? CachedNetworkImage(
-                                            imageUrl: avatarUrl,
-                                            width: kAvatarSize,
-                                            height: kAvatarSize,
-                                            fit: BoxFit.cover,
+                                        ? ClipOval(
+                                            child: CachedNetworkImage(
+                                              imageUrl: avatarUrl,
+                                              width: kAvatarSize,
+                                              height: kAvatarSize,
+                                              fit: BoxFit.cover,
+                                            ),
                                           )
                                         : Icon(Icons.person, size: 36, color: Colors.white.withOpacity(0.5)),
                                   ),

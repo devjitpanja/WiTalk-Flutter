@@ -1309,10 +1309,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
             ? () => context.push('/channel-info/${widget.channelId}') : null,
           child: Container(width: 38, height: 38,
             decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary),
-            clipBehavior: Clip.hardEdge,
+            clipBehavior: Clip.antiAlias,
             child: icon != null
-              ? CachedNetworkImage(imageUrl: icon, fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => Center(child: Text(init, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white))))
+              ? ClipOval(child: CachedNetworkImage(imageUrl: icon, width: 38, height: 38, fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => Center(child: Text(init, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)))))
               : Center(child: Text(init, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)))),
         ),
         const SizedBox(width: 4),

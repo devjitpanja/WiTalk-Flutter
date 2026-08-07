@@ -146,11 +146,15 @@ class ParticipantAvatar extends StatelessWidget {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: resolvedAvatarUrl != null && resolvedAvatarUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: resolvedAvatarUrl,
-                          fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => _buildInitialAvatar(initial),
-                          placeholder: (_, __) => _buildInitialAvatar(initial),
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: resolvedAvatarUrl,
+                            width: size,
+                            height: size,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => _buildInitialAvatar(initial),
+                            placeholder: (_, __) => _buildInitialAvatar(initial),
+                          ),
                         )
                       : _buildInitialAvatar(initial),
                 ),

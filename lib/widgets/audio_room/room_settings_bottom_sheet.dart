@@ -722,14 +722,16 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
               color: avatarBg,
               shape: BoxShape.circle,
             ),
-            clipBehavior: Clip.hardEdge,
+            clipBehavior: Clip.antiAlias,
             alignment: Alignment.center,
             child: profilePic != null
-                ? CachedNetworkImage(
-                    imageUrl: profilePic,
-                    fit: BoxFit.cover,
-                    width: 40,
-                    height: 40,
+                ? ClipOval(
+                    child: CachedNetworkImage(
+                      imageUrl: profilePic,
+                      fit: BoxFit.cover,
+                      width: 40,
+                      height: 40,
+                    ),
                   )
                 : Text(
                     name.isNotEmpty ? name[0].toUpperCase() : '?',

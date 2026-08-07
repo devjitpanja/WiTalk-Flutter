@@ -2450,18 +2450,22 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
                         color: Colors.white.withValues(alpha: 0.35), width: 2),
                     color: Colors.white.withValues(alpha: 0.25),
                   ),
-                  clipBehavior: Clip.hardEdge,
+                  clipBehavior: Clip.antiAlias,
                   child: avatarUrl != null
-                      ? CachedNetworkImage(
-                          imageUrl: avatarUrl,
-                          fit: BoxFit.cover,
-                          errorWidget: (ctx2, unused1, unused2) => Center(
-                            child: Text(initials,
-                                style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
-                                    fontFamily: 'Outfit',
-                                    fontWeight: FontWeight.w700)),
+                      ? ClipOval(
+                          child: CachedNetworkImage(
+                            imageUrl: avatarUrl,
+                            width: 44,
+                            height: 44,
+                            fit: BoxFit.cover,
+                            errorWidget: (ctx2, unused1, unused2) => Center(
+                              child: Text(initials,
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontFamily: 'Outfit',
+                                      fontWeight: FontWeight.w700)),
+                            ),
                           ),
                         )
                       : Center(
