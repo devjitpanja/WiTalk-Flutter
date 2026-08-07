@@ -449,23 +449,32 @@ class DioClient {
         }
 
         // Handle 403 USER_BANNED or USER_NOT_ACTIVE
+        // Skip for pre-login endpoints — AuthService handles those directly.
         if (statusCode == 403) {
-          final errorData = error.response?.data?['data'];
-          if (errorCode == 'USER_BANNED') {
-            AppLogger.log('🚫 User is banned, logging out...');
-            await AppStorage.clear();
-            clearTokenCache();
-            resetTokenGate();
-            _emitForceLogout(
-              'user_banned',
-              errorData?['banReason'] as String? ?? 'Your account has been banned.',
-            );
-          } else if (errorCode == 'USER_NOT_ACTIVE') {
-            AppLogger.log('🚫 User account is not active, logging out...');
-            await AppStorage.clear();
-            clearTokenCache();
-            resetTokenGate();
-            _emitForceLogout('user_not_active', 'Your account is inactive.');
+          final path = error.requestOptions.path;
+          final isLoginPath = path.contains('/v1/user/create') ||
+              path.contains('/v1/user/check-device-ban') ||
+              path.contains('/v1/user/check-identifier-ban') ||
+              path.contains('/v1/auth/');
+
+          if (!isLoginPath) {
+            final errorData = error.response?.data?['data'];
+            if (errorCode == 'USER_BANNED') {
+              AppLogger.log('🚫 User is banned, logging out...');
+              await AppStorage.clear();
+              clearTokenCache();
+              resetTokenGate();
+              _emitForceLogout(
+                'user_banned',
+                errorData?['banReason'] as String? ?? 'Your account has been banned.',
+              );
+            } else if (errorCode == 'USER_NOT_ACTIVE') {
+              AppLogger.log('🚫 User account is not active, logging out...');
+              await AppStorage.clear();
+              clearTokenCache();
+              resetTokenGate();
+              _emitForceLogout('user_not_active', 'Your account is inactive.');
+            }
           }
         }
 

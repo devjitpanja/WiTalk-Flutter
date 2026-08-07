@@ -12,7 +12,6 @@ import '../utils/app_integrity.dart';
 import '../utils/device_identifiers.dart';
 import '../utils/logger.dart';
 import 'ban_check_service.dart';
-import 'dart:io';
 
 const _webClientId = AppConfig.googleWebClientId;
 
@@ -177,7 +176,7 @@ class AuthService {
         if (isp.blockedListSuccess && isp.blockedList.isNotEmpty) {
           for (final entry in isp.blockedList) {
             final blockedAsn = entry['asn']?.toString();
-            final blockedIspName = entry['isp']?.toString()?.toLowerCase();
+            final blockedIspName = entry['isp']?.toString().toLowerCase();
             if (blockedAsn != null && isp.asn == blockedAsn) {
               return const AuthResult(
                 success: false,
@@ -306,35 +305,54 @@ class AuthService {
         return AuthResult(success: true, uid: user.uid, nextRoute: nextRoute);
       }
 
-      // Handle 403 device banned from /v1/user/create
-      final code = res.data?['code'] as String?;
-      if (res.statusCode == 403 && code == 'DEVICE_BANNED') {
-        return AuthResult(
+      return const AuthResult(success: false, error: 'Server error');
+    } on FirebaseAuthException catch (e) {
+      return AuthResult(success: false, error: e.message ?? e.toString());
+    } on DioException catch (e) {
+      final responseData = e.response?.data;
+      // /v1/user/create uses 'error' field (not 'code') for USER_BANNED
+      final errorField = responseData?['error'] as String?;
+      // Some endpoints use 'code' field
+      final codeField = responseData?['code'] as String?;
+      final innerData = responseData?['data'];
+      final statusCode = e.response?.statusCode;
+
+      if (statusCode == 403) {
+        // Account banned — server sends {"error": "USER_BANNED", "banReason": "...", "banUntil": "..."}
+        if (errorField == 'USER_BANNED' || codeField == 'USER_BANNED') {
+          await _clearAuth();
+          final reason = responseData?['banReason'] as String? ??
+              innerData?['banReason'] as String? ??
+              'Your account has been banned.';
+          return AuthResult(success: false, error: 'banned:$reason');
+        }
+
+        // Device banned — server sends {"data": {"deviceBanned": true, "banReason": "..."}}
+        if (innerData?['deviceBanned'] == true || codeField == 'DEVICE_BANNED') {
+          final reason = innerData?['banReason'] as String? ?? 'Your device has been banned.';
+          return AuthResult(success: false, error: 'deviceBanned:$reason');
+        }
+
+        // Integrity check failed
+        if (innerData?['integrityFailed'] == true || codeField == 'INTEGRITY_FAILED') {
+          return const AuthResult(
+            success: false,
+            error: 'integrityFailed:App verification failed. Please use the official WiTalk app.',
+          );
+        }
+      }
+
+      // Network / timeout errors
+      if (e.type == DioExceptionType.connectionTimeout ||
+          e.type == DioExceptionType.receiveTimeout ||
+          e.type == DioExceptionType.connectionError ||
+          e.response == null) {
+        return const AuthResult(
           success: false,
-          error:
-              'deviceBanned:${res.data?['data']?['banReason'] ?? 'Your device has been banned.'}',
+          error: 'Network error. Please check your connection and try again.',
         );
       }
 
-      return const AuthResult(success: false, error: 'Server error');
-    } on FirebaseAuthException catch (e) {
-      return AuthResult(success: false, error: e.message);
-    } on DioException catch (e) {
-      final code = e.response?.data?['code'] as String?;
-      if (code == 'DEVICE_BANNED') {
-        return AuthResult(
-          success: false,
-          error:
-              'deviceBanned:${e.response?.data?['data']?['banReason'] ?? 'Your device has been banned.'}',
-        );
-      }
-      if (code == 'INTEGRITY_FAILED') {
-        return const AuthResult(
-          success: false,
-          error:
-              'integrityFailed:App verification failed. Please use the official WiTalk app.',
-        );
-      }
       return AuthResult(success: false, error: e.message ?? e.toString());
     } catch (e) {
       return AuthResult(success: false, error: e.toString());
@@ -345,6 +363,8 @@ class AuthService {
     await _firebaseAuth.signOut();
     await AppStorage.clear();
     clearTokenCache();
-    resetTokenGate();
+    // Re-mark ready so the token gate doesn't block the next login attempt.
+    // We're not emitting force_logout here — auth_screen handles the UI.
+    markTokensAsReady();
   }
 }

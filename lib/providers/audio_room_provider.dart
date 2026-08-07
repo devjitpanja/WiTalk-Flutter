@@ -8,6 +8,7 @@ import '../services/livekit_audio_manager.dart';
 import '../services/socket_service.dart';
 import '../services/audio_room_service.dart';
 import '../services/seat_manager.dart';
+import '../services/ban_check_service.dart';
 import '../services/participant_manager.dart';
 import '../services/audio_room_foreground_service.dart';
 import 'auth_provider.dart';
@@ -1657,14 +1658,22 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     // ── Bans ─────────────────────────────────────────────────────────────────
 
     socketService.onAudioRoom('user_banned', (data) {
-      // Check if I am the one banned
       final bannedUid = (data is Map)
           ? data['banned_uid']?.toString() ?? data['uid']?.toString()
           : null;
       if (bannedUid == myUid) {
         _roomClosedShown = true;
-        state = state.copyWith(error: 'You have been banned from this room.');
-        leaveRoom();
+        // Set bannedFromRoom so the UI shows the snackbar then navigates back
+        state = state.copyWith(
+          bannedFromRoom: true,
+          error: 'You have been banned from this room.',
+        );
+        // Run room cleanup first, then trigger full platform ban logout
+        leaveRoom().then((_) {
+          BanCheckService.handleBannedUser(
+            banReason: (data is Map ? data['ban_reason']?.toString() : null) ?? 'You have been banned.',
+          );
+        });
       }
     });
 

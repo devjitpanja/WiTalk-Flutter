@@ -4,10 +4,20 @@ import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import '../api/dio_client.dart';
+import '../config/app_config.dart';
 import '../utils/storage.dart';
 import '../utils/device_fingerprint.dart';
 import '../utils/device_identifiers.dart';
 import '../utils/logger.dart';
+
+// Plain unauthenticated Dio for pre-login ban checks — avoids the auth
+// interceptor (token gate, force_logout side effects) during login flow.
+final _banCheckDio = Dio(BaseOptions(
+  baseUrl: AppConfig.apiBaseUrl,
+  connectTimeout: const Duration(seconds: 10),
+  receiveTimeout: const Duration(seconds: 10),
+  headers: {'Content-Type': 'application/json'},
+));
 
 /// Result of a ban check.
 class BanResult {
@@ -136,7 +146,9 @@ class BanCheckService {
       clearTokenCache();
       resetTokenGate();
 
-      // 5. Store ban info for 5 minutes so the auth screen can display it
+      // 5. Clear all storage, then re-write ban info so it survives the wipe
+      await AppStorage.clear();
+
       final banInfo = BanInfo(
         banned: true,
         reason: banReason,
@@ -145,12 +157,9 @@ class BanCheckService {
         userEmail: email,
         userName: name,
       );
-      // Store as individual fields (AppStorage uses flutter_secure_storage)
       final json = banInfo.toJson();
       await Future.wait(json.entries.map((e) =>
           AppStorage.set('bannedUser_${e.key}', e.value?.toString() ?? '')));
-
-      await AppStorage.clear();
 
       // 6. Emit force_logout — auth_provider listens and navigates to auth screen
       emitForceLogout('user_banned', banReason);
@@ -202,9 +211,19 @@ class BanCheckService {
   /// Both Android and iOS: uses device_fingerprint.dart for device ID.
   static Future<BanResult> checkDeviceBan() async {
     try {
+      // Collect in parallel — androidId is the real ANDROID_ID (Settings.Secure),
+      // matching RN DeviceInfo.getUniqueId() which the server stores bans against.
       final deviceInfo = await getDeviceInfo();
-      final res = await dioClient.post('/v1/user/check-device-ban', data: {
-        'deviceUniqueId': deviceInfo['deviceId'],
+      final deviceIds = await collectDeviceIdentifiers();
+
+      // Use Android ID (ANDROID_ID) as deviceUniqueId — same as RN getUniqueId()
+      final androidId = deviceIds['androidId'] as String? ?? '';
+      final deviceUniqueId = androidId.isNotEmpty
+          ? androidId
+          : deviceInfo['deviceId'] as String? ?? '';
+
+      final res = await _banCheckDio.post('/v1/user/check-device-ban', data: {
+        'deviceUniqueId': deviceUniqueId,
         'brand': deviceInfo['brand'],
         'model': deviceInfo['model'],
         'platform': deviceInfo['platform'],
@@ -246,7 +265,7 @@ class BanCheckService {
         if (idfv.isNotEmpty) 'idfv': idfv,
       };
 
-      final res = await dioClient.post('/v1/user/check-identifier-ban', data: payload);
+      final res = await _banCheckDio.post('/v1/user/check-identifier-ban', data: payload);
       final data = res.data?['data'];
       return BanResult(
         isBanned: data?['isBanned'] as bool? ?? false,
@@ -273,23 +292,56 @@ class BanCheckService {
 
   // ── Ban message helpers ─────────────────────────────────────────────────────
 
+  /// Returns {title, message} for a user account ban — mirrors RN getBanMessage().
+  static Map<String, String> getBanMessage(String? banReason, String? banUntil) {
+    const title = 'Account Banned';
+    final cleaned = _sanitizeReason(banReason) ??
+        'Your account has been banned due to violation of our community guidelines.';
+    final message = _buildMessage(cleaned, banUntil,
+        permanent:
+            'This is a permanent ban. If you believe this is a mistake, please contact our support team.');
+    return {'title': title, 'message': message};
+  }
+
+  /// Returns {title, message} for a device ban — mirrors RN getDeviceBanMessage().
+  static Map<String, String> getDeviceBanMessage(String? banReason, String? banUntil) {
+    const title = 'Device Banned';
+    final cleaned = _sanitizeReason(banReason) ??
+        'This device has been banned due to violation of our community guidelines.';
+    var message = _buildMessage(cleaned, banUntil,
+        permanent:
+            'This is a permanent device ban. You cannot create or access any account from this device.');
+    message += '\n\nIf you believe this is a mistake, please contact our support team.';
+    return {'title': title, 'message': message};
+  }
+
+  // Legacy helpers retained for callers that only need one field
   static String getBanTitle(String reason) {
     if (reason.toLowerCase().contains('device')) return 'Device Banned';
     return 'Account Banned';
   }
 
-  static String getBanMessage(String reason, String? banUntil) {
-    // Strip "XXX banned: " prefix if present
-    final cleaned = reason.replaceFirst(RegExp(r'^.+ banned:\s*'), '');
+  static String _buildMessage(String body, String? banUntil, {required String permanent}) {
     if (banUntil != null && banUntil.isNotEmpty) {
       try {
         final until = DateTime.parse(banUntil).toLocal();
-        final formatted =
-            '${until.day}/${until.month}/${until.year} ${until.hour}:${until.minute.toString().padLeft(2, '0')}';
-        return '$cleaned\n\nYour ban is active until $formatted.';
+        final now = DateTime.now();
+        if (until.isAfter(now)) {
+          final days = until.difference(now).inDays + 1;
+          final formatted = '${until.month}/${until.day}/${until.year}';
+          return '$body\n\nThis is a temporary ban that will be lifted on $formatted.\n($days day${days > 1 ? 's' : ''} remaining)';
+        } else {
+          return '$body\n\nYour ban period has ended. Please contact support if you continue to experience issues.';
+        }
       } catch (_) {}
     }
-    return '$cleaned\n\nThis is a permanent ban. Contact support if you believe this is a mistake.';
+    return '$body\n\n$permanent';
+  }
+
+  static String? _sanitizeReason(String? reason) {
+    if (reason == null || reason.isEmpty) return null;
+    final cleaned = reason.replaceFirst(RegExp(r'^\S+\s+banned:\s*', caseSensitive: false), '').trim();
+    return cleaned.isNotEmpty ? cleaned : null;
   }
 }
 

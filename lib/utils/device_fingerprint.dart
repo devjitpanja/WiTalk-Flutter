@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'device_identifiers.dart';
 import 'logger.dart';
 
 final _deviceInfoPlugin = DeviceInfoPlugin();
@@ -13,14 +14,18 @@ Future<Map<String, dynamic>> getDeviceInfo() async {
 
     if (Platform.isAndroid) {
       final info = await _deviceInfoPlugin.androidInfo;
+      // Use real Android ID (ANDROID_ID) — matches RN DeviceInfo.getUniqueId()
+      // info.id is the build ID (e.g. "SP1A.210812.016"), NOT the device unique ID.
+      final androidId = await getAndroidId();
+      final uniqueId = androidId.isNotEmpty ? androidId : info.id;
       return {
-        'deviceId': info.id,
+        'deviceId': uniqueId,
         'brand': info.brand,
         'model': info.model,
         'osVersion': info.version.release,
         'appVersion': packageInfo.version,
         'buildNumber': packageInfo.buildNumber,
-        'uniqueId': info.id,
+        'uniqueId': uniqueId,
         'platform': 'android',
       };
     } else if (Platform.isIOS) {

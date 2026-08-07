@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:dio/dio.dart';
 import '../config/app_config.dart';
+import 'device_identifiers.dart';
 import 'vpn_detector.dart';
 import 'logger.dart';
 
@@ -49,7 +50,7 @@ Future<void> collectAndSendSecurityProfile({
           'buildFingerprint': info.fingerprint,
           'buildTags': info.tags,
           'bootloader': info.bootloader,
-          'deviceUniqueId': info.id,
+          'deviceUniqueId': await getAndroidId().then((id) => id.isNotEmpty ? id : info.id),
           'isTablet': info.systemFeatures.contains('android.hardware.type.tablet'),
           'isEmulator': !info.isPhysicalDevice,
         });

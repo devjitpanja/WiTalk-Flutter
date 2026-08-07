@@ -10,6 +10,7 @@ import 'package:youtube_player_flutter/youtube_player_flutter.dart' show Youtube
 import '../../providers/audio_room_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/livekit_audio_manager.dart';
+import '../../services/ban_check_service.dart';
 import '../../widgets/audio_room/grid_seating_layout.dart';
 import '../../widgets/common/share_bottom_sheet.dart';
 import '../../widgets/audio_room/audio_room_bottom_bar.dart';
@@ -75,6 +76,12 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
+    // Register cleanup hook so BanCheckService can leave/end the room
+    // before wiping credentials on a platform ban.
+    BanCheckService.registerPreLogoutHandler(() async {
+      await ref.read(audioRoomProvider.notifier).leaveRoom();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final notifier = ref.read(audioRoomProvider.notifier);
       if (widget.restore) {
@@ -99,6 +106,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   @override
   void dispose() {
+    BanCheckService.unregisterPreLogoutHandler();
     WidgetsBinding.instance.removeObserver(this);
     _chatCtrl.dispose();
     _chatFocus.dispose();

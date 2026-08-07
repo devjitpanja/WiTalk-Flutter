@@ -16,4 +16,8 @@ Always optimize code quality and performance. Use const constructors where appro
 
 For every task, first inspect the relevant Flutter implementation, then inspect the corresponding React Native implementation and any dependent files until the complete feature is understood. Only then implement the solution, verify Light Mode, verify Dark Mode, verify AppColors usage, verify responsiveness and confirm that functionality matches the React Native behavior exactly. Never stop reading files to save tokens. Spend tokens understanding the project instead of explaining it.
 
-When responding after completing a task, do not generate long explanations, tutorials or unnecessary summaries. Keep the response concise and only mention what was implemented or any blocking issue if one exists. Prioritize reading code, implementing the solution and maintaining feature parity over explaining the implementation.
+When responding after completing a task, do not generate long explanations, tutorials or unnecessary summaries. Keep the response concise and only mention what was implemented or any blocking issue if one exists. Prioritize reading code, implementing the solution and maintaining feature parity over explaining the implementation.Added to the WiTalk context:
+Backend directory: /Users/dev/Documents/App Development/React Native/WiTalk/backend
+Read-only reference only
+Never modify any backend files/folders
+Inspect it when needed to understand API response/output structures, especially when the React Native API handling is unclea

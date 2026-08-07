@@ -9,6 +9,7 @@ import '../database/app_database.dart';
 import '../api/dio_client.dart';
 import '../api/app_endpoints.dart';
 import '../services/chat_api_service.dart';
+import '../services/ban_check_service.dart';
 import 'auth_provider.dart';
 
 // ── ChatMessage model ─────────────────────────────────────────────────────────
@@ -684,6 +685,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     s.on('group_dissolved', (data) => _handleGroupDissolved(data));
     // Bulk message delete when a member is banned — mirrors RN ChatContext.jsx
     s.on('group_messages_bulk_deleted', (data) => _handleGroupMessagesBulkDeleted(data));
+    // Platform ban received while in chat — trigger full logout just like RN ChatContext
+    s.on('user_banned', (data) {
+      final banReason = (data is Map)
+          ? data['ban_reason']?.toString() ?? data['banReason']?.toString()
+          : null;
+      BanCheckService.handleBannedUser(
+        banReason: banReason ?? 'Your account has been banned.',
+      );
+    });
     s.on('online_users', (data) => _handleOnlineUsersList(data));
   }
 
