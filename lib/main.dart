@@ -6,6 +6,8 @@ import 'theme/app_theme.dart';
 import 'navigation/app_router.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
+import 'providers/user_provider.dart';
+import 'providers/create_action_provider.dart';
 import 'services/socket_service.dart';
 import 'services/notification_service.dart';
 import 'services/location_service.dart';
@@ -13,8 +15,10 @@ import 'providers/chat_provider.dart';
 import 'services/chat_api_service.dart';
 import 'services/message_sync_manager.dart';
 import 'services/global_video_settings.dart';
+import 'services/deep_link_service.dart';
 import 'api/channel_api.dart';
 import 'package:visibility_detector/visibility_detector.dart';
+import 'screens/chat/join_group_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,16 +48,65 @@ class WiTalkApp extends ConsumerStatefulWidget {
   ConsumerState<WiTalkApp> createState() => _WiTalkAppState();
 }
 
+// Root navigator key — provides a stable BuildContext for deep link and
+// notification navigation after the widget tree is fully mounted.
+final rootNavigatorKey = GlobalKey<NavigatorState>();
+
 class _WiTalkAppState extends ConsumerState<WiTalkApp> {
   bool _locationStartupDone = false;
   bool _chatInitialized = false;
+  bool _deepLinkInitialized = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAndInitUser();
       _checkAndInitChat();
+      _initDeepLinks();
     });
+  }
+
+  // Returns the root context via the navigator key so deep link service
+  // always has a live context even after multiple navigations.
+  BuildContext? _getRootContext() => rootNavigatorKey.currentContext;
+
+  void _initDeepLinks() {
+    if (_deepLinkInitialized) return;
+    _deepLinkInitialized = true;
+
+    // Group invite: private group deep link → show JoinGroupScreen sheet
+    setGroupInviteCallback((inviteCode) {
+      final ctx = _getRootContext();
+      if (ctx == null) return;
+      showModalBottomSheet(
+        context: ctx,
+        useRootNavigator: true,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => JoinGroupScreen(inviteCode: inviteCode),
+      );
+    });
+
+    // app_links — listens for witalk:// and https://witalk.in/* (cold + warm)
+    deepLinkService.init(getContext: () => _getRootContext()!);
+
+    // Notification tap handler — routes all OneSignal notification taps
+    notificationService.setNavigationHandler((data) {
+      final ctx = _getRootContext();
+      if (ctx == null) return;
+      handleNotificationNavigation(ctx, data);
+    });
+  }
+
+  void _checkAndInitUser() {
+    final auth = ref.read(authProvider);
+    if (auth.status == AuthStatus.authenticated && auth.uid != null) {
+      final userNotifier = ref.read(userProvider.notifier);
+      userNotifier.loadFromStorage().then((_) => userNotifier.fetchAndCache(auth.uid!));
+      // Pre-fetch create-action flags so the sheet never shows a loader.
+      ref.read(createActionProvider.notifier).load();
+    }
   }
 
   void _checkAndInitChat() {
@@ -77,6 +130,13 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
     // Connect Socket.IO, initialize chat provider & run location startup when authenticated
     ref.listen(authProvider, (prev, next) {
       if (next.status == AuthStatus.authenticated && next.uid != null) {
+        // Warm up user profile cache whenever we get an authenticated uid
+        final wasUnauthenticated = prev?.status != AuthStatus.authenticated;
+        if (wasUnauthenticated) {
+          final userNotifier = ref.read(userProvider.notifier);
+          userNotifier.loadFromStorage().then((_) => userNotifier.fetchAndCache(next.uid!));
+          ref.read(createActionProvider.notifier).load();
+        }
         if (!_chatInitialized) {
           _chatInitialized = true;
           _initChatSystem(next.uid!);
@@ -86,8 +146,14 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
             _runLocationStartup(next.uid!);
           }
         }
+        // Process any deep link or notification that arrived before login
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final ctx = _getRootContext();
+          if (ctx != null) processPendingDeepLinkAfterLogin(ctx);
+        });
       } else if (next.status == AuthStatus.unauthenticated) {
         _chatInitialized = false;
+        ref.read(userProvider.notifier).clearUser();
         socketService.disconnect();
         messageSyncManager.cleanup();
         notificationService.logout();
@@ -193,6 +259,7 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
 
   @override
   void dispose() {
+    deepLinkService.dispose();
     locationService.stopTracking();
     super.dispose();
   }

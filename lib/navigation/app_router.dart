@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/auth_provider.dart';
 import '../providers/location_provider.dart';
+import '../main.dart' show rootNavigatorKey;
 import '../screens/auth/auth_screen.dart';
 import '../screens/onboarding/complete_profile_screen.dart';
 import '../screens/onboarding/purpose_interests_screen.dart';
@@ -106,6 +107,7 @@ final routerProvider = Provider<GoRouter>((ref) {
   final locationPerm = ref.watch(locationPermissionProvider);
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
     redirect: (context, state) {
       final isAuth = authState.status == AuthStatus.authenticated;

@@ -12,6 +12,16 @@
 				<string>com.googleusercontent.apps.511059619083-vuhan7r5gal4eq1n1kqvnu0cpar35vd4</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>witalk</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>witalk</string>
+			</array>
+		</dict>
 	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>

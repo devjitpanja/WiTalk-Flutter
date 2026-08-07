@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:video_player/video_player.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../providers/user_provider.dart';
 import '../../services/location_service.dart';
 import '../../services/upload_service.dart';
 import '../../utils/analytics.dart';
@@ -142,7 +143,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
   Future<void> _checkUploadLimitOnInit() async {
     if (_uid == null) {
-      final prefs = await SharedPreferences.getInstance();
+      final prefs = await _prefs();
       _uid = prefs.getString('uid');
     }
     if (_uid == null) return;
@@ -202,17 +203,39 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Future<void> _loadUser() async {
-    final prefs = await SharedPreferences.getInstance();
+    // Prefer the app-wide cached profile — no network round-trip needed.
+    final cached = ref.read(userProvider);
+    if (cached != null) {
+      _uid = cached.id;
+      // Set directly — may be called from initState before first build, so
+      // assign the field first; setState below is a no-op if not yet mounted.
+      _userProfile = cached.toJson();
+      if (mounted) setState(() {});
+      // Refresh in background so data stays fresh without blocking the UI.
+      ref.read(userProvider.notifier).fetchAndCache(cached.id);
+      return;
+    }
+
+    // Fallback: profile not yet in provider (cold start race). Fetch directly.
+    final prefs = await _prefs();
     _uid = prefs.getString('uid');
     if (_uid != null) {
       try {
         final res = await dioClient.get('/v1/user/$_uid');
         if (res.data != null && res.data['data'] != null && mounted) {
-          setState(() => _userProfile = res.data['data']);
+          final data = res.data['data'] as Map<String, dynamic>;
+          setState(() => _userProfile = data);
+          // Populate provider so subsequent screens benefit.
+          ref.read(userProvider.notifier).setUser(UserProfile.fromJson(data));
         }
       } catch (_) {}
     }
   }
+
+  // Cached prefs accessor — avoids repeated getInstance() calls.
+  static SharedPreferences? _cachedPrefs;
+  static Future<SharedPreferences> _prefs() async =>
+      _cachedPrefs ??= await SharedPreferences.getInstance();
 
   Future<void> _loadPopularHashtags() async {
     try {

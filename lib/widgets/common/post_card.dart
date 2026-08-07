@@ -924,57 +924,169 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   void _navigateToHashtag(String hashtag) {
     final tag = hashtag.replaceFirst('#', '').trim();
-    context.push('/search-result?query=%23$tag');
+    context.push('/search-result?q=%23$tag');
   }
 
   void _showMoreMenuSheet(ThemeColors c) {
     final isOwnPost = widget.currentUserId != null && widget.currentUserId == _userId;
+    bool isSaved = false;
+    bool isSaveLoading = false;
+
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 8),
-        Container(width: 40, height: 4,
-          decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 8),
-        if (isOwnPost) ...[
-          _menuItem(Icons.edit_outlined, 'Edit post', () {
-            context.push('/create-post', extra: {
-              'isEditing': true,
-              'postId': _postId,
-              'initialContent': _p['content'],
-            });
-          }, c),
-          _menuItem(Icons.delete_outline, 'Delete post', () => _confirmDelete(c), c),
-        ] else ...[
-          _menuItem(Icons.bookmark_border, 'Save post', () {}, c),
-          _menuItem(Icons.flag_outlined, 'Report', () => context.push('/report/post/$_postId'), c),
-          _menuItem(Icons.block, 'Block user', () {}, c),
-        ],
-        const SizedBox(height: 16),
-      ]),
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (_, setSheetState) {
+          void closeSheet() => Navigator.of(sheetCtx, rootNavigator: true).pop();
+
+          Future<void> toggleSave() async {
+            if (isSaveLoading || widget.currentUserId == null) return;
+            setSheetState(() => isSaveLoading = true);
+            try {
+              final res = await dioClient.post('/v1/post-saves/toggle',
+                  data: {'postId': _postId, 'userId': widget.currentUserId});
+              final action = res.data['action'] as String?;
+              setSheetState(() {
+                isSaved = action == 'saved';
+                isSaveLoading = false;
+              });
+            } catch (_) {
+              setSheetState(() => isSaveLoading = false);
+            }
+          }
+
+          Future<void> checkSaveStatus() async {
+            if (widget.currentUserId == null || isOwnPost) return;
+            try {
+              final res = await dioClient.get(
+                  '/v1/post-saves/check/${widget.currentUserId}/$_postId');
+              if (res.data['data']?['isSaved'] == true) {
+                setSheetState(() => isSaved = true);
+              }
+            } catch (_) {}
+          }
+
+          Future<void> doExcludeUser() async {
+            closeSheet();
+            if (widget.currentUserId == null) return;
+            try {
+              await dioClient.post('/v2/excluded-users/add', data: {
+                'user_id': widget.currentUserId,
+                'excluded_user_id': _userId,
+              });
+            } catch (_) {}
+          }
+
+          Future<void> doUnfollow() async {
+            closeSheet();
+            try {
+              await dioClient.post('/v1/followers/toggle', data: {'followingId': _userId});
+              if (mounted) setState(() => _isFollowing = false);
+            } catch (_) {}
+          }
+
+          // Check save status once when sheet first builds
+          WidgetsBinding.instance.addPostFrameCallback((_) => checkSaveStatus());
+
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 8),
+            Container(width: 40, height: 4,
+              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 8),
+
+            // Top button row: Save + (future QR)
+            if (!isOwnPost) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(children: [
+                  Expanded(
+                    child: _topSheetButton(
+                      icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
+                      label: isSaved ? 'Unsave' : 'Save',
+                      loading: isSaveLoading,
+                      onTap: toggleSave,
+                      c: c,
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+
+            if (isOwnPost) ...[
+              _menuItem(Icons.edit_outlined, 'Edit Post', c, isDestructive: false, onTap: () {
+                closeSheet();
+                context.push('/create-post', extra: {
+                  'isEditing': true,
+                  'postId': _postId,
+                  'initialContent': _p['content'],
+                });
+              }),
+              _menuItem(Icons.delete_outlined, 'Delete Post', c, isDestructive: true, onTap: () {
+                closeSheet();
+                _confirmDelete(c);
+              }),
+            ] else ...[
+              _menuItem(Icons.cancel_outlined, "Don't suggest this user's posts", c, onTap: () => doExcludeUser()),
+              if (_isFollowing)
+                _menuItem(Icons.person_remove_outlined, 'Unfollow', c, onTap: () => doUnfollow()),
+              _menuItem(Icons.flag_outlined, 'Report', c, isDestructive: true, onTap: () {
+                closeSheet();
+                context.push('/report/post/$_postId');
+              }),
+            ],
+            const SizedBox(height: 16),
+          ]);
+        },
+      ),
+    );
+  }
+
+  Widget _topSheetButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required ThemeColors c,
+    bool loading = false,
+  }) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          color: c.interactionButtonBg,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: loading
+            ? Center(child: SizedBox(width: 20, height: 20,
+                child: CircularProgressIndicator(color: c.text, strokeWidth: 2)))
+            : Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(icon, color: c.text, size: 20),
+                const SizedBox(height: 4),
+                Text(label, style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'Outfit')),
+              ]),
+      ),
     );
   }
 
   Future<void> _confirmDelete(ThemeColors c) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dlgCtx) => AlertDialog(
         backgroundColor: c.surface,
         title: Text('Delete post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
         content: Text('Are you sure you want to delete this post?',
             style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(false),
             child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text('Delete', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+            onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
           ),
         ],
       ),
@@ -996,11 +1108,15 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     }
   }
 
-  Widget _menuItem(IconData icon, String label, VoidCallback onTap, ThemeColors c) {
+  Widget _menuItem(IconData icon, String label, ThemeColors c, {
+    required VoidCallback onTap,
+    bool isDestructive = false,
+  }) {
+    final color = isDestructive ? const Color(0xFFFF3040) : c.text;
     return ListTile(
-      leading: Icon(icon, color: c.text),
-      title: Text(label, style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-      onTap: () { Navigator.pop(context); onTap(); },
+      leading: Icon(icon, color: color),
+      title: Text(label, style: TextStyle(color: color, fontFamily: 'Outfit', fontSize: 16)),
+      onTap: onTap,
     );
   }
 }
