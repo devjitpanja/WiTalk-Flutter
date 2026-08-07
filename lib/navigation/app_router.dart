@@ -109,6 +109,13 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
+    onException: (_, state, router) {
+      // witalk:// and https://witalk.in deep links are handled by DeepLinkService
+      // via app_links. GoRouter's platform route provider may intercept them on
+      // cold start before the service can, causing "Page Not Found". Redirect to
+      // /splash so the app loads normally and getInitialLink() fires as expected.
+      router.go('/splash');
+    },
     redirect: (context, state) {
       final isAuth = authState.status == AuthStatus.authenticated;
       final isUnknown = authState.status == AuthStatus.unknown;
