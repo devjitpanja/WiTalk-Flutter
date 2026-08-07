@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -275,13 +276,17 @@ Best regards''';
       },
     );
     try {
-      if (await canLaunchUrl(uri)) {
+      if (Platform.isAndroid) {
         await launchUrl(uri);
       } else {
-        _showError('Email Client Not Available', 'Please email us at support@witalk.in');
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          _showError('Email Client Not Available', 'Please email us at support@witalk.in');
+        }
       }
     } catch (_) {
-      _showError('Error', 'Failed to open email client.');
+      _showError('Email Client Not Available', 'Please email us at support@witalk.in');
     }
   }
 
@@ -327,7 +332,19 @@ Best regards''';
 
   Future<void> _handleTroubleSigningIn() async {
     final uri = Uri.parse('mailto:support@witalk.in?subject=WiTalk%20Sign-In%20Trouble');
-    if (await canLaunchUrl(uri)) launchUrl(uri);
+    try {
+      if (Platform.isAndroid) {
+        await launchUrl(uri);
+      } else {
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri);
+        } else {
+          _showError('Email Client Not Available', 'Please make sure you have an email app installed on your device.');
+        }
+      }
+    } catch (_) {
+      _showError('Email Client Not Available', 'Please make sure you have an email app installed on your device.');
+    }
   }
 
   @override
