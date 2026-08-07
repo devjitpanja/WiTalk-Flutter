@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import '../../utils/storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:timeago/timeago.dart' as timeago;
@@ -84,7 +84,6 @@ class PostViewScreen extends ConsumerStatefulWidget {
 }
 
 class _PostViewScreenState extends ConsumerState<PostViewScreen> {
-  static const _storage = FlutterSecureStorage();
 
   // ── Data ───────────────────────────────────────────────────────────────────
   String? _currentUserId;
@@ -149,7 +148,7 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
 
   // ── Init ───────────────────────────────────────────────────────────────────
   Future<void> _init() async {
-    final uid = await _storage.read(key: 'uid');
+    final uid = await AppStorage.get('uid') as String?;
     if (mounted) setState(() => _currentUserId = uid);
     await _loadPost();
     if (uid != null) {
@@ -168,12 +167,51 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
     if (!mounted) return;
     setState(() { _loadingPost = true; _error = null; });
     try {
-      final uid = _currentUserId ?? await _storage.read(key: 'uid');
-      final res = await dioClient.get(
-        '/v1/posts/share/${widget.suffix}',
-        queryParameters: uid != null ? {'userId': uid} : null,
-      );
-      final posts = res.data['data']?['posts'] ?? res.data['posts'];
+      final uid = _currentUserId ?? await AppStorage.get('uid') as String?;
+
+      debugPrint('[PostViewScreen] _loadPost: suffix="${widget.suffix}" uid=$uid');
+
+      if (uid == null || uid.isEmpty) {
+        if (mounted) setState(() => _error = 'User not authenticated');
+        return;
+      }
+
+      // If suffix looks like a raw numeric ID (fallback from notification screen),
+      // fetch the post directly and extract the real suffix if needed.
+      final isNumericId = RegExp(r'^\d+$').hasMatch(widget.suffix);
+      Map<String, dynamic>? directPost;
+      if (isNumericId) {
+        debugPrint('[PostViewScreen] suffix is numeric ID, trying /v1/posts/${widget.suffix}');
+        try {
+          final idRes = await dioClient.get(
+            '/v1/posts/${widget.suffix}',
+            queryParameters: uid != null ? {'userId': uid} : null,
+          );
+          debugPrint('[PostViewScreen] /v1/posts/${widget.suffix} status=${idRes.statusCode} data=${idRes.data}');
+          final d = idRes.data;
+          final p = d?['data'] ?? d;
+          if (p is Map<String, dynamic> && p['id'] != null) {
+            directPost = p;
+          }
+        } catch (idErr) {
+          debugPrint('[PostViewScreen] numeric-ID fetch failed: $idErr');
+        }
+      }
+
+      List? posts;
+      if (directPost != null) {
+        debugPrint('[PostViewScreen] using directPost id=${directPost['id']}');
+        posts = [directPost];
+      } else {
+        debugPrint('[PostViewScreen] calling /v1/posts/share/${widget.suffix}');
+        final res = await dioClient.get(
+          '/v1/posts/share/${widget.suffix}',
+          queryParameters: uid != null ? {'userId': uid} : null,
+        );
+        debugPrint('[PostViewScreen] share response status=${res.statusCode} data=${res.data}');
+        posts = res.data['data']?['posts'] ?? res.data['posts'];
+      }
+      debugPrint('[PostViewScreen] posts=$posts postsLength=${posts?.length}');
       if (posts is List && posts.isNotEmpty) {
         final postData = posts[0] as Map<String, dynamic>;
 
@@ -212,16 +250,28 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
     } catch (e) {
       if (!mounted) return;
       final code = _httpCode(e);
-      if (code == 404) {
+      final responseData = _responseData(e);
+      debugPrint('[PostViewScreen] _loadPost FAILED: suffix="${widget.suffix}" code=$code isNetwork=${_isNetworkError(e)} responseData=$responseData error=$e');
+      if (code == 410 || responseData?['removed'] == true) {
+        setState(() {
+          _isPostRemoved = true;
+          _removalReason = (responseData?['removal_reason'] as String?) ??
+              (responseData?['message'] as String?) ??
+              'This post was removed for violating community guidelines';
+        });
+      } else if (code == 404) {
         setState(() => _error = 'Post not found');
         Future.delayed(const Duration(milliseconds: 1500), () {
           if (mounted) context.pop();
         });
-      } else if (code == 410) {
-        setState(() {
-          _isPostRemoved = true;
-          _removalReason = 'This post was removed for violating community guidelines';
-        });
+      } else if (code == 401) {
+        setState(() => _error = 'Authentication required');
+      } else if (code == 403) {
+        setState(() => _error = 'This post is not available');
+      } else if (code == 500) {
+        setState(() => _error = 'Server error - please try again');
+      } else if (_isNetworkError(e)) {
+        setState(() => _error = 'Network error - check your connection');
       } else {
         setState(() => _error = 'Failed to load post');
       }
@@ -237,6 +287,29 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  Map<String, dynamic>? _responseData(Object e) {
+    try {
+      // ignore: avoid_dynamic_calls
+      final data = (e as dynamic).response?.data;
+      if (data is Map<String, dynamic>) return data;
+    } catch (_) {}
+    return null;
+  }
+
+  bool _isNetworkError(Object e) {
+    try {
+      // ignore: avoid_dynamic_calls
+      final d = e as dynamic;
+      final type = d.type?.toString() ?? '';
+      return type.contains('connectionTimeout') ||
+          type.contains('receiveTimeout') ||
+          type.contains('sendTimeout') ||
+          type.contains('connectionError') ||
+          d.response == null;
+    } catch (_) {}
+    return false;
   }
 
   // ── Load comments ──────────────────────────────────────────────────────────
@@ -1113,11 +1186,37 @@ class _PostViewScreenState extends ConsumerState<PostViewScreen> {
   }
 
   Widget _buildErrorBody(ThemeColors c) {
+    final isRetriable = _error != null &&
+        (_error!.contains('Server error') || _error!.contains('Network error') ||
+         _error!.contains('Failed to load'));
     return Center(
-      child: Text(_error ?? 'Post not found',
-          textAlign: TextAlign.center,
-          style: TextStyle(color: c.textTertiary, fontSize: 18,
-              fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.error_outline, size: 48, color: c.textTertiary),
+          const SizedBox(height: 16),
+          Text(_error ?? 'Post not found',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: c.textTertiary, fontSize: 16,
+                  fontFamily: 'Outfit', fontWeight: FontWeight.w500)),
+          if (isRetriable) ...[
+            const SizedBox(height: 24),
+            GestureDetector(
+              onTap: _loadPost,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                decoration: BoxDecoration(
+                  color: c.primary,
+                  borderRadius: BorderRadius.circular(100),
+                ),
+                child: Text('Try Again',
+                    style: TextStyle(color: c.background, fontSize: 14,
+                        fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ]),
+      ),
     );
   }
 }
