@@ -1,11 +1,32 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../config/app_config.dart';
 import '../utils/storage.dart';
 import '../utils/logger.dart';
+
+// Track connectivity — updated by a listener so the check is synchronous (no await in hot path)
+bool _isOffline = false;
+
+void _initConnectivityListener() {
+  Connectivity().onConnectivityChanged.listen((results) {
+    // results is a List<ConnectivityResult> in connectivity_plus v6+
+    final offline = results.isEmpty ||
+        results.every((r) => r == ConnectivityResult.none);
+    _isOffline = offline;
+    if (offline) {
+      AppLogger.warn('[Network] Device went offline');
+    }
+  });
+}
+
+// Called once from main.dart after WidgetsFlutterBinding.ensureInitialized()
+void initNetworkMonitor() {
+  _initConnectivityListener();
+}
 
 String? _cachedBuildNumber;
 
@@ -60,6 +81,10 @@ Stream<ForceLogoutEvent> get onForceLogout => _forceLogoutController.stream;
 void _emitForceLogout(String reason, String message) {
   _forceLogoutController.add(ForceLogoutEvent(reason: reason, message: message));
 }
+
+/// Public surface for other services (e.g. BanCheckService) to emit a force-logout event.
+void emitForceLogout(String reason, String message) =>
+    _emitForceLogout(reason, message);
 
 // Token cache to avoid repeated async reads
 class _TokenCache {
@@ -311,6 +336,18 @@ class DioClient {
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
+        // Reject immediately if device is offline — mirrors RN NetInfo pre-check
+        if (_isOffline) {
+          return handler.reject(
+            DioException(
+              requestOptions: options,
+              type: DioExceptionType.connectionError,
+              message: 'NETWORK_ERROR: Device is offline',
+              error: {'isOffline': true},
+            ),
+          );
+        }
+
         final version = await _getAppBuildNumber();
         options.headers['x-app-version'] = version;
 

@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:ui' as ui show ImageFilter;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import 'package:photo_view/photo_view_gallery.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
@@ -13,6 +14,7 @@ import '../../api/dio_client.dart';
 import '../../services/post_view_tracking_service.dart';
 import '../../services/post_feedback_service.dart';
 import '../../services/global_video_settings.dart';
+import '../../utils/time_utils.dart';
 import 'comment_bottom_sheet.dart';
 import 'share_bottom_sheet.dart';
 import 'verification_badge.dart';
@@ -100,7 +102,7 @@ class PostCard extends StatefulWidget {
   State<PostCard> createState() => _PostCardState();
 }
 
-class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin {
+class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   late int _likes;
   late bool _isLiked;
   late int _comments;
@@ -116,13 +118,17 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   bool _videoInitialized = false;
   bool _videoMuted = true;
   bool _isBuffering = false;
+  bool _isVideoLoading = false;
+  bool _videoError = false;
   String? _currentVideoUrl;
 
-  // Visibility tracking (VisibilityDetector-based, replaces isVisible prop)
+  // Visibility tracking
   bool _isVisible = false;
 
-  // Double-tap heart
+  // Double-tap heart — matches RN: sequence 600ms in, 800ms hold, 400ms out, scale 0.5→1.2→1
   late AnimationController _heartCtrl;
+  late Animation<double> _heartOpacity;
+  late Animation<double> _heartScale;
   bool _showHeart = false;
   int? _lastTap;
   Timer? _singleTapTimer;
@@ -130,6 +136,13 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   // View tracking
   Timer? _viewTimer;
   bool _viewTracked = false;
+
+  // Profile pic state
+  bool _profilePicLoading = true;
+  bool _profilePicError = false;
+
+  // Image error state keyed by "$postId-$index"
+  final Map<String, bool> _imageLoadError = {};
 
   Map<String, dynamic> get _p => widget.post;
   List<dynamic> get _media {
@@ -171,17 +184,32 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     if (text.isNotEmpty) _parsedContent = _parseContent(text);
 
     _pageCtrl = PageController();
-    _heartCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+
+    // Heart animation — mirrors RN: sequence(timing 0→1 600ms, delay 800ms, timing 1→0 400ms)
+    // Scale: 0.5 → 1.2 → 1.0
+    _heartCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
+    _heartOpacity = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.0), weight: 600 / 1800),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 800 / 1800),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0), weight: 400 / 1800),
+    ]).animate(_heartCtrl);
+    _heartScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: TweenSequence<double>([
+          TweenSequenceItem(tween: Tween(begin: 0.5, end: 1.2), weight: 0.5),
+          TweenSequenceItem(tween: Tween(begin: 1.2, end: 1.0), weight: 0.5),
+        ]),
+        weight: 600 / 1800,
+      ),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 800 / 1800),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 400 / 1800),
+    ]).animate(_heartCtrl);
     _heartCtrl.addStatusListener((s) {
       if (s == AnimationStatus.completed) {
-        Future.delayed(const Duration(milliseconds: 800), () => _heartCtrl.reverse());
-      }
-      if (s == AnimationStatus.dismissed) {
         if (mounted) setState(() => _showHeart = false);
       }
     });
 
-    // Sync initial mute state from global settings
     _videoMuted = globalVideoSettings.muted;
     globalVideoSettings.addListener(_onGlobalMuteChanged);
 
@@ -192,10 +220,20 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
   @override
   void didUpdateWidget(PostCard old) {
     super.didUpdateWidget(old);
-    if (widget.post == old.post) return;
-    // Only reinitialize video if the actual video URL changed.
-    // Like/comment updates replace the post map reference but keep the same
-    // media, which would otherwise cause the video to dispose and reload.
+    // Sync interaction counts and follow state from parent prop changes
+    final newLikes    = (_p['likes'] ?? 0) as int;
+    final newIsLiked  = _p['isLiked'] == true;
+    final newComments = (_p['comments'] ?? 0) as int;
+    final newFollowing = _p['isFollowing'] == true;
+
+    bool needsSet = false;
+    if (newLikes != _likes)        { _likes = newLikes; needsSet = true; }
+    if (newIsLiked != _isLiked)    { _isLiked = newIsLiked; needsSet = true; }
+    if (newComments != _comments)  { _comments = newComments; needsSet = true; }
+    if (newFollowing != _isFollowing) { _isFollowing = newFollowing; needsSet = true; }
+    if (needsSet && mounted) setState(() {});
+
+    // Only reinitialize video if the actual video URL changed
     final items = _mediaItems;
     final newVideoUrl = items.isNotEmpty && (items[0]['type'] as String?) == 'video'
         ? items[0]['url'] as String?
@@ -239,6 +277,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     if (url == null || url.isEmpty || url == _currentVideoUrl) return;
 
     _currentVideoUrl = url;
+    _isVideoLoading = true;
+    _videoError = false;
     final ctrl = VideoPlayerController.networkUrl(Uri.parse(url))
       ..setLooping(true)
       ..setVolume(_videoMuted ? 0.0 : 1.0);
@@ -246,10 +286,14 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     ctrl.addListener(_onVideoListener);
     ctrl.initialize().then((_) {
       if (mounted) {
-        setState(() => _videoInitialized = true);
-        // Only auto-play if the card is actually on screen
+        setState(() {
+          _videoInitialized = true;
+          _isVideoLoading = false;
+        });
         if (_isVisible) ctrl.play();
       }
+    }).catchError((_) {
+      if (mounted) setState(() { _videoError = true; _isVideoLoading = false; });
     });
   }
 
@@ -265,16 +309,16 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     _videoCtrl = null;
     _videoInitialized = false;
     _isBuffering = false;
+    _isVideoLoading = false;
+    _videoError = false;
     _currentVideoUrl = null;
   }
 
   void _toggleMute() {
-    // Broadcast to all cards via GlobalVideoSettings
     globalVideoSettings.setMuted(!_videoMuted);
   }
 
   void _onVisibilityChanged(VisibilityInfo info) {
-    // Mirror RN: treat card as "visible" when >50% is on screen
     final visible = info.visibleFraction >= 0.5;
     if (visible == _isVisible) return;
     setState(() => _isVisible = visible);
@@ -386,7 +430,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     });
   }
 
-  // ── Double-tap ─────────────────────────────────────────────────────────────
+  // ── Image tap: single → image viewer, double → like + heart ────────────────
   void _handleMediaTap(int index) {
     final now = DateTime.now().millisecondsSinceEpoch;
     const doubleTapMs = 300;
@@ -408,7 +452,9 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     });
   }
 
+  // ── Heart animation — matches RN sequence exactly ──────────────────────────
   void _triggerHeart() {
+    if (_showHeart) return;
     setState(() => _showHeart = true);
     _heartCtrl.forward(from: 0);
   }
@@ -441,24 +487,71 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     final pic        = _user?['profile_pic'] as String?;
     final isVerified = _user?['is_verified'] == true;
     final badgeData  = _user?['verification_badge'] as Map<String, dynamic>?;
-    final timeStr    = _p['created_on'] != null
-        ? timeago.format(DateTime.tryParse(_p['created_on'] as String) ?? DateTime.now())
-        : '';
-    final isOwnPost = widget.currentUserId != null && widget.currentUserId == _userId;
+    final timeStr    = formatTimeAgo(_p['created_on'] as String?);
+    final isOwnPost  = widget.currentUserId != null && widget.currentUserId == _userId;
+    final isDark     = Theme.of(context).brightness == Brightness.dark;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        // Profile picture with shimmer skeleton + icon fallback
         GestureDetector(
           onTap: () => context.push('/user/$_userId'),
-          child: CircleAvatar(
-            radius: 20,
-            backgroundColor: c.border,
-            backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
-            child: pic == null
-                ? Text((name.isNotEmpty ? name[0] : '?').toUpperCase(),
-                    style: TextStyle(color: c.text, fontFamily: 'Outfit'))
-                : null,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Stack(children: [
+              // Shimmer skeleton while loading
+              if (_profilePicLoading && !_profilePicError && pic != null)
+                Shimmer.fromColors(
+                  baseColor: isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE),
+                  highlightColor: isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC),
+                  child: Container(
+                    width: 40, height: 40,
+                    decoration: const BoxDecoration(shape: BoxShape.circle, color: Colors.white),
+                  ),
+                ),
+              // Fallback: person icon on grey background
+              if (_profilePicError || pic == null)
+                Container(
+                  width: 40, height: 40,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isDark ? const Color(0xFF3A3A3C) : const Color(0xFFE0E0E0),
+                  ),
+                  child: Icon(Icons.person, size: 22,
+                      color: isDark ? const Color(0xFF8E8E93) : const Color(0xFFAAAAAA)),
+                ),
+              // Actual profile image
+              if (pic != null && !_profilePicError)
+                ClipOval(
+                  child: CachedNetworkImage(
+                    imageUrl: pic,
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.cover,
+                    fadeInDuration: Duration.zero,
+                    fadeOutDuration: Duration.zero,
+                    imageBuilder: (_, img) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted && _profilePicLoading) {
+                          setState(() => _profilePicLoading = false);
+                        }
+                      });
+                      return Opacity(
+                        opacity: _profilePicLoading ? 0.0 : 1.0,
+                        child: Image(image: img, width: 40, height: 40, fit: BoxFit.cover),
+                      );
+                    },
+                    errorWidget: (ctx, url, err) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() { _profilePicError = true; _profilePicLoading = false; });
+                      });
+                      return const SizedBox.shrink();
+                    },
+                  ),
+                ),
+            ]),
           ),
         ),
         const SizedBox(width: 12),
@@ -583,15 +676,13 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
   // ── Media ─────────────────────────────────────────────────────────────────
   Widget _buildMediaSection(ThemeColors c) {
-    final items   = _mediaItems;
+    final items = _mediaItems;
     if (items.isEmpty) return const SizedBox.shrink();
 
     final screenW = MediaQuery.of(context).size.width;
     final current = items[_mediaIndex];
     final isVideo = (current['type'] as String?) == 'video';
 
-    // For video: use natural size once initialized, else fall back to metadata AR.
-    // For images: use metadata AR. Mirrors RN logic exactly.
     double ar;
     if (isVideo && _videoInitialized && _videoCtrl != null) {
       final sz = _videoCtrl!.value.size;
@@ -606,16 +697,12 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
 
     double height;
     if (ar <= 0.6) {
-      // Portrait (9:16 or taller) — cap at 1.5× width
       height = (screenW / ar).clamp(0.0, screenW * 1.5);
     } else if (ar >= 1.6) {
-      // Landscape (16:9 or wider)
       height = screenW / ar;
     } else if (ar < 1.0) {
-      // Portrait-ish (4:5, 3:4, etc.)
       height = screenW / ar;
     } else {
-      // Square or near-square
       height = screenW;
     }
     height = height.clamp(160.0, screenW * 1.6);
@@ -633,11 +720,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             _initVideoForIndex(i);
           },
           itemBuilder: (_, i) {
-            final item    = items[i];
-            final isVid   = (item['type'] as String?) == 'video';
-            final url     = (item['url'] ?? '') as String;
+            final item  = items[i];
+            final isVid = (item['type'] as String?) == 'video';
+            final url   = (item['url'] as String?) ?? '';
             if (isVid) return _buildVideoTile(url, height, c);
-            return _buildImageTile(url, i, c);
+            return _buildImageTile(item, i, c);
           },
         ),
       ),
@@ -683,14 +770,17 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             )),
           )),
       ],
+      // Heart overlay on media — covers entire media area
       if (_showHeart)
         Positioned.fill(child: IgnorePointer(
-          child: Center(child: FadeTransition(
-            opacity: _heartCtrl,
-            child: ScaleTransition(
-              scale: _heartCtrl.drive(
-                  Tween(begin: 0.5, end: 1.0).chain(CurveTween(curve: Curves.elasticOut))),
-              child: const Icon(Icons.favorite, color: Color(0xFFFF3040), size: 80),
+          child: Center(child: AnimatedBuilder(
+            animation: _heartCtrl,
+            builder: (ctx, child) => Opacity(
+              opacity: _heartOpacity.value,
+              child: Transform.scale(
+                scale: _heartScale.value,
+                child: const Icon(Icons.favorite, color: Color(0xFFFF3040), size: 80),
+              ),
             ),
           )),
         )),
@@ -705,6 +795,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     final url = item['url'] as String?;
     if (url == null || url.isEmpty) return;
     _currentVideoUrl = url;
+    _isVideoLoading = true;
+    _videoError = false;
     final ctrl = VideoPlayerController.networkUrl(Uri.parse(url))
       ..setLooping(true)
       ..setVolume(_videoMuted ? 0.0 : 1.0);
@@ -712,9 +804,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     ctrl.addListener(_onVideoListener);
     ctrl.initialize().then((_) {
       if (mounted) {
-        setState(() => _videoInitialized = true);
+        setState(() { _videoInitialized = true; _isVideoLoading = false; });
         if (_isVisible) ctrl.play();
       }
+    }).catchError((_) {
+      if (mounted) setState(() { _videoError = true; _isVideoLoading = false; });
     });
   }
 
@@ -722,7 +816,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     return GestureDetector(
       onTap: () => _openMiniScreen(url),
       child: Stack(fit: StackFit.expand, children: [
-        // Thumbnail while loading
+        // Thumbnail placeholder
         if ((_mediaItems[_mediaIndex]['thumbnail'] as String?) != null)
           CachedNetworkImage(
             imageUrl: _mediaItems[_mediaIndex]['thumbnail'] as String,
@@ -731,7 +825,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
         else
           Container(color: Colors.black87),
 
-        // Actual video — natural size fills the container
+        // Actual video
         if (_videoInitialized && _videoCtrl != null)
           SizedBox.expand(child: FittedBox(
             fit: BoxFit.cover,
@@ -742,9 +836,55 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             ),
           )),
 
-        // Spinner while buffering or not yet ready
-        if (!_videoInitialized || _isBuffering)
-          const Center(child: CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5)),
+        // Loading / buffering indicator with text — matches RN
+        if (!_videoInitialized || _isBuffering || _isVideoLoading)
+          Container(
+            color: Colors.black38,
+            child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const CircularProgressIndicator(color: Colors.white70, strokeWidth: 2.5),
+              const SizedBox(height: 8),
+              Text(
+                _isVideoLoading ? 'Loading...' : 'Buffering...',
+                style: const TextStyle(color: Colors.white70, fontSize: 14, fontFamily: 'Outfit'),
+              ),
+            ])),
+          ),
+
+        // Error indicator with retry — matches RN
+        if (_videoError)
+          Container(
+            color: Colors.black54,
+            child: Center(child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.red.withValues(alpha: 0.8),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.error, size: 40, color: Colors.white),
+                const SizedBox(height: 8),
+                const Text('Video Error',
+                    style: TextStyle(color: Colors.white, fontSize: 16, fontFamily: 'Outfit')),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: () {
+                    setState(() => _videoError = false);
+                    _disposeVideo();
+                    _initVideoForIndex(_mediaIndex);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('Retry',
+                        style: TextStyle(color: Colors.white, fontFamily: 'Outfit')),
+                  ),
+                ),
+              ]),
+            )),
+          ),
 
         // Mute toggle (bottom-right)
         Positioned(bottom: 10, right: 10,
@@ -752,7 +892,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             onTap: _toggleMute,
             child: Container(
               width: 32, height: 32,
-              decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+              decoration: const BoxDecoration(color: Colors.black, shape: BoxShape.circle),
               child: Icon(_videoMuted ? Icons.volume_off : Icons.volume_up,
                   color: Colors.white, size: 18),
             ),
@@ -761,20 +901,115 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     );
   }
 
-  Widget _buildImageTile(String url, int index, ThemeColors c) {
+  Widget _buildImageTile(Map<String, dynamic> item, int index, ThemeColors c) {
+    final url       = (item['url'] as String?) ?? '';
+    final thumbnail = item['thumbnail'] as String?;
+    final isDark    = Theme.of(context).brightness == Brightness.dark;
+    final imageKey  = '$_postId-$index';
+    final hasError  = _imageLoadError[imageKey] == true;
+
+    // Guard: missing URL
+    if (url.isEmpty) {
+      return GestureDetector(
+        onTap: () => _handleMediaTap(index),
+        child: Stack(fit: StackFit.expand, children: [
+          Container(
+            color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF0F0F0),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.broken_image, size: 50, color: c.textTertiary),
+              const SizedBox(height: 8),
+              Text('Media not available',
+                  style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+            ]),
+          ),
+          if (_showHeart) _buildHeartOverlay(),
+        ]),
+      );
+    }
+
     return GestureDetector(
       onTap: () => _handleMediaTap(index),
       child: Stack(fit: StackFit.expand, children: [
-        CachedNetworkImage(
-          imageUrl: url, fit: BoxFit.cover,
-          placeholder: (_, __) => Container(color: c.border),
-          errorWidget: (_, __, ___) => Container(
-            color: c.border,
-            child: Icon(Icons.broken_image, color: c.textTertiary, size: 40)),
-        ),
+        // 1. Blurry thumbnail shown beneath full image while it loads
+        if (thumbnail != null && !hasError)
+          ImageFiltered(
+            imageFilter: _blurFilter,
+            child: CachedNetworkImage(
+              imageUrl: thumbnail,
+              fit: BoxFit.cover,
+              fadeInDuration: Duration.zero,
+            ),
+          ),
+
+        // 2. Skeleton shimmer for posts without thumbnail
+        if (thumbnail == null && !hasError)
+          Shimmer.fromColors(
+            baseColor: isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE),
+            highlightColor: isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC),
+            child: Container(color: Colors.white),
+          ),
+
+        // 3. Full-quality image — fades in over the thumbnail/shimmer naturally
+        if (!hasError)
+          CachedNetworkImage(
+            imageUrl: url,
+            fit: BoxFit.cover,
+            // 300ms matches RN Animated.timing duration
+            fadeInDuration: const Duration(milliseconds: 300),
+            fadeOutDuration: Duration.zero,
+            // Transparent placeholder keeps the thumbnail/shimmer visible beneath
+            placeholder: (ctx, url) => const SizedBox.shrink(),
+            errorWidget: (ctx, url, err) {
+              // Schedule after build so we don't call setState mid-build
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _imageLoadError[imageKey] = true);
+              });
+              return const SizedBox.shrink();
+            },
+          ),
+
+        // 4. Error state — icon + "Failed to load image" + URL
+        if (hasError)
+          Container(
+            color: isDark ? const Color(0xFF1C1C1E) : const Color(0xFFF0F0F0),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.broken_image, size: 50, color: c.textTertiary),
+              const SizedBox(height: 8),
+              Text('Failed to load image',
+                  style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Text(url,
+                    style: TextStyle(color: c.textTertiary, fontSize: 12, fontFamily: 'Outfit'),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ]),
+          ),
+
+        // 5. Heart overlay
+        if (_showHeart) _buildHeartOverlay(),
       ]),
     );
   }
+
+  // Reusable heart overlay widget
+  Widget _buildHeartOverlay() {
+    return IgnorePointer(child: Center(child: AnimatedBuilder(
+      animation: _heartCtrl,
+      builder: (ctx, child) => Opacity(
+        opacity: _heartOpacity.value,
+        child: Transform.scale(
+          scale: _heartScale.value,
+          child: const Icon(Icons.favorite, color: Color(0xFFFF3040), size: 80),
+        ),
+      ),
+    )));
+  }
+
+  static final _blurFilter = ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2);
 
   // ── Actions (pill buttons) ─────────────────────────────────────────────────
   Widget _buildActions(ThemeColors c) {
@@ -890,7 +1125,7 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
     final urls = items.map((m) => (m['url'] ?? '') as String).toList();
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => Scaffold(
-        backgroundColor: Colors.black,
+        backgroundColor: const Color(0xF2000000), // matches RN rgba(0,0,0,0.95)
         body: Stack(children: [
           PhotoViewGallery.builder(
             itemCount: urls.length,
@@ -918,8 +1153,11 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
       final res = await dioClient.get('/v1/user/find/$username');
       final uid = (res.data['data'] ?? res.data)?['id'] as String?;
       if (uid != null && mounted) {
-        if (uid == widget.currentUserId) context.push('/profile');
-        else context.push('/user/$uid');
+        if (uid == widget.currentUserId) {
+          context.push('/profile');
+        } else {
+          context.push('/user/$uid');
+        }
       }
     } catch (_) {}
   }
@@ -990,7 +1228,6 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
             } catch (_) {}
           }
 
-          // Check save status once when sheet first builds
           WidgetsBinding.instance.addPostFrameCallback((_) => checkSaveStatus());
 
           return Column(mainAxisSize: MainAxisSize.min, children: [
@@ -999,7 +1236,6 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
               decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 8),
 
-            // Top button row: Save + (future QR)
             if (!isOwnPost) ...[
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

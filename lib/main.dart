@@ -16,9 +16,17 @@ import 'services/chat_api_service.dart';
 import 'services/message_sync_manager.dart';
 import 'services/global_video_settings.dart';
 import 'services/deep_link_service.dart';
+import 'services/ban_check_service.dart';
 import 'api/channel_api.dart';
+import 'api/dio_client.dart';
+import 'utils/screenshot_prevention.dart';
+import 'utils/security_profile.dart';
+import 'utils/storage.dart';
+import 'utils/logger.dart';
+import 'widgets/common/screenshot_privacy_sheet.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'screens/chat/join_group_screen.dart';
+import 'dart:io';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +36,9 @@ void main() async {
 
   // Firebase — google-services.json is in android/app/
   await Firebase.initializeApp();
+
+  // Start offline network monitor (connectivity_plus listener)
+  initNetworkMonitor();
 
   // Push notifications (OneSignal)
   await notificationService.initialize();
@@ -52,19 +63,83 @@ class WiTalkApp extends ConsumerStatefulWidget {
 // notification navigation after the widget tree is fully mounted.
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
-class _WiTalkAppState extends ConsumerState<WiTalkApp> {
+class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserver {
   bool _locationStartupDone = false;
   bool _chatInitialized = false;
   bool _deepLinkInitialized = false;
+  bool _securityProfileSentThisSession = false;
+
+  // Periodic ban check — once per 5 minutes when app is in foreground
+  static const _banCheckInterval = Duration(minutes: 5);
+  DateTime? _lastBanCheck;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAndInitUser();
       _checkAndInitChat();
       _initDeepLinks();
+      _initScreenshotListener();
+      _runSecurityChecks(reason: 'app_open');
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Reset so security profile is sent again on this foreground
+      _securityProfileSentThisSession = false;
+      _runSecurityChecks(reason: 'foreground');
+      _runPeriodicBanCheck();
+    }
+  }
+
+  void _initScreenshotListener() {
+    if (Platform.isIOS) {
+      startScreenshotListener((event) {
+        final ctx = rootNavigatorKey.currentContext;
+        if (ctx != null && mounted) {
+          ScreenshotPrivacySheet.show(ctx);
+        }
+      });
+    }
+    // Android: FLAG_SECURE is applied by ScreenshotPreventPlugin automatically on attach.
+    // No listener needed — the OS blocks the capture outright.
+  }
+
+  Future<void> _runSecurityChecks({required String reason}) async {
+    if (_securityProfileSentThisSession) return;
+    _securityProfileSentThisSession = true;
+
+    final uid = await AppStorage.get('uid') as String?;
+
+    // Check security flags (VPN, emulator, Frida) and send profile
+    // All handled inside collectAndSendSecurityProfile — fire and forget
+    collectAndSendSecurityProfile(userId: uid, updateReason: reason).then((_) {
+      AppLogger.log('[Security] Profile sent (reason=$reason)');
+    });
+  }
+
+  Future<void> _runPeriodicBanCheck() async {
+    final now = DateTime.now();
+    if (_lastBanCheck != null &&
+        now.difference(_lastBanCheck!) < _banCheckInterval) {
+      return;
+    }
+    _lastBanCheck = now;
+
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null || uid.isEmpty) return;
+
+    final result = await BanCheckService.checkBanStatus(uid);
+    if (result.isBanned) {
+      await BanCheckService.handleBannedUser(
+        banReason: result.banReason ?? 'Account banned',
+        banUntil: result.banUntil,
+      );
+    }
   }
 
   // Returns the root context via the navigator key so deep link service
@@ -259,6 +334,8 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    stopScreenshotListener();
     deepLinkService.dispose();
     locationService.stopTracking();
     super.dispose();

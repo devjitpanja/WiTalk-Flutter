@@ -55,6 +55,13 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     // Google Play Install Referrer API (used by InstallReferrerPlugin)
     implementation("com.android.installreferrer:installreferrer:2.2")
+    // Play Integrity API (used by AppIntegrityPlugin)
+    implementation("com.google.android.play:integrity:1.4.0")
+    // Google Advertising ID / GAID (used by DeviceIdentifiersPlugin)
+    implementation("com.google.android.gms:play-services-ads-identifier:18.1.0")
+    // Kotlin coroutines + Play Tasks interop
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
 }
 
 flutter {

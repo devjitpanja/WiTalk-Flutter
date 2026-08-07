@@ -18,6 +18,9 @@ class AppConfig {
   // OneSignal
   static const String oneSignalAppId = '86f427dd-6fc9-490a-93b9-0f69eeb5c5af';
 
+  // FindIP.net — IP geolocation API used for ISP / country lookup
+  static const String findipApiToken = '160d9f7e3e634f5d896ec75b000c68d9';
+
   // Firebase
   static const String firebaseProjectId = 'witalk-ee245';
   static const String firebaseSenderId = '511059619083';

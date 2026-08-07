@@ -1,7 +1,6 @@
 import 'package:dio/dio.dart';
+import '../config/app_config.dart';
 import 'logger.dart';
-
-const _findipApiToken = '160d9f7e3e634f5d896ec75b000c68d9';
 final _dio = Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
 
 Future<String?> getPublicIP() async {
@@ -18,7 +17,7 @@ Future<String?> getPublicIP() async {
 
 Future<Map<String, String?>?> getLocationFromIP(String ipAddress) async {
   try {
-    final url = 'https://api.findip.net/$ipAddress/?token=$_findipApiToken';
+    final url = 'https://api.findip.net/$ipAddress/?token=${AppConfig.findipApiToken}';
     final response = await _dio.get(url);
     final data = response.data as Map<String, dynamic>?;
 

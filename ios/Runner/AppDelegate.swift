@@ -11,6 +11,9 @@ import UIKit
     VpnDetectorPlugin.register(with: registrar(forPlugin: "VpnDetectorPlugin")!)
     InstallReferrerPlugin.register(with: registrar(forPlugin: "InstallReferrerPlugin")!)
     AudioRoomServicePlugin.register(with: registrar(forPlugin: "AudioRoomServicePlugin")!)
+    ScreenshotPreventPlugin.register(with: registrar(forPlugin: "ScreenshotPreventPlugin")!)
+    AppIntegrityPlugin.register(with: registrar(forPlugin: "AppIntegrityPlugin")!)
+    DeviceIdentifiersPlugin.register(with: registrar(forPlugin: "DeviceIdentifiersPlugin")!)
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }
