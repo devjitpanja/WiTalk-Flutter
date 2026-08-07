@@ -495,6 +495,8 @@ class _PostCardState extends State<PostCard> with SingleTickerProviderStateMixin
                 'content': _p['content'],
                 'suffix': _p['suffix'],
                 'userName': name,
+                'isFollowing': _isFollowing,
+                'isSaved': _p['isSaved'] == true,
               });
             } else {
               _showMoreMenuSheet(c);

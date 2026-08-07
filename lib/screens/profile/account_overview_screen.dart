@@ -9,6 +9,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/missions_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/common/verification_badge.dart';
 
@@ -740,8 +741,11 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
           iconColor: const Color(0xFFA5D6A7),
           title: 'Daily Missions',
           subtitle: 'Complete tasks · Earn XP rewards',
-          showDot: false,
-          onTap: () => context.push('/missions'),
+          showDot: ref.watch(hasUnclaimedMissionsProvider),
+          onTap: () {
+            ref.read(hasUnclaimedMissionsProvider.notifier).refresh();
+            context.push('/missions');
+          },
         ),
       ]);
 

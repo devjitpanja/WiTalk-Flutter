@@ -305,6 +305,15 @@ class FeedNotifier extends StateNotifier<FeedState> {
     );
   }
 
+  void removePostsByUser(String userId) {
+    state = state.copyWith(
+      posts: state.posts.where((p) {
+        final postUserId = (p['user_id'] ?? p['user']?['id'] ?? '').toString();
+        return postUserId != userId;
+      }).toList(),
+    );
+  }
+
   // Sync fresh REST API post data back into the feed so home screen stays consistent
   // with PostViewScreen. Handles both flat (REST) and nested stats/interactions (GraphQL) formats.
   void updatePost(Map<String, dynamic> freshPost) {

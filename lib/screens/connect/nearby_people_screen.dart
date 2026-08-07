@@ -12,6 +12,7 @@ import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
+import '../../providers/nearby_online_provider.dart';
 import '../../services/location_service.dart';
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
@@ -331,15 +332,17 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
       final filtered = _applyFilter(users, filter);
 
       if (mounted) {
+        final groups = _groupUsers(filtered, birthdays, me);
         setState(() {
           _users = users;
           _birthdays = birthdays;
           _me = me;
-          _groups = _groupUsers(filtered, birthdays, me);
+          _groups = groups;
           _isLocationCached = loc.source != 'gps';
           _cacheAgeMinutes = cacheAge;
           _loading = false;
         });
+        ref.read(nearbyOnlineProvider.notifier).setHasOnlineNearby(groups.onlineNearby.isNotEmpty);
       }
 
       // Phase 2 (background): if we served cached coords, silently refresh
@@ -390,13 +393,15 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
       final birthdays = _extractUsers(results[1].data);
       final filtered = _applyFilter(users, filter);
       if (mounted) {
+        final groups = _groupUsers(filtered, birthdays, _me);
         setState(() {
           _users = users;
           _birthdays = birthdays;
-          _groups = _groupUsers(filtered, birthdays, _me);
+          _groups = groups;
           _isLocationCached = false;
           _cacheAgeMinutes = 0;
         });
+        ref.read(nearbyOnlineProvider.notifier).setHasOnlineNearby(groups.onlineNearby.isNotEmpty);
       }
     } catch (_) {}
   }

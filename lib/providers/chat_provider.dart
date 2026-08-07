@@ -509,6 +509,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
   List<String> _pendingMarkReadIds = [];
   Timer? _markReadDebounceTimer;
 
+  // Recently-read protection — mirrors RN _recentlyReadGroupsRef.
+  // When setConversations/setGroups arrives from a refresh, any id in this map
+  // that was read within the last 60s has its unreadCount forced to 0 so the
+  // badge doesn't flicker back while the server is still processing the read event.
+  final Map<String, int> _recentlyReadIds = {};
+
   // Heartbeat — mirrors RN userStatusService 30s interval
   Timer? _heartbeatTimer;
 
@@ -1543,9 +1549,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // ── Public API (called by screens) ───────────────────────────────────────────
 
   void setConversations(List<ChatConversation> convs) {
-    state = state.copyWith(conversations: convs);
-    // Persist to DB
-    _db.chatDao.bulkUpsertConversations(convs
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final protected = convs.map((c) {
+      final lastRead = _recentlyReadIds[c.id];
+      if (lastRead != null && now - lastRead < 60000 && c.unreadCount != 0) {
+        return c.copyWith(unreadCount: 0);
+      }
+      return c;
+    }).toList();
+    state = state.copyWith(conversations: protected);
+    // Persist to DB (use protected list so corrected unread counts are written)
+    _db.chatDao.bulkUpsertConversations(protected
         .map((c) => ConversationsCompanion.insert(
               id: c.id,
               type: Value(c.type),
@@ -1573,7 +1587,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void setGroups(List<ChatConversation> groups) {
-    state = state.copyWith(groups: groups);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final protected = groups.map((g) {
+      final lastRead = _recentlyReadIds[g.id];
+      if (lastRead != null && now - lastRead < 60000 && g.unreadCount != 0) {
+        return g.copyWith(unreadCount: 0);
+      }
+      return g;
+    }).toList();
+    state = state.copyWith(groups: protected);
   }
 
   // Set the full channels list — called from _initChatSystem in main.dart
@@ -1856,6 +1878,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   void _updateUnreadCount(String convId, int count) {
+    if (count == 0) {
+      _recentlyReadIds[convId] = DateTime.now().millisecondsSinceEpoch;
+      // Auto-expire the protection after 60s
+      Timer(const Duration(seconds: 60), () => _recentlyReadIds.remove(convId));
+    }
     // Try private conversations
     var idx = state.conversations.indexWhere((c) => c.id == convId);
     if (idx != -1) {
@@ -2075,6 +2102,8 @@ final groupsProvider = Provider<List<ChatConversation>>((ref) {
 });
 
 // Total unread count across all conversations + groups
+// Counts the number of conversations/groups that have any unread messages,
+// matching RN: s.conversations.filter(c => c.unread_count > 0).length + groups equivalent.
 final totalUnreadCountProvider = Provider<int>((ref) {
   final convs = ref.watch(conversationsProvider);
   final groups = ref.watch(groupsProvider);
@@ -2083,13 +2112,13 @@ final totalUnreadCountProvider = Provider<int>((ref) {
 
   int total = 0;
   for (final c in convs) {
-    if (!mutedChats.contains(c.otherUserId)) {
-      total += c.unreadCount;
+    if (!mutedChats.contains(c.otherUserId) && c.unreadCount > 0) {
+      total += 1;
     }
   }
   for (final g in groups) {
-    if (!mutedGroups.containsKey(g.id)) {
-      total += g.unreadCount;
+    if (!mutedGroups.containsKey(g.id) && g.unreadCount > 0) {
+      total += 1;
     }
   }
   return total;

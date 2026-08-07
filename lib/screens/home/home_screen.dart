@@ -54,104 +54,245 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final currentUserId = ref.read(authProvider).uid ?? '';
     final isOwnPost = currentUserId.isNotEmpty && currentUserId == userId;
 
+    // Initial state from extra passed by PostCard
+    bool isSaved = extra['isSaved'] == true;
+    bool isSaveLoading = false;
+    bool isFollowing = extra['isFollowing'] == true;
+    bool isActionLoading = false;
+    final userName = (extra['userName'] as String?) ?? 'this user';
+
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
       backgroundColor: c.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Column(mainAxisSize: MainAxisSize.min, children: [
-        const SizedBox(height: 8),
-        Container(width: 40, height: 4, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
-        const SizedBox(height: 8),
-        if (isOwnPost) ...[
-          ListTile(
-            leading: Icon(Icons.edit_outlined, color: c.text),
-            title: Text('Edit post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-              context.push('/create-post', extra: {
-                'isEditing': true,
-                'postId': postId,
-                'initialContent': extra['content'],
-              });
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.delete_outline, color: Colors.red),
-            title: const Text('Delete post', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-              _confirmDeletePost(postId, currentUserId, c);
-            },
-          ),
-        ] else ...[
-          ListTile(
-            leading: Icon(Icons.bookmark_border, color: c.text),
-            title: Text('Save post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-              if (currentUserId.isNotEmpty) {
+      builder: (sheetCtx) => StatefulBuilder(
+        builder: (_, setSheetState) {
+          void closeSheet() => Navigator.of(sheetCtx, rootNavigator: true).pop();
+
+          // ── Save / Unsave ──────────────────────────────────────────────────
+          Future<void> toggleSave() async {
+            if (isSaveLoading || currentUserId.isEmpty) return;
+            setSheetState(() => isSaveLoading = true);
+            try {
+              final res = await dioClient.post('/v1/post-saves/toggle',
+                  data: {'postId': postId, 'userId': currentUserId});
+              final action = res.data['action'] as String?;
+              final saved = action == 'saved';
+              setSheetState(() { isSaved = saved; isSaveLoading = false; });
+              // Also send recommendation signal
+              if (saved && currentUserId.isNotEmpty) {
                 postFeedbackService.sendSaveFeedback(userId: currentUserId, postId: postId);
               }
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.remove_circle_outline, color: c.text),
-            title: Text('Not interested', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-              if (currentUserId.isNotEmpty) {
-                postFeedbackService.sendNotInterestedFeedback(userId: currentUserId, postId: postId);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(saved ? 'Post saved successfully!' : 'Post removed from saved items'),
+                ));
               }
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.visibility_off_outlined, color: c.text),
-            title: Text('Hide post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-              if (currentUserId.isNotEmpty) {
-                postFeedbackService.sendHidePostFeedback(userId: currentUserId, postId: postId);
+            } catch (_) {
+              setSheetState(() => isSaveLoading = false);
+            }
+          }
+
+          // ── Don't suggest (exclude user) ──────────────────────────────────
+          Future<void> excludeUser() async {
+            if (isActionLoading || currentUserId.isEmpty) return;
+            setSheetState(() => isActionLoading = true);
+            // Show confirm dialog matching RN's CustomAlertDialog behaviour
+            closeSheet();
+            final confirmed = await showDialog<bool>(
+              context: context,
+              builder: (dlgCtx) => AlertDialog(
+                backgroundColor: c.surface,
+                title: Text('Exclude User', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+                content: Text(
+                  "Are you sure you want to exclude posts from $userName? You won't see their posts in your recommendations anymore.",
+                  style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit'),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(false),
+                    child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(true),
+                    child: const Text("Yes, exclude", style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+                  ),
+                ],
+              ),
+            );
+            if (confirmed == true && mounted) {
+              try {
+                await dioClient.post('/v2/excluded-users/add', data: {
+                  'user_id': currentUserId,
+                  'excluded_user_id': userId,
+                });
+                // Remove all posts from this user from the feed (triggerRefresh equivalent)
+                ref.read(feedNotifierProvider.notifier).removePostsByUser(userId);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text("You won't see posts from $userName anymore."),
+                  ));
+                }
+              } catch (_) {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Failed to exclude user')));
+                }
               }
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.flag_outlined, color: c.text),
-            title: Text('Report', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-              context.push('/report/post/$postId');
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.block, color: c.text),
-            title: Text('Block user', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-            onTap: () {
-              Navigator.pop(context);
-            },
-          ),
-        ],
-        const SizedBox(height: 16),
-      ]),
+            }
+          }
+
+          // ── Unfollow ───────────────────────────────────────────────────────
+          Future<void> unfollow() async {
+            if (currentUserId.isEmpty) return;
+            closeSheet();
+            try {
+              await dioClient.post('/v1/followers/toggle', data: {'followingId': userId});
+              setSheetState(() => isFollowing = false);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Unfollowed user!')));
+              }
+            } catch (_) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Failed to update follow status')));
+              }
+            }
+          }
+
+          // ── Not interested ─────────────────────────────────────────────────
+          Future<void> notInterested() async {
+            closeSheet();
+            if (currentUserId.isNotEmpty) {
+              postFeedbackService.sendNotInterestedFeedback(userId: currentUserId, postId: postId);
+            }
+            // Remove post from feed immediately like RN's triggerRefresh
+            ref.read(feedNotifierProvider.notifier).removePost(postId);
+          }
+
+          // ── Hide post ──────────────────────────────────────────────────────
+          Future<void> hidePost() async {
+            closeSheet();
+            if (currentUserId.isNotEmpty) {
+              postFeedbackService.sendHidePostFeedback(userId: currentUserId, postId: postId);
+            }
+            // Remove post from feed immediately like RN's triggerRefresh
+            ref.read(feedNotifierProvider.notifier).removePost(postId);
+          }
+
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 8),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 8),
+
+            if (!isOwnPost) ...[
+              // Top button row: Save/Unsave
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Row(children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: isSaveLoading ? null : toggleSave,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        decoration: BoxDecoration(
+                          color: c.interactionButtonBg,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: isSaveLoading
+                            ? Center(child: SizedBox(width: 20, height: 20,
+                                child: CircularProgressIndicator(color: c.text, strokeWidth: 2)))
+                            : Column(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(isSaved ? Icons.bookmark : Icons.bookmark_border, color: c.text, size: 22),
+                                const SizedBox(height: 4),
+                                Text(isSaved ? 'Unsave' : 'Save',
+                                    style: TextStyle(color: c.text, fontSize: 13, fontFamily: 'Outfit')),
+                              ]),
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+            ],
+
+            if (isOwnPost) ...[
+              ListTile(
+                leading: Icon(Icons.edit_outlined, color: c.text),
+                title: Text('Edit Post', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
+                onTap: () {
+                  closeSheet();
+                  context.push('/create-post', extra: {
+                    'isEditing': true,
+                    'postId': postId,
+                    'initialContent': extra['content'],
+                  });
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete_outlined, color: Color(0xFFFF3040)),
+                title: const Text('Delete Post', style: TextStyle(color: Color(0xFFFF3040), fontFamily: 'Outfit', fontSize: 16)),
+                onTap: () {
+                  closeSheet();
+                  _confirmDeletePost(postId, currentUserId, c);
+                },
+              ),
+            ] else ...[
+              ListTile(
+                leading: Icon(Icons.cancel_outlined, color: c.text),
+                title: Text("Don't suggest posts from $userName",
+                    style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
+                onTap: excludeUser,
+              ),
+              if (isFollowing)
+                ListTile(
+                  leading: Icon(Icons.person_remove_outlined, color: c.text),
+                  title: Text('Unfollow', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
+                  onTap: unfollow,
+                ),
+              ListTile(
+                leading: Icon(Icons.remove_circle_outline, color: c.text),
+                title: Text('Not interested', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
+                onTap: notInterested,
+              ),
+              ListTile(
+                leading: Icon(Icons.visibility_off_outlined, color: c.text),
+                title: Text('Hide post', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
+                onTap: hidePost,
+              ),
+              ListTile(
+                leading: const Icon(Icons.flag_outlined, color: Color(0xFFFF3040)),
+                title: const Text('Report', style: TextStyle(color: Color(0xFFFF3040), fontFamily: 'Outfit', fontSize: 16)),
+                onTap: () {
+                  closeSheet();
+                  context.push('/report/post/$postId');
+                },
+              ),
+            ],
+            const SizedBox(height: 16),
+          ]);
+        },
+      ),
     );
   }
 
   Future<void> _confirmDeletePost(String postId, String currentUserId, ThemeColors c) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dlgCtx) => AlertDialog(
         backgroundColor: c.surface,
-        title: Text('Delete post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
-        content: Text('Are you sure you want to delete this post?',
+        title: Text('Delete Post', style: TextStyle(color: c.text, fontFamily: 'Outfit')),
+        content: Text('Are you sure you want to delete this post? This action cannot be undone.',
             style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false),
+            onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(false),
             child: Text('Cancel', style: TextStyle(color: c.textSecondary, fontFamily: 'Outfit')),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+            onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Color(0xFFFF3040), fontFamily: 'Outfit')),
           ),
         ],
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../providers/nearby_online_provider.dart';
 import '../../theme/theme_colors.dart';
 import '../../widgets/explore/explore_banner_carousel.dart';
 import '../../widgets/common/witalk_header.dart';
@@ -46,6 +47,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen>
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final hasOnlineNearby = ref.watch(nearbyOnlineProvider);
     return Scaffold(
       backgroundColor: c.background,
       body: SafeArea(
@@ -60,6 +62,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen>
               tabs: _tabs,
               activeIndex: _activeIndex,
               onTap: _switchTab,
+              dotTabIndex: hasOnlineNearby ? 2 : null,
             ),
             if (_activeIndex == 0) const ExploreBannerCarousel(),
             Expanded(
@@ -84,11 +87,14 @@ class _PillTabBar extends StatelessWidget {
   final List<String> tabs;
   final int activeIndex;
   final ValueChanged<int> onTap;
+  // When non-null, a red dot is shown on this tab index (only when not active)
+  final int? dotTabIndex;
 
   const _PillTabBar({
     required this.tabs,
     required this.activeIndex,
     required this.onTap,
+    this.dotTabIndex,
   });
 
   @override
@@ -106,27 +112,46 @@ class _PillTabBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: List.generate(tabs.length, (i) {
             final isActive = i == activeIndex;
+            final showDot = dotTabIndex == i && !isActive;
             return Padding(
               padding: EdgeInsets.only(right: i < tabs.length - 1 ? 6 : 0),
               child: GestureDetector(
                 onTap: () => onTap(i),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 180),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isActive ? c.text : c.surface,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: isActive ? c.text : c.border),
-                  ),
-                  child: Text(
-                    tabs[i],
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontFamily: 'Outfit',
-                      fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                      color: isActive ? c.background : c.textTertiary,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isActive ? c.text : c.surface,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: isActive ? c.text : c.border),
+                      ),
+                      child: Text(
+                        tabs[i],
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontFamily: 'Outfit',
+                          fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                          color: isActive ? c.background : c.textTertiary,
+                        ),
+                      ),
                     ),
-                  ),
+                    if (showDot)
+                      Positioned(
+                        top: -3,
+                        right: -3,
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFF3B30),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             );
