@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:photo_view/photo_view_gallery.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
@@ -107,6 +108,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
   late bool _isLiked;
   late int _comments;
   late bool _isFollowing;
+  late bool _isSaved;
   bool _liking = false;
   bool _expanded = false;
   bool _showReadMore = false;
@@ -179,6 +181,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     _isLiked  = _p['isLiked'] == true;
     _comments = (_p['comments'] ?? 0) as int;
     _isFollowing = _p['isFollowing'] == true;
+    _isSaved  = _p['isSaved'] == true;
 
     final text = (_p['content'] ?? '') as String;
     if (text.isNotEmpty) _parsedContent = _parseContent(text);
@@ -1169,8 +1172,14 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
 
   void _showMoreMenuSheet(ThemeColors c) {
     final isOwnPost = widget.currentUserId != null && widget.currentUserId == _userId;
+    // RN: always reset to false + checkingSaveStatus=true on every open, then fetch
     bool isSaved = false;
+    bool isSaveChecking = true; // shows spinner on Save button while fetching
     bool isSaveLoading = false;
+    final userName = (_user?['name'] ?? 'this user') as String;
+    final suffix = _p['suffix'] as String?;
+    final nav = Navigator.of(context, rootNavigator: true);
+    final router = GoRouter.of(context);
 
     showModalBottomSheet(
       useRootNavigator: true,
@@ -1183,30 +1192,35 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
           void closeSheet() => Navigator.of(sheetCtx, rootNavigator: true).pop();
 
           Future<void> toggleSave() async {
-            if (isSaveLoading || widget.currentUserId == null) return;
+            if (isSaveLoading || isSaveChecking || widget.currentUserId == null) return;
             setSheetState(() => isSaveLoading = true);
             try {
               final res = await dioClient.post('/v1/post-saves/toggle',
                   data: {'postId': _postId, 'userId': widget.currentUserId});
               final action = res.data['action'] as String?;
-              setSheetState(() {
-                isSaved = action == 'saved';
-                isSaveLoading = false;
-              });
+              final saved = action == 'saved';
+              setSheetState(() { isSaved = saved; isSaveLoading = false; });
+              if (mounted) setState(() => _isSaved = saved);
             } catch (_) {
               setSheetState(() => isSaveLoading = false);
             }
           }
 
+          // Called once immediately when the sheet first renders — mirrors RN useEffect
           Future<void> checkSaveStatus() async {
-            if (widget.currentUserId == null || isOwnPost) return;
+            if (widget.currentUserId == null) {
+              setSheetState(() => isSaveChecking = false);
+              return;
+            }
             try {
               final res = await dioClient.get(
                   '/v1/post-saves/check/${widget.currentUserId}/$_postId');
-              if (res.data['data']?['isSaved'] == true) {
-                setSheetState(() => isSaved = true);
-              }
-            } catch (_) {}
+              final saved = res.data['data']?['isSaved'] == true;
+              setSheetState(() { isSaved = saved; isSaveChecking = false; });
+              if (mounted) setState(() => _isSaved = saved);
+            } catch (_) {
+              setSheetState(() { isSaved = false; isSaveChecking = false; });
+            }
           }
 
           Future<void> doExcludeUser() async {
@@ -1228,35 +1242,55 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
             } catch (_) {}
           }
 
+          void openQrCode() {
+            closeSheet();
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (!mounted) return;
+              _showQrCodeModal(c, suffix: suffix);
+            });
+          }
+
+          // Trigger server fetch on first render of the sheet — mirrors RN's useEffect on isVisible
           WidgetsBinding.instance.addPostFrameCallback((_) => checkSaveStatus());
 
-          return Column(mainAxisSize: MainAxisSize.min, children: [
-            const SizedBox(height: 8),
-            Container(width: 40, height: 4,
-              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 8),
+          final isDark = Theme.of(sheetCtx).brightness == Brightness.dark;
+          final topBtnBg = isDark ? const Color(0xFF11151F) : const Color(0xFFF5F5F5);
 
-            if (!isOwnPost) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(children: [
-                  Expanded(
-                    child: _topSheetButton(
-                      icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
-                      label: isSaved ? 'Unsave' : 'Save',
-                      loading: isSaveLoading,
-                      onTap: toggleSave,
-                      c: c,
-                    ),
-                  ),
-                ]),
-              ),
-            ],
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 12),
+            Container(width: 36, height: 5,
+              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(3))),
+            const SizedBox(height: 20),
+
+            // Top button row: Save/Unsave + QR Code
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                Expanded(child: _topSheetButton(
+                  icon: isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  label: isSaved ? 'Unsave' : 'Save',
+                  loading: isSaveChecking || isSaveLoading,
+                  onTap: toggleSave,
+                  c: c,
+                  bgColor: topBtnBg,
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _topSheetButton(
+                  icon: Icons.qr_code,
+                  label: 'QR code',
+                  loading: false,
+                  onTap: openQrCode,
+                  c: c,
+                  bgColor: topBtnBg,
+                )),
+              ]),
+            ),
+            const SizedBox(height: 24),
 
             if (isOwnPost) ...[
               _menuItem(Icons.edit_outlined, 'Edit Post', c, isDestructive: false, onTap: () {
                 closeSheet();
-                context.push('/create-post', extra: {
+                router.push('/create-post', extra: {
                   'isEditing': true,
                   'postId': _postId,
                   'initialContent': _p['content'],
@@ -1267,12 +1301,16 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                 _confirmDelete(c);
               }),
             ] else ...[
-              _menuItem(Icons.cancel_outlined, "Don't suggest this user's posts", c, onTap: () => doExcludeUser()),
+              _menuItem(Icons.cancel_outlined, "Don't suggest posts from $userName", c, onTap: () => doExcludeUser()),
               if (_isFollowing)
                 _menuItem(Icons.person_remove_outlined, 'Unfollow', c, onTap: () => doUnfollow()),
+              _menuItem(Icons.person_outlined, 'About this account', c, onTap: () {
+                nav.pop();
+                router.push('/about-account/$_userId');
+              }),
               _menuItem(Icons.flag_outlined, 'Report', c, isDestructive: true, onTap: () {
-                closeSheet();
-                context.push('/report/post/$_postId');
+                nav.pop();
+                router.push('/report/post/$_postId');
               }),
             ],
             const SizedBox(height: 16),
@@ -1282,11 +1320,64 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
     );
   }
 
+  void _showQrCodeModal(ThemeColors c, {String? suffix}) {
+    final shareUrl = suffix != null && suffix.isNotEmpty
+        ? 'https://witalk.in/p/$suffix'
+        : 'https://witalk.in/post/$_postId';
+    showModalBottomSheet(
+      useRootNavigator: true,
+      isScrollControlled: true,
+      context: context,
+      backgroundColor: c.bottomSheetBg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) {
+        final screenW = MediaQuery.of(ctx).size.width;
+        final qrSize = screenW - 80; // full-width minus padding
+        return SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: 36, height: 5,
+                decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(3))),
+              const SizedBox(height: 20),
+              Text('QR Code', style: TextStyle(color: c.text, fontSize: 18,
+                  fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text('Scan this QR code to view the post',
+                  style: TextStyle(color: c.textSecondary, fontSize: 13, fontFamily: 'Outfit')),
+              const SizedBox(height: 24),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Center(
+                  child: QrImageView(
+                    data: shareUrl,
+                    version: QrVersions.auto,
+                    size: qrSize,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _topSheetButton({
     required IconData icon,
     required String label,
     required VoidCallback onTap,
     required ThemeColors c,
+    required Color bgColor,
     bool loading = false,
   }) {
     return GestureDetector(
@@ -1294,7 +1385,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
         decoration: BoxDecoration(
-          color: c.interactionButtonBg,
+          color: bgColor,
           borderRadius: BorderRadius.circular(8),
         ),
         child: loading

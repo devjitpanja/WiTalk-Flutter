@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shimmer/shimmer.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
@@ -53,26 +54,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final c = context.colors;
     final currentUserId = ref.read(authProvider).uid ?? '';
     final isOwnPost = currentUserId.isNotEmpty && currentUserId == userId;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final topBtnBg = isDark ? const Color(0xFF11151F) : const Color(0xFFF5F5F5);
+    // Capture before async gap so navigation works after sheet closes
+    final nav = Navigator.of(context, rootNavigator: true);
+    final router = GoRouter.of(context);
 
-    // Initial state from extra passed by PostCard
-    bool isSaved = extra['isSaved'] == true;
+    // RN: always reset to false + checkingSaveStatus=true on every open, fetch from server
+    bool isSaved = false;
+    bool isSaveChecking = true;
     bool isSaveLoading = false;
     bool isFollowing = extra['isFollowing'] == true;
-    bool isActionLoading = false;
     final userName = (extra['userName'] as String?) ?? 'this user';
+    final suffix = extra['suffix'] as String?;
 
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
-      backgroundColor: c.surface,
+      backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (sheetCtx) => StatefulBuilder(
         builder: (_, setSheetState) {
           void closeSheet() => Navigator.of(sheetCtx, rootNavigator: true).pop();
 
-          // ── Save / Unsave ──────────────────────────────────────────────────
+          Future<void> checkSaveStatus() async {
+            if (currentUserId.isEmpty) {
+              setSheetState(() => isSaveChecking = false);
+              return;
+            }
+            try {
+              final res = await dioClient.get('/v1/post-saves/check/$currentUserId/$postId');
+              final saved = res.data['data']?['isSaved'] == true;
+              setSheetState(() { isSaved = saved; isSaveChecking = false; });
+            } catch (_) {
+              setSheetState(() { isSaved = false; isSaveChecking = false; });
+            }
+          }
+
           Future<void> toggleSave() async {
-            if (isSaveLoading || currentUserId.isEmpty) return;
+            if (isSaveLoading || isSaveChecking || currentUserId.isEmpty) return;
             setSheetState(() => isSaveLoading = true);
             try {
               final res = await dioClient.post('/v1/post-saves/toggle',
@@ -80,26 +100,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               final action = res.data['action'] as String?;
               final saved = action == 'saved';
               setSheetState(() { isSaved = saved; isSaveLoading = false; });
-              // Also send recommendation signal
               if (saved && currentUserId.isNotEmpty) {
                 postFeedbackService.sendSaveFeedback(userId: currentUserId, postId: postId);
-              }
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text(saved ? 'Post saved successfully!' : 'Post removed from saved items'),
-                ));
               }
             } catch (_) {
               setSheetState(() => isSaveLoading = false);
             }
           }
 
-          // ── Don't suggest (exclude user) ──────────────────────────────────
-          Future<void> excludeUser() async {
-            if (isActionLoading || currentUserId.isEmpty) return;
-            setSheetState(() => isActionLoading = true);
-            // Show confirm dialog matching RN's CustomAlertDialog behaviour
+          void openQrCode() {
             closeSheet();
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (!mounted) return;
+              final shareUrl = suffix != null && suffix.isNotEmpty
+                  ? 'https://witalk.in/p/$suffix'
+                  : 'https://witalk.in/post/$postId';
+              showModalBottomSheet(
+                useRootNavigator: true,
+                isScrollControlled: true,
+                context: context,
+                backgroundColor: c.bottomSheetBg,
+                shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                builder: (qrCtx) {
+                  final screenW = MediaQuery.of(qrCtx).size.width;
+                  final qrSize = screenW - 80;
+                  return SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Container(width: 36, height: 5,
+                          decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(3))),
+                        const SizedBox(height: 20),
+                        Text('QR Code', style: TextStyle(color: c.text, fontSize: 18,
+                            fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        Text('Scan this QR code to view the post',
+                            style: TextStyle(color: c.textSecondary, fontSize: 13, fontFamily: 'Outfit')),
+                        const SizedBox(height: 24),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                          child: Center(
+                            child: QrImageView(data: shareUrl, version: QrVersions.auto,
+                                size: qrSize, backgroundColor: Colors.white),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ]),
+                    ),
+                  );
+                },
+              );
+            });
+          }
+
+          Future<void> excludeUser() async {
+            closeSheet();
+            if (currentUserId.isEmpty) return;
             final confirmed = await showDialog<bool>(
               context: context,
               builder: (dlgCtx) => AlertDialog(
@@ -116,7 +176,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   TextButton(
                     onPressed: () => Navigator.of(dlgCtx, rootNavigator: true).pop(true),
-                    child: const Text("Yes, exclude", style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
+                    child: const Text('Yes, exclude', style: TextStyle(color: Colors.red, fontFamily: 'Outfit')),
                   ),
                 ],
               ),
@@ -127,148 +187,96 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   'user_id': currentUserId,
                   'excluded_user_id': userId,
                 });
-                // Remove all posts from this user from the feed (triggerRefresh equivalent)
                 ref.read(feedNotifierProvider.notifier).removePostsByUser(userId);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text("You won't see posts from $userName anymore."),
-                  ));
-                }
-              } catch (_) {
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Failed to exclude user')));
-                }
-              }
+              } catch (_) {}
             }
           }
 
-          // ── Unfollow ───────────────────────────────────────────────────────
           Future<void> unfollow() async {
             if (currentUserId.isEmpty) return;
             closeSheet();
             try {
               await dioClient.post('/v1/followers/toggle', data: {'followingId': userId});
-              setSheetState(() => isFollowing = false);
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Unfollowed user!')));
-              }
-            } catch (_) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Failed to update follow status')));
-              }
-            }
+            } catch (_) {}
           }
 
-          // ── Not interested ─────────────────────────────────────────────────
-          Future<void> notInterested() async {
-            closeSheet();
-            if (currentUserId.isNotEmpty) {
-              postFeedbackService.sendNotInterestedFeedback(userId: currentUserId, postId: postId);
-            }
-            // Remove post from feed immediately like RN's triggerRefresh
-            ref.read(feedNotifierProvider.notifier).removePost(postId);
+          Widget topBtn(IconData icon, String label, VoidCallback? onTap, {bool loading = false}) {
+            return Expanded(child: GestureDetector(
+              onTap: loading ? null : onTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+                decoration: BoxDecoration(color: topBtnBg, borderRadius: BorderRadius.circular(8)),
+                child: loading
+                    ? Center(child: SizedBox(width: 20, height: 20,
+                        child: CircularProgressIndicator(color: c.text, strokeWidth: 2)))
+                    : Column(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(icon, color: c.text, size: 20),
+                        const SizedBox(height: 4),
+                        Text(label, style: TextStyle(color: c.text, fontSize: 14, fontFamily: 'Outfit')),
+                      ]),
+              ),
+            ));
           }
 
-          // ── Hide post ──────────────────────────────────────────────────────
-          Future<void> hidePost() async {
-            closeSheet();
-            if (currentUserId.isNotEmpty) {
-              postFeedbackService.sendHidePostFeedback(userId: currentUserId, postId: postId);
-            }
-            // Remove post from feed immediately like RN's triggerRefresh
-            ref.read(feedNotifierProvider.notifier).removePost(postId);
+          Widget menuItem(IconData icon, String label, VoidCallback onTap, {bool destructive = false}) {
+            final color = destructive ? const Color(0xFFFF3040) : c.text;
+            return ListTile(
+              leading: Icon(icon, color: color),
+              title: Text(label, style: TextStyle(color: color, fontFamily: 'Outfit', fontSize: 16)),
+              onTap: onTap,
+            );
           }
+
+          WidgetsBinding.instance.addPostFrameCallback((_) => checkSaveStatus());
 
           return Column(mainAxisSize: MainAxisSize.min, children: [
-            const SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            Container(width: 36, height: 5,
+                decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(3))),
+            const SizedBox(height: 20),
 
-            if (!isOwnPost) ...[
-              // Top button row: Save/Unsave
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Row(children: [
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: isSaveLoading ? null : toggleSave,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        decoration: BoxDecoration(
-                          color: c.interactionButtonBg,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: isSaveLoading
-                            ? Center(child: SizedBox(width: 20, height: 20,
-                                child: CircularProgressIndicator(color: c.text, strokeWidth: 2)))
-                            : Column(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(isSaved ? Icons.bookmark : Icons.bookmark_border, color: c.text, size: 22),
-                                const SizedBox(height: 4),
-                                Text(isSaved ? 'Unsave' : 'Save',
-                                    style: TextStyle(color: c.text, fontSize: 13, fontFamily: 'Outfit')),
-                              ]),
-                      ),
-                    ),
-                  ),
-                ]),
-              ),
-            ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(children: [
+                topBtn(
+                  isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  isSaved ? 'Unsave' : 'Save',
+                  toggleSave,
+                  loading: isSaveChecking || isSaveLoading,
+                ),
+                const SizedBox(width: 12),
+                topBtn(Icons.qr_code, 'QR code', openQrCode),
+              ]),
+            ),
+            const SizedBox(height: 24),
 
             if (isOwnPost) ...[
-              ListTile(
-                leading: Icon(Icons.edit_outlined, color: c.text),
-                title: Text('Edit Post', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
-                onTap: () {
-                  closeSheet();
-                  context.push('/create-post', extra: {
-                    'isEditing': true,
-                    'postId': postId,
-                    'initialContent': extra['content'],
-                  });
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.delete_outlined, color: Color(0xFFFF3040)),
-                title: const Text('Delete Post', style: TextStyle(color: Color(0xFFFF3040), fontFamily: 'Outfit', fontSize: 16)),
-                onTap: () {
-                  closeSheet();
-                  _confirmDeletePost(postId, currentUserId, c);
-                },
-              ),
+              menuItem(Icons.edit_outlined, 'Edit Post', () {
+                nav.pop();
+                router.push('/create-post', extra: {
+                  'isEditing': true,
+                  'postId': postId,
+                  'initialContent': extra['content'],
+                });
+              }),
+              menuItem(Icons.delete_outlined, 'Delete Post', () {
+                nav.pop();
+                _confirmDeletePost(postId, currentUserId, c);
+              }, destructive: true),
             ] else ...[
-              ListTile(
-                leading: Icon(Icons.cancel_outlined, color: c.text),
-                title: Text("Don't suggest posts from $userName",
-                    style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
-                onTap: excludeUser,
-              ),
+              menuItem(Icons.cancel_outlined, "Don't suggest posts from $userName", excludeUser),
               if (isFollowing)
-                ListTile(
-                  leading: Icon(Icons.person_remove_outlined, color: c.text),
-                  title: Text('Unfollow', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
-                  onTap: unfollow,
-                ),
-              ListTile(
-                leading: Icon(Icons.remove_circle_outline, color: c.text),
-                title: Text('Not interested', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
-                onTap: notInterested,
-              ),
-              ListTile(
-                leading: Icon(Icons.visibility_off_outlined, color: c.text),
-                title: Text('Hide post', style: TextStyle(color: c.text, fontFamily: 'Outfit', fontSize: 16)),
-                onTap: hidePost,
-              ),
-              ListTile(
-                leading: const Icon(Icons.flag_outlined, color: Color(0xFFFF3040)),
-                title: const Text('Report', style: TextStyle(color: Color(0xFFFF3040), fontFamily: 'Outfit', fontSize: 16)),
-                onTap: () {
-                  closeSheet();
-                  context.push('/report/post/$postId');
-                },
-              ),
+                menuItem(Icons.person_remove_outlined, 'Unfollow', unfollow),
+              menuItem(Icons.person_outlined, 'About this account', () {
+                nav.pop();
+                router.push('/about-account/$userId');
+              }),
+              menuItem(Icons.flag_outlined, 'Report', () {
+                nav.pop();
+                router.push('/report/post/$postId');
+              }, destructive: true),
             ],
             const SizedBox(height: 16),
           ]);

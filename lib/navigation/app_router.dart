@@ -99,6 +99,8 @@ import '../screens/home/report_screen.dart';
 import '../screens/profile/id_verification_screen.dart';
 import '../screens/profile/write_review_screen.dart';
 import '../screens/profile/ranking_rules_screen.dart';
+import '../screens/profile/about_account_screen.dart';
+import '../screens/profile/former_usernames_screen.dart';
 import '../screens/splash/splash_screen.dart';
 import 'shell_screen.dart';
 
@@ -225,6 +227,17 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/ranking-rules', builder: (_, __) => const RankingRulesScreen()),
       GoRoute(path: '/saved', builder: (_, __) => const SavedScreen()),
       GoRoute(path: '/id-verification', builder: (_, __) => const IdVerificationScreen()),
+      GoRoute(path: '/about-account/:id', builder: (_, s) => AboutAccountScreen(userId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/former-usernames',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return FormerUsernamesScreen(
+            username: extra?['username'] as String? ?? '',
+            usernameHistory: extra?['usernameHistory'] as List<dynamic>? ?? const [],
+          );
+        },
+      ),
 
       // Chat — Private
       GoRoute(
