@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -373,7 +374,19 @@ class _StreakScreenState extends ConsumerState<StreakScreen> with SingleTickerPr
           ),
           child: Row(children: [
             Stack(clipBehavior: Clip.none, children: [
-              ClipOval(child: Container(width: 46, height: 46, decoration: BoxDecoration(color: const Color(0x20F57C00), border: isFirst ? Border.all(color: const Color(0xFFFFD700), width: 2.5) : null, shape: BoxShape.circle), child: Center(child: Text(name.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFFF57C00)))))),
+              (() {
+                final pic = item['profilePic']?.toString();
+                return Container(
+                  width: 46, height: 46,
+                  decoration: BoxDecoration(color: const Color(0x20F57C00), border: isFirst ? Border.all(color: const Color(0xFFFFD700), width: 2.5) : null, shape: BoxShape.circle),
+                  child: ClipOval(
+                    child: pic != null && pic.isNotEmpty
+                        ? CachedNetworkImage(imageUrl: pic, fit: BoxFit.cover, width: double.infinity, height: double.infinity,
+                            errorWidget: (_, __, ___) => Center(child: Text(name.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFFF57C00)))))
+                        : Center(child: Text(name.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFFF57C00)))),
+                  ),
+                );
+              })(),
               if (isFirst) const Positioned(top: -13, left: 11, child: Text('👑', style: TextStyle(fontSize: 16))),
             ]),
             const SizedBox(width: 12),
