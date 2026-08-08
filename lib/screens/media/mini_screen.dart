@@ -411,6 +411,9 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
     return (vid as Map?)?['thumbnail'] as String? ?? widget.post['thumbnail'] as String?;
   }
 
+  // true = cover (portrait 9:16), false = contain (square/landscape)
+  bool _coverMode = true;
+
   void _initVideo() {
     final url = _videoUrl;
     if (url == null || url.isEmpty) return;
@@ -421,9 +424,14 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
     ctrl.addListener(_onVideoListener);
     ctrl.initialize().then((_) {
       if (mounted) {
+        // Detect aspect ratio exactly as RN MiniVideoPlayer does:
+        // portrait (0.4–0.8) → cover, square/landscape → contain
+        final size = ctrl.value.size;
+        final ar   = size.height > 0 ? size.width / size.height : 0.0;
         setState(() {
-          _initialized  = true;
+          _initialized   = true;
           _videoDuration = ctrl.value.duration;
+          _coverMode     = ar >= 0.4 && ar <= 0.8;
         });
         if (widget.isActive && !_holdPaused) ctrl.play();
       }
@@ -568,26 +576,32 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
         onTapCancel:  _handlePressCancel,
         child: Stack(fit: StackFit.expand, children: [
 
-          // ── Video / thumbnail background ────────────────────────────────
-          if (_thumbnail != null)
-            CachedNetworkImage(
-              imageUrl: _thumbnail!,
-              fit: BoxFit.cover,
-              width: double.infinity,
-              height: double.infinity,
-            )
-          else
-            Container(color: Colors.black87),
+          // ── Black background (always, shown behind contain-mode video) ──
+          Container(color: Colors.black),
 
-          if (_initialized && _ctrl != null)
-            SizedBox.expand(child: FittedBox(
-              fit: BoxFit.cover,
-              child: SizedBox(
-                width:  _ctrl!.value.size.width,
-                height: _ctrl!.value.size.height,
-                child:  VideoPlayer(_ctrl!),
+          // ── Thumbnail ────────────────────────────────────────────────────
+          if (_thumbnail != null && !_initialized)
+            Positioned.fill(
+              child: CachedNetworkImage(
+                imageUrl: _thumbnail!,
+                fit: _coverMode ? BoxFit.cover : BoxFit.contain,
+                width: double.infinity,
+                height: double.infinity,
               ),
-            )),
+            ),
+
+          // ── Video ────────────────────────────────────────────────────────
+          if (_initialized && _ctrl != null)
+            SizedBox.expand(
+              child: FittedBox(
+                fit: _coverMode ? BoxFit.cover : BoxFit.contain,
+                child: SizedBox(
+                  width:  _ctrl!.value.size.width,
+                  height: _ctrl!.value.size.height,
+                  child:  VideoPlayer(_ctrl!),
+                ),
+              ),
+            ),
 
           // ── Buffering spinner ────────────────────────────────────────────
           if (!_initialized || _isBuffering)
