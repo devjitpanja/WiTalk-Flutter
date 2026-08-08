@@ -229,22 +229,12 @@ class _MiniScreenState extends ConsumerState<MiniScreen> {
       );
     }
 
-    final mq     = MediaQuery.of(context);
-    final bottom = mq.padding.bottom;
-    // Footer height matches RN: 50 + max(bottomInset, 12)
-    final footerH = widget.fromVideoClick
-        ? 50.0 + bottom.clamp(12.0, double.infinity)
-        : 0.0;
-    final videoH = mq.size.height - footerH;
-
     return Scaffold(
       backgroundColor: Colors.black,
       body: Column(children: [
-        // ── Video pager (fills everything above the footer) ─────────────────
-        SizedBox(
-          height: videoH,
+        // ── Video pager — Expanded lets Flutter size it without manual math ──
+        Expanded(
           child: Stack(children: [
-            // PageView fills the video area exactly
             Positioned.fill(
               child: PageView.builder(
                 controller: _pageCtrl,
@@ -259,7 +249,6 @@ class _MiniScreenState extends ConsumerState<MiniScreen> {
                     post: _posts[i],
                     isActive: i == _currentIndex,
                     currentUserId: _userId,
-                    itemHeight: videoH,
                     onLike: () => _toggleLike(i),
                     onComment: () => _openComments(i),
                     onFollow: () => _toggleFollow(i),
@@ -290,7 +279,7 @@ class _MiniScreenState extends ConsumerState<MiniScreen> {
           ]),
         ),
 
-        // ── Comment footer (sits below video, never overlaps it) ─────────────
+        // ── Comment footer (sits below video, never overlaps it) ────────────
         if (widget.fromVideoClick)
           _CommentFooter(
             onTap: _posts.isNotEmpty ? () => _openComments(_currentIndex) : null,
@@ -309,8 +298,6 @@ class _MiniItem extends StatefulWidget {
   final VoidCallback onLike;
   final VoidCallback onComment;
   final VoidCallback onFollow;
-  /// Height of the video area (excludes the comment footer when present).
-  final double itemHeight;
 
   const _MiniItem({
     required this.post,
@@ -319,7 +306,6 @@ class _MiniItem extends StatefulWidget {
     required this.onLike,
     required this.onComment,
     required this.onFollow,
-    required this.itemHeight,
   });
 
   @override
@@ -460,9 +446,11 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
 
   // ── Tap handling (Instagram-style: 300ms window to detect double-tap) ────
 
+  double _itemHeight = 0;
+
   void _handleTap(TapUpDetails details) {
     // Bottom 200px is the seekbar safe zone — ignore taps there
-    if (details.localPosition.dy > widget.itemHeight - 200) return;
+    if (_itemHeight > 0 && details.localPosition.dy > _itemHeight - 200) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
 
@@ -547,16 +535,6 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
     }
   }
 
-  // ── Mute button (bottom-left, shown when not holding) ────────────────────
-
-  void _toggleMute() {
-    setState(() {
-      _muted       = !_muted;
-      _globalMuted = _muted;
-      _ctrl?.setVolume(_muted ? 0.0 : 1.0);
-    });
-  }
-
   // ── Seek ─────────────────────────────────────────────────────────────────
 
   void _seekTo(Duration position) {
@@ -581,8 +559,10 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
     final userId     = ((_user?['id'] ?? widget.post['user_id']) ?? '').toString();
     final isOwnPost  = widget.currentUserId != null && widget.currentUserId == userId;
 
-    return SizedBox.expand(
-      child: GestureDetector(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _itemHeight = constraints.maxHeight;
+        return GestureDetector(
         onTapDown:    _handlePressDown,
         onTapUp:      _handlePressUp,
         onTapCancel:  _handlePressCancel,
@@ -633,7 +613,7 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
             child: Stack(children: [
 
               // Bottom-left: user info + caption
-              Positioned(left: 16, right: 80, bottom: 60,
+              Positioned(left: 16, right: 80, bottom: 16,
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   GestureDetector(
                     onTap: () => context.push('/user/$userId'),
@@ -686,27 +666,8 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
                 ]),
               ),
 
-              // Mute button — bottom-left, above caption area
-              Positioned(left: 16, bottom: 110,
-                child: GestureDetector(
-                  onTap: _toggleMute,
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: const BoxDecoration(
-                      color: Colors.black45,
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      _muted ? Icons.volume_off : Icons.volume_up,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ),
-
               // Right-side action buttons
-              Positioned(right: 12, bottom: 60,
+              Positioned(right: 12, bottom: 16,
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   _ActionBtn(
                     child: Icon(
@@ -793,7 +754,8 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
               ),
             ),
         ]),
-      ),
+        );
+      },
     );
   }
 }
@@ -1086,15 +1048,17 @@ class _CommentFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
     return Container(
+      width: double.infinity,
       padding: EdgeInsets.fromLTRB(12, 8, 12, 12 + bottom),
       color: const Color(0xFF0D1017),
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white12,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white24),
           ),
           child: const Text('Add a comment...',
