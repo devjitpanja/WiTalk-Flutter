@@ -5,9 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import 'package:video_player/video_player.dart';
 import '../../api/dio_client.dart';
+import '../../widgets/common/comment_bottom_sheet.dart';
 import '../../widgets/common/share_bottom_sheet.dart';
 import '../../widgets/common/verification_badge.dart';
 
@@ -188,15 +188,19 @@ class _MiniScreenState extends ConsumerState<MiniScreen> {
   }
 
   void _openComments(int index) {
-    final post   = _posts[index];
-    final postId = (post['id'] ?? '').toString();
-    if (postId.isEmpty) return;
-    showModalBottomSheet(
-      useRootNavigator: true,
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _MiniCommentSheet(postId: postId, currentUserId: _userId),
+    final post = _posts[index];
+    showCommentBottomSheet(
+      context,
+      post: post,
+      currentUserId: _userId,
+      onCommentAdded: () {
+        final count = (post['comments'] ?? 0) as int;
+        if (mounted) {
+          setState(() {
+            _posts[index] = {...post, 'comments': count + 1};
+          });
+        }
+      },
     );
   }
 
@@ -685,8 +689,10 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   _ActionBtn(
                     child: Icon(
-                      Icons.favorite,
-                      size: 32,
+                      _isLiked
+                          ? const IconData(0xe2a8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter')
+                          : const IconData(0xe2a8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                      size: 30,
                       color: _isLiked ? const Color(0xFFFF3040) : Colors.white,
                     ),
                     label: _formatCount(likes),
@@ -694,13 +700,21 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 20),
                   _ActionBtn(
-                    child: const Icon(Icons.chat_bubble_outline, size: 28, color: Colors.white),
+                    child: const Icon(
+                      IconData(0xe168, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                      size: 28,
+                      color: Colors.white,
+                    ),
                     label: _formatCount(comments),
                     onTap: widget.onComment,
                   ),
                   const SizedBox(height: 20),
                   _ActionBtn(
-                    child: const Icon(Icons.share, size: 28, color: Colors.white),
+                    child: const Icon(
+                      IconData(0xe398, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+                      size: 28,
+                      color: Colors.white,
+                    ),
                     label: _formatCount(shares),
                     onTap: () => showShareBottomSheet(
                       context,
@@ -1083,322 +1097,3 @@ class _CommentFooter extends StatelessWidget {
   }
 }
 
-// ─── Mini comment bottom sheet ────────────────────────────────────────────────
-
-class _MiniCommentSheet extends StatefulWidget {
-  final String postId;
-  final String? currentUserId;
-  const _MiniCommentSheet({required this.postId, this.currentUserId});
-
-  @override
-  State<_MiniCommentSheet> createState() => _MiniCommentSheetState();
-}
-
-class _MiniCommentSheetState extends State<_MiniCommentSheet> {
-  static const _storage = FlutterSecureStorage();
-
-  List<Map<String, dynamic>> _comments = [];
-  bool _loading = true;
-  bool _posting = false;
-  String? _userId;
-  Map<String, dynamic>? _currentUserData;
-
-  final _ctrl  = TextEditingController();
-  final _focus = FocusNode();
-  String? _replyingToId;
-  String? _replyingToName;
-
-  @override
-  void initState() {
-    super.initState();
-    _init();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    _focus.dispose();
-    super.dispose();
-  }
-
-  Future<void> _init() async {
-    final uid = widget.currentUserId ?? await _storage.read(key: 'uid');
-    setState(() => _userId = uid);
-    if (uid != null) {
-      try {
-        final res  = await dioClient.get('/v1/user/$uid');
-        final data = res.data['data'] ?? res.data;
-        if (data is Map<String, dynamic> && mounted) setState(() => _currentUserData = data);
-      } catch (_) {}
-    }
-    await _loadComments();
-  }
-
-  Future<void> _loadComments() async {
-    try {
-      final res = await dioClient.get('/v1/comments/${widget.postId}',
-          queryParameters: _userId != null ? {'userId': _userId} : null);
-      final raw = res.data['data']?['comments'] ?? res.data['comments'];
-      if (raw is List && mounted) {
-        setState(() {
-          _comments = raw.whereType<Map<String, dynamic>>().toList();
-          _loading  = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _postComment() async {
-    final text = _ctrl.text.trim();
-    if (text.isEmpty || _posting) return;
-    setState(() => _posting = true);
-    try {
-      final res = await dioClient.post('/v1/comments', data: {
-        'postId': widget.postId,
-        'userId': _userId,
-        'comment': text,
-        if (_replyingToId != null) 'parentId': _replyingToId,
-      });
-      if (res.data['message'] == 'Comment added successfully' && mounted) {
-        _ctrl.clear();
-        setState(() { _replyingToId = null; _replyingToName = null; });
-        await _loadComments();
-      }
-    } catch (_) {} finally {
-      if (mounted) setState(() => _posting = false);
-    }
-  }
-
-  Future<void> _toggleLike(String commentId, bool current) async {
-    if (_userId == null) return;
-    setState(() {
-      for (final c in _comments) {
-        if (c['id'].toString() == commentId) {
-          c['isLiked'] = !current;
-          c['likes']   = !current
-              ? (c['likes'] as int? ?? 0) + 1
-              : ((c['likes'] as int? ?? 1) - 1).clamp(0, 999);
-          return;
-        }
-        final replies = c['replies'] as List? ?? [];
-        for (final r in replies) {
-          if ((r as Map)['id'].toString() == commentId) {
-            r['isLiked'] = !current;
-            r['likes']   = !current
-                ? (r['likes'] as int? ?? 0) + 1
-                : ((r['likes'] as int? ?? 1) - 1).clamp(0, 999);
-            return;
-          }
-        }
-      }
-    });
-    try {
-      await dioClient.post('/v1/like/comment/toggle',
-          data: {'commentId': commentId, 'userId': _userId});
-    } catch (_) {
-      if (mounted) setState(() {
-        for (final c in _comments) {
-          if (c['id'].toString() == commentId) {
-            c['isLiked'] = current;
-            c['likes']   = current
-                ? (c['likes'] as int? ?? 1)
-                : ((c['likes'] as int? ?? 0) + 1);
-            return;
-          }
-        }
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).padding.bottom;
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: const BoxDecoration(
-        color: Color(0xFF1C1C1E),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(children: [
-        const SizedBox(height: 8),
-        Container(
-          width: 40, height: 4,
-          decoration: BoxDecoration(
-            color: Colors.white24,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text('Comments',
-              style: TextStyle(color: Colors.white, fontSize: 16,
-                  fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
-        ),
-        const Divider(color: Colors.white12, height: 1),
-        Expanded(
-          child: _loading
-              ? const Center(child: CircularProgressIndicator(color: Colors.white54))
-              : _comments.isEmpty
-                  ? const Center(child: Text('No comments yet',
-                        style: TextStyle(color: Colors.white38, fontFamily: 'Outfit')))
-                  : ListView.builder(
-                      padding: const EdgeInsets.only(top: 4),
-                      itemCount: _comments.length,
-                      itemBuilder: (_, i) => _buildCommentItem(_comments[i], isReply: false),
-                    ),
-        ),
-        if (_replyingToName != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Colors.white10,
-            child: Row(children: [
-              Expanded(child: Text('Replying to @$_replyingToName',
-                  style: const TextStyle(color: Colors.white60, fontSize: 13, fontFamily: 'Outfit'))),
-              GestureDetector(
-                onTap: () => setState(() { _replyingToId = null; _replyingToName = null; }),
-                child: const Icon(Icons.close, color: Colors.white54, size: 18)),
-            ]),
-          ),
-        Container(
-          padding: EdgeInsets.fromLTRB(12, 8, 12, 12 + bottom),
-          color: const Color(0xFF1C1C1E),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white24,
-              backgroundImage: (_currentUserData?['profile_pic'] as String?) != null
-                  ? NetworkImage(_currentUserData!['profile_pic'] as String)
-                  : null,
-              child: (_currentUserData?['profile_pic'] as String?) == null
-                  ? const Icon(Icons.person, color: Colors.white54, size: 16)
-                  : null,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                controller: _ctrl,
-                focusNode: _focus,
-                maxLines: null,
-                style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontSize: 14),
-                decoration: InputDecoration(
-                  hintText: _replyingToName != null ? 'Reply...' : 'Add a comment...',
-                  hintStyle: const TextStyle(color: Colors.white38, fontFamily: 'Outfit'),
-                  filled: true,
-                  fillColor: Colors.white10,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(20),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            ),
-            if (_ctrl.text.trim().isNotEmpty) ...[
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: _postComment,
-                child: _posting
-                    ? const SizedBox(width: 24, height: 24,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.send, color: Colors.white70, size: 24),
-              ),
-            ],
-          ]),
-        ),
-      ]),
-    );
-  }
-
-  Widget _buildCommentItem(Map<String, dynamic> comment, {required bool isReply}) {
-    final id         = comment['id']?.toString() ?? '';
-    final username   = (comment['username'] ?? '') as String;
-    final pic        = comment['profile_pic'] as String?;
-    final text       = (comment['comment'] ?? '') as String;
-    final likes      = (comment['likes'] ?? 0) as int;
-    final isLiked    = comment['isLiked'] == true;
-    final isVerified = comment['is_verified'] == true;
-    final badgeData  = comment['verification_badge'] as Map<String, dynamic>?;
-    final createdAt  = DateTime.tryParse((comment['created_at'] ?? '') as String) ?? DateTime.now();
-    final replies    = (comment['replies'] as List? ?? []).whereType<Map<String, dynamic>>().toList();
-    final userId     = (comment['user_id'] ?? '').toString();
-    final isOwn      = userId == _userId;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: EdgeInsets.only(left: isReply ? 48 : 16, right: 16, top: 10, bottom: 6),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            CircleAvatar(
-              radius: 16,
-              backgroundColor: Colors.white24,
-              backgroundImage: pic != null ? NetworkImage(pic) : null,
-              child: pic == null
-                  ? Text(username.isNotEmpty ? username[0].toUpperCase() : '?',
-                        style: const TextStyle(color: Colors.white, fontSize: 11))
-                  : null,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
-                  Text(username, style: const TextStyle(color: Colors.white,
-                      fontSize: 13, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-                  if (isVerified) ...[
-                    const SizedBox(width: 3),
-                    VerificationBadge(isVerified: true, badge: badgeData, size: 12),
-                  ],
-                  const SizedBox(width: 6),
-                  Text(timeago.format(createdAt),
-                      style: const TextStyle(color: Colors.white38, fontSize: 11, fontFamily: 'Outfit')),
-                ]),
-                const SizedBox(height: 2),
-                Text(text, style: const TextStyle(color: Colors.white70,
-                    fontSize: 13, fontFamily: 'Outfit', height: 1.4)),
-                const SizedBox(height: 4),
-                if (!isOwn)
-                  GestureDetector(
-                    onTap: () => setState(() {
-                      _replyingToId   = id;
-                      _replyingToName = username;
-                    }),
-                    child: const Text('Reply',
-                        style: TextStyle(color: Colors.white38, fontSize: 12, fontFamily: 'Outfit')),
-                  ),
-              ]),
-            ),
-            GestureDetector(
-              onTap: () => _toggleLike(id, isLiked),
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(isLiked ? Icons.favorite : Icons.favorite_border,
-                      size: 18,
-                      color: isLiked ? const Color(0xFFFF3040) : Colors.white38),
-                  if (likes > 0)
-                    Text('$likes',
-                        style: const TextStyle(color: Colors.white38, fontSize: 10, fontFamily: 'Outfit')),
-                ]),
-              ),
-            ),
-          ]),
-        ),
-        for (final reply in replies)
-          _buildCommentItem(reply, isReply: true),
-        const Divider(color: Colors.white10, height: 1, indent: 16),
-      ],
-    );
-  }
-}
