@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:go_router/go_router.dart';
 import '../../api/dio_client.dart';
+import '../../services/deep_link_service.dart';
 import '../../theme/app_colors.dart';
 
 final _bannersProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
@@ -40,7 +41,15 @@ class _ExploreBannerCarouselState extends ConsumerState<ExploreBannerCarousel> {
     if (actionType == null || actionType == 'none' || actionValue == null) return;
 
     if (actionType == 'open_link' || actionType == 'deep_link') {
-      launchUrl(Uri.parse(actionValue), mode: LaunchMode.externalApplication);
+      // witalk:// and https://witalk.in links are handled in-app directly.
+      // Sending them through launchUrl.externalApplication causes the OS to
+      // re-open the app, which races with GoRouter and shows "Page Not Found".
+      if (actionValue.startsWith('witalk://') ||
+          actionValue.contains('witalk.in')) {
+        handleDeepLink(context, actionValue);
+      } else {
+        launchUrl(Uri.parse(actionValue), mode: LaunchMode.externalApplication);
+      }
     } else if (actionType == 'open_community') {
       context.push('/community-info/$actionValue');
     } else if (actionType == 'open_profile') {

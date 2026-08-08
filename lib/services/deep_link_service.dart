@@ -117,7 +117,9 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
 
   // ── PostDetail: post/{postId} ──────────────────────────────────────────────
   if (path.startsWith('post/')) {
-    context.push('/post/${path.substring(5)}');
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.push('/post/${path.substring(5)}');
     return;
   }
 
@@ -225,12 +227,17 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
 
   // ── GroupChat: groupchat/{groupId} ────────────────────────────────────────
   if (path.startsWith('groupchat/')) {
-    context.push('/chat/group/${path.substring(10)}');
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.push('/chat/group/${path.substring(10)}');
     return;
   }
 
   // ── System deep links ─────────────────────────────────────────────────────
   if (path.startsWith('system/')) {
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (!context.mounted) return;
     switch (path.substring(7)) {
       case 'voice-call': context.push('/voice-call/system'); break;
       case 'video-call': context.push('/video-call/system'); break;
@@ -254,6 +261,8 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
   // ── User profile: user/{username} ─────────────────────────────────────────
   if (path.startsWith('user/')) {
     final username = path.substring(5);
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
     final currentUsername = await AppStorage.get('username') as String?;
     if (!context.mounted) return;
     if (currentUsername != null && currentUsername == username) {
@@ -266,19 +275,25 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
 
   // ── Group info: group-info/{groupId} ─────────────────────────────────────
   if (path.startsWith('group-info/')) {
-    context.push('/chat/group-info/${path.substring(11)}');
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.push('/chat/group-info/${path.substring(11)}');
     return;
   }
 
   // ── Followers: followers/{userId} ─────────────────────────────────────────
   if (path.startsWith('followers/')) {
-    context.push('/followers/${path.substring(10)}');
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.push('/followers/${path.substring(10)}');
     return;
   }
 
   // ── About account: about/{username} ──────────────────────────────────────
   if (path.startsWith('about/')) {
-    context.push('/profile/${path.substring(6)}');
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.push('/profile/${path.substring(6)}');
     return;
   }
 
@@ -292,7 +307,9 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
     'adda': '/adda',
   };
   if (tabMap.containsKey(path)) {
-    context.go(tabMap[path]!);
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.go(tabMap[path]!);
     return;
   }
 
@@ -313,6 +330,8 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
     'search-result': '/search-result',
     'feedback': '/bugs-suggestions',
     'bugs-suggestions': '/bugs-suggestions',
+    'report-bug': '/bugs-suggestions',
+    'make-suggestion': '/bugs-suggestions',
     'menu/missions': '/missions',
     'menu/rank': '/rank',
     'menu/ranking-rules': '/ranking-rules',
@@ -327,7 +346,9 @@ Future<void> handleDeepLink(BuildContext context, String url) async {
     'menu/pass': '/pass',
   };
   if (simpleMap.containsKey(path)) {
-    context.push(simpleMap[path]!);
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null) { _pendingUrlDeepLink = url; return; }
+    if (context.mounted) context.push(simpleMap[path]!);
     return;
   }
 
