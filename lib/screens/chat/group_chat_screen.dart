@@ -1001,6 +1001,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                             isHighlighted: _highlightedMessageId == msg.id,
                             onLongPress: () =>
                                 _onMessageLongPress(msg),
+                            onReplySwipe: (m) {
+                              _inputCtrl.setReplyTo(m);
+                              _inputCtrl.focus();
+                            },
                             onReactionTap: (emoji) {
                               ref
                                   .read(chatProvider.notifier)
