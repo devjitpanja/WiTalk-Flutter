@@ -441,16 +441,43 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       _uploadingMedia = true;
     });
     try {
-      final uploadSvc = UploadService();
-      final result = await uploadSvc.uploadMedia(
-        file: File(uri),
-        mediaType: 'audio',
-        fileName: uri.split('/').last,
-        userId: _currentUserId ?? '',
-      );
-      final url = result['url'] as String?;
-      if (url == null) return;
+      final file = File(uri);
+      final fileExists = file.existsSync();
+      final fileSize = fileExists ? file.lengthSync() : 0;
+      debugPrint('[VoiceSend] file=$uri exists=$fileExists size=$fileSize userId=$_currentUserId');
 
+      if (!fileExists || fileSize == 0) {
+        debugPrint('[VoiceSend] ABORT: file missing or empty');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Voice recording is empty, please try again')));
+        }
+        return;
+      }
+
+      final uploadSvc = UploadService();
+      debugPrint('[VoiceSend] uploading...');
+      final uid = _currentUserId ?? '';
+      final voiceFileName = 'voice-$uid-${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final result = await uploadSvc.uploadMedia(
+        file: file,
+        mediaType: 'audio',
+        fileName: voiceFileName,
+        userId: uid,
+      );
+      debugPrint('[VoiceSend] upload result=$result');
+
+      final url = result['url'] as String?;
+      if (url == null) {
+        debugPrint('[VoiceSend] ABORT: upload succeeded but url is null. Full result: $result');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Upload failed: no URL returned')));
+        }
+        return;
+      }
+
+      debugPrint('[VoiceSend] sending message url=$url duration=$duration');
       await ref.read(chatProvider.notifier).sendGroupMessage(
             groupId: widget.groupId,
             content: '',
@@ -458,11 +485,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             mediaUrl: url,
             mediaData: {'duration': duration},
           );
+      debugPrint('[VoiceSend] success');
       _scrollToBottom();
-    } catch (_) {
+    } catch (e, st) {
+      debugPrint('[VoiceSend] ERROR: $e\n$st');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to send voice message')));
+            SnackBar(content: Text('Failed to send voice message: $e')));
       }
     } finally {
       if (mounted) setState(() => _uploadingMedia = false);

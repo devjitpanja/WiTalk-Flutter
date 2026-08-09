@@ -49,13 +49,17 @@ Map<String, dynamic>? _parseJson(dynamic raw) {
   try { return json.decode(raw as String) as Map<String, dynamic>; } catch (_) { return null; }
 }
 
-// Resolves poll data from either 'poll' key (Map) or 'poll_data' key (JSON string)
+// Resolves poll data from either 'poll' key (Map) or 'poll_data' key (JSON string).
+// Uses Map.from() to handle Map<dynamic,dynamic> returned by JSON decoder.
 Map<String, dynamic>? _resolvePoll(Map<String, dynamic> item) {
   var v = item['poll'];
   v ??= item['poll_data'];
   if (v == null) return null;
   if (v is Map<String, dynamic>) return v;
-  return _parseJson(v);
+  if (v is Map) return Map<String, dynamic>.from(v);
+  final decoded = _parseJson(v);
+  if (decoded == null) return null;
+  return decoded;
 }
 
 // ─── ReplySnippet ─────────────────────────────────────────────────────────────
@@ -236,12 +240,13 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
   }
 
   Widget _replySnippet(ThemeColors c) {
-    final rt = widget.item['reply_to'];
-    if (rt == null) return const SizedBox.shrink();
+    final raw = widget.item['reply_to'];
+    if (raw == null) return const SizedBox.shrink();
+    final rt = raw is Map<String, dynamic> ? raw : Map<String, dynamic>.from(raw as Map);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: _ReplySnippet(
-        replyTo: rt as Map<String, dynamic>,
+        replyTo: rt,
         onTap: () => widget.onScrollTo(rt['id'].toString()),
       ),
     );
@@ -285,26 +290,26 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final w = (md?['width'] as num?)?.toDouble() ?? 1.0;
     final h = (md?['height'] as num?)?.toDouble() ?? 1.0;
     final ar = w > 0 && h > 0 ? w / h : 1.0;
-    final displayW = double.infinity;
-    final displayH = (MediaQueryData.fromView(WidgetsBinding.instance.platformDispatcher.implicitView!).size.width - 32) / ar;
-    final clampedH = displayH.clamp(120.0, 360.0);
+    final screenW = MediaQueryData.fromView(WidgetsBinding.instance.platformDispatcher.implicitView!).size.width - 32;
+    final clampedH = (screenW / ar).clamp(120.0, 360.0);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
       Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: _channelHeader(c)),
       _replySnippet(c),
       if (url != null)
-        CachedNetworkImage(
-          imageUrl: url,
-          width: displayW,
+        SizedBox(
+          width: double.infinity,
           height: clampedH,
-          fit: BoxFit.cover,
-          placeholder: (_, __) => Container(
-            width: displayW, height: clampedH,
-            color: c.border.withValues(alpha: 0.4),
-            child: Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))),
-          errorWidget: (_, __, ___) => Container(
-            width: displayW, height: 120,
-            color: c.border.withValues(alpha: 0.4),
-            child: Icon(Icons.broken_image, color: c.textSecondary, size: 36))),
+          child: CachedNetworkImage(
+            imageUrl: url,
+            width: screenW,
+            height: clampedH,
+            fit: BoxFit.cover,
+            placeholder: (_, __) => Container(
+              color: c.border.withValues(alpha: 0.4),
+              child: Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))),
+            errorWidget: (_, __, ___) => Container(
+              color: c.border.withValues(alpha: 0.4),
+              child: Icon(Icons.broken_image, color: c.textSecondary, size: 36)))),
       Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         if ((widget.item['content'] as String? ?? '').isNotEmpty)
           Padding(padding: const EdgeInsets.only(bottom: 4),
@@ -381,7 +386,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         Text(question, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text, height: 1.3)),
         const SizedBox(height: 10),
         ...List.generate(options.length, (idx) {
-          final o = options[idx] as Map<String, dynamic>;
+          final o = Map<String, dynamic>.from(options[idx] as Map);
           final label = o['text'] as String? ?? '';
           final votes = (o['vote_count'] as num?)?.toInt() ?? 0;
           final pct = total > 0 ? votes / total : 0.0;

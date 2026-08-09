@@ -18,6 +18,7 @@ import '../../services/upload_service.dart';
 import '../../widgets/chat/message_bubble.dart';
 import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/message_actions_bottom_sheet.dart';
+import '../../widgets/chat/voice_recorder.dart';
 import '../../widgets/chat/quick_emoji_picker.dart';
 import '../../widgets/common/verification_badge.dart';
 
@@ -66,6 +67,7 @@ class _ChatConversationScreenState
   static const _pageSize = 30; // match RN limit=30
 
   bool _uploadingMedia = false;
+  bool _isRecordingVoice = false;
   bool _isMuted = false;
   bool _isBlocked = false;
   bool _theyBlockedMe = false;
@@ -1034,6 +1036,78 @@ class _ChatConversationScreenState
     return null;
   }
 
+  Future<void> _handleSendVoice(
+      {required String uri, required double duration}) async {
+    final partner = _chatPartner;
+    final uid = _currentUserId;
+    setState(() {
+      _isRecordingVoice = false;
+      _uploadingMedia = true;
+    });
+    try {
+      final file = File(uri);
+      if (!file.existsSync() || file.lengthSync() == 0) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Voice recording is empty, please try again')));
+        }
+        return;
+      }
+
+      final voiceFileName = 'voice-${uid ?? ''}-${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final result = await UploadService().uploadMedia(
+        file: file,
+        mediaType: 'audio',
+        fileName: voiceFileName,
+        userId: uid ?? '',
+      );
+      final url = result['url'] as String?;
+      if (url == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Upload failed: no URL returned')));
+        }
+        return;
+      }
+
+      // Lazy conversation creation (mirrors RN handleSendVoice)
+      if (_activeChatId == null && partner != null && uid != null) {
+        final res = await chatApiService.createConversation(
+          userId: uid,
+          otherUserId: partner['id'].toString(),
+        );
+        final dataMap = res['data'];
+        String? convId;
+        if (dataMap is Map) convId = dataMap['id']?.toString();
+        convId ??= res['id']?.toString();
+        if (convId == null) return;
+        if (mounted) setState(() => _activeChatId = convId);
+        ref.read(chatProvider.notifier).joinConversation(convId);
+        ref.read(chatProvider.notifier).setActiveConversation(convId);
+        await _loadConversationDetail();
+      }
+
+      if (_activeChatId == null || partner == null) return;
+
+      await ref.read(chatProvider.notifier).sendMessage(
+            conversationId: _activeChatId!,
+            receiverId: partner['id'].toString(),
+            content: '',
+            messageType: 'voice',
+            mediaUrl: url,
+            mediaData: {'duration': duration},
+          );
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Failed to send voice message: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingMedia = false);
+    }
+  }
+
   void _acceptRequest() async {
     final uid = _currentUserId;
     final chatId = _activeChatId;
@@ -1605,35 +1679,41 @@ class _ChatConversationScreenState
           ]),
         ),
 
-        // Input bar
-        ChatInputBar(
-          controller: _inputCtrl,
-          conversationId: _activeChatId ?? '',
-          currentUserId: uid,
-          otherUserName: partnerName.toString(),
-          otherUser: _chatPartner,
-          isBlocked: _isBlocked,
-          theyBlockedMe: _theyBlockedMe,
-          otherUserIsBanned: _otherUserIsBanned,
-          privacyBlocked: _privacyBlocked,
-          privacyMessage: _privacyMessage,
-          privacySetting: _privacySetting,
-          isIncomingRequest: _isIncomingRequest,
-          isOutgoingRequest: _isOutgoingRequest,
-          sentMessageCount: liveSentCount,
-          isRecordingVoice: false,
-          uploadingMedia: _uploadingMedia,
-          onSend: _handleSend,
-          startTyping: (convId) =>
-              ref.read(chatProvider.notifier).startTyping(convId),
-          stopTyping: (convId) =>
-              ref.read(chatProvider.notifier).stopTyping(convId),
-          onPickAndSendImage: _pickAndSendImage,
-          onStartVoiceRecording: () {},
-          onAcceptRequest: _acceptRequest,
-          onDeleteRequest: _deleteRequest,
-          onBlockUnblock: _toggleBlock,
-        ),
+        // Input bar / Voice recorder
+        if (_isRecordingVoice)
+          VoiceRecorder(
+            onSend: _handleSendVoice,
+            onCancel: () => setState(() => _isRecordingVoice = false),
+          )
+        else
+          ChatInputBar(
+            controller: _inputCtrl,
+            conversationId: _activeChatId ?? '',
+            currentUserId: uid,
+            otherUserName: partnerName.toString(),
+            otherUser: _chatPartner,
+            isBlocked: _isBlocked,
+            theyBlockedMe: _theyBlockedMe,
+            otherUserIsBanned: _otherUserIsBanned,
+            privacyBlocked: _privacyBlocked,
+            privacyMessage: _privacyMessage,
+            privacySetting: _privacySetting,
+            isIncomingRequest: _isIncomingRequest,
+            isOutgoingRequest: _isOutgoingRequest,
+            sentMessageCount: liveSentCount,
+            isRecordingVoice: _isRecordingVoice,
+            uploadingMedia: _uploadingMedia,
+            onSend: _handleSend,
+            startTyping: (convId) =>
+                ref.read(chatProvider.notifier).startTyping(convId),
+            stopTyping: (convId) =>
+                ref.read(chatProvider.notifier).stopTyping(convId),
+            onPickAndSendImage: _pickAndSendImage,
+            onStartVoiceRecording: () => setState(() => _isRecordingVoice = true),
+            onAcceptRequest: _acceptRequest,
+            onDeleteRequest: _deleteRequest,
+            onBlockUnblock: _toggleBlock,
+          ),
       ]),
       ),
     );

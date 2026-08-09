@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'dart:math';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
 
@@ -52,16 +53,24 @@ class UploadService {
       final token = await _getAccessToken();
       final uploadUrl = AppConfig.filesApiUrl;
 
-      final mimeType = mediaType == 'video' ? 'video/mp4' : 'image/jpeg';
+      final mimeType = mediaType == 'video'
+          ? 'video/mp4'
+          : mediaType == 'audio'
+              ? 'audio/m4a'
+              : 'image/jpeg';
+
+      // Strip file:// prefix (matches RN: voiceUri.replace('file://', ''))
+      final cleanPath = file.path.replaceFirst('file://', '');
 
       final formData = FormData.fromMap({
         'file': await MultipartFile.fromFile(
-          file.path,
+          cleanPath,
           filename: fileName,
           contentType: DioMediaType.parse(mimeType),
         ),
         'user_id': userId,
       });
+      debugPrint('[UploadService] uploading to $uploadUrl mimeType=$mimeType fileName=$fileName userId=$userId');
 
       final dio = Dio(BaseOptions(
         connectTimeout: const Duration(minutes: 5),
@@ -99,6 +108,14 @@ class UploadService {
         throw Exception('Server returned HTTP ${response.statusCode}');
       }
     } catch (error) {
+      if (error is DioException && error.response != null) {
+        debugPrint('[UploadService] HTTP ${error.response!.statusCode} from ${error.requestOptions.uri}');
+        debugPrint('[UploadService] Request headers: ${error.requestOptions.headers}');
+        debugPrint('[UploadService] Response body: ${error.response!.data}');
+      } else {
+        debugPrint('[UploadService] Non-Dio error: $error');
+      }
+
       if (isCancelled?.call() == true) {
         throw Exception('Upload cancelled');
       }
