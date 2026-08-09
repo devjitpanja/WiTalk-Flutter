@@ -26,6 +26,7 @@ class MessageBubble extends StatelessWidget {
   final String? senderRole; // 'super_admin' | 'admin' | null
   final String? senderAdminTitle; // custom admin title
   final String? currentUserId; // needed for reaction highlight
+  final String? otherUserName; // for resolving reply sender name (1:1 chats)
   final ChatMessage? replyToMessage;
   final bool isHighlighted; // scroll-to target highlight
   final VoidCallback? onLongPress;
@@ -44,6 +45,7 @@ class MessageBubble extends StatelessWidget {
     this.senderRole,
     this.senderAdminTitle,
     this.currentUserId,
+    this.otherUserName,
     this.replyToMessage,
     this.isHighlighted = false,
     this.onLongPress,
@@ -129,6 +131,7 @@ class MessageBubble extends StatelessWidget {
                     onReplyTap: onReplyTap,
                     c: c,
                     currentUserId: currentUserId,
+                    otherUserName: otherUserName,
                   ),
                 ),
               ),
@@ -179,6 +182,7 @@ class _BubbleContent extends StatelessWidget {
   final VoidCallback? onReplyTap;
   final ThemeColors c;
   final String? currentUserId;
+  final String? otherUserName;
 
   const _BubbleContent({
     required this.message,
@@ -191,6 +195,7 @@ class _BubbleContent extends StatelessWidget {
     this.onReplyTap,
     required this.c,
     this.currentUserId,
+    this.otherUserName,
   });
 
   Color get _bubbleColor => isMyMessage
@@ -285,6 +290,8 @@ class _BubbleContent extends StatelessWidget {
           textColor: _textColor,
           onReplyTap: onReplyTap,
           c: c,
+          currentUserId: currentUserId,
+          otherUserName: otherUserName,
         );
     }
   }
@@ -302,6 +309,8 @@ class _TextBubble extends StatelessWidget {
   final Color textColor;
   final VoidCallback? onReplyTap;
   final ThemeColors c;
+  final String? currentUserId;
+  final String? otherUserName;
 
   const _TextBubble({
     required this.message,
@@ -314,6 +323,8 @@ class _TextBubble extends StatelessWidget {
     required this.textColor,
     this.onReplyTap,
     required this.c,
+    this.currentUserId,
+    this.otherUserName,
   });
 
   bool get _isOwner => senderRole == 'super_admin';
@@ -405,6 +416,8 @@ class _TextBubble extends StatelessWidget {
                 replyTo: replyToMessage,
                 replyToJson: message.replyTo,
                 isMyMessage: isMyMessage,
+                currentUserId: currentUserId,
+                otherUserName: otherUserName,
                 c: c,
               ),
             ),
@@ -553,12 +566,16 @@ class _ReplyPreview extends StatelessWidget {
   final ChatMessage? replyTo;
   final Map<String, dynamic>? replyToJson;
   final bool isMyMessage;
+  final String? currentUserId;
+  final String? otherUserName;
   final ThemeColors c;
 
   const _ReplyPreview({
     this.replyTo,
     this.replyToJson,
     required this.isMyMessage,
+    this.currentUserId,
+    this.otherUserName,
     required this.c,
   });
 
@@ -568,6 +585,7 @@ class _ReplyPreview extends StatelessWidget {
         ? {
             'content': replyTo!.content,
             'sender_name': replyTo!.senderName,
+            'sender_id': replyTo!.senderId,
             'message_type': replyTo!.messageType,
           }
         : replyToJson ?? {};
@@ -597,6 +615,21 @@ class _ReplyPreview extends StatelessWidget {
         preview = (data['content'] as String?) ?? '';
     }
 
+    // Resolve sender name: mirror RN logic —
+    // sender_id == currentUserId → 'You', otherwise use otherUserName or stored sender_name
+    final senderId = (data['sender_id'] as String?) ?? '';
+    final storedName = (data['sender_name'] as String?) ?? '';
+    String displayName;
+    if (senderId.isNotEmpty && currentUserId != null && senderId == currentUserId) {
+      displayName = 'You';
+    } else if (otherUserName != null && otherUserName!.isNotEmpty) {
+      displayName = otherUserName!;
+    } else if (storedName.isNotEmpty) {
+      displayName = storedName;
+    } else {
+      displayName = 'Unknown';
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.fromLTRB(6, 6, 6, 6),
@@ -606,50 +639,52 @@ class _ReplyPreview extends StatelessWidget {
             : const Color(0x0F000000),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 3,
-            decoration: BoxDecoration(
-              color: isMyMessage ? Colors.white : c.primary,
-              borderRadius: BorderRadius.circular(2),
+      child: IntrinsicHeight(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              width: 3,
+              decoration: BoxDecoration(
+                color: isMyMessage ? Colors.white : c.primary,
+                borderRadius: BorderRadius.circular(2),
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  (data['sender_name'] as String?) ?? 'Unknown',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w600,
-                    color: isMyMessage ? Colors.white : c.primary,
-                    height: 1.14,
+            const SizedBox(width: 8),
+            Flexible(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    displayName,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w600,
+                      color: isMyMessage ? Colors.white : c.primary,
+                      height: 1.14,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  preview,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontFamily: 'Outfit',
-                    color: isMyMessage
-                        ? Colors.white.withValues(alpha: 0.9)
-                        : c.text.withValues(alpha: 0.75),
-                    height: 1.28,
+                  const SizedBox(height: 2),
+                  Text(
+                    preview,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontFamily: 'Outfit',
+                      color: isMyMessage
+                          ? Colors.white.withValues(alpha: 0.9)
+                          : c.text.withValues(alpha: 0.75),
+                      height: 1.28,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

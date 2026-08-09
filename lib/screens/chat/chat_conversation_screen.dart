@@ -89,6 +89,9 @@ class _ChatConversationScreenState
   bool _showScrollToBottom = false;
   bool _isAtBottom = true;
 
+  // Reply highlight
+  String? _highlightedMessageId;
+
   // Typing indicator dots animation
   late AnimationController _dot0Ctrl;
   late AnimationController _dot1Ctrl;
@@ -873,6 +876,29 @@ class _ChatConversationScreenState
     );
   }
 
+  void _scrollToMessage(String messageId) {
+    final idx = _listItems.indexWhere(
+        (item) => !item.isDivider && item.message?.id == messageId);
+    if (idx == -1) return;
+
+    final approxOffset = idx * 72.0;
+    final maxExtent = _scrollCtrl.hasClients
+        ? _scrollCtrl.position.maxScrollExtent
+        : 0.0;
+    final target = approxOffset.clamp(0.0, maxExtent);
+
+    _scrollCtrl.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+
+    setState(() => _highlightedMessageId = messageId);
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      if (mounted) setState(() => _highlightedMessageId = null);
+    });
+  }
+
   // ── Send message ─────────────────────────────────────────────────────────────
   Future<void> _handleSend() async {
     final text = _inputCtrl.text.trim();
@@ -1599,11 +1625,14 @@ class _ChatConversationScreenState
                             return DateDivider(date: item.date!);
                           }
                           final msg = item.message!;
+                          final replyToId = msg.replyTo?['id']?.toString() ?? msg.replyToId;
                           return MessageBubble(
                             key: ValueKey(msg.id),
                             message: msg,
                             isMyMessage: msg.senderId == uid,
                             currentUserId: uid,
+                            otherUserName: partnerName.toString(),
+                            isHighlighted: _highlightedMessageId == msg.id,
                             onLongPress: () =>
                                 _onMessageLongPress(msg),
                             onReplySwipe: (m) {
@@ -1616,6 +1645,9 @@ class _ChatConversationScreenState
                                   .toggleReaction(msg.id, emoji, uid);
                             },
                             onTapImage: () {},
+                            onReplyTap: replyToId != null
+                                ? () => _scrollToMessage(replyToId)
+                                : null,
                           );
                         },
                       ),
