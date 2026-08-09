@@ -29,7 +29,7 @@ class _VoiceRecorderState extends State<VoiceRecorder>
   StreamSubscription<Amplitude>? _amplitudeSub;
 
   // 30 bars, heights in range [4, 24]
-  final List<double> _bars = List.filled(30, 4.0);
+  final List<double> _bars = List.filled(30, 4.0, growable: true);
 
   late final AnimationController _dotCtrl;
   late final Animation<double> _dotAnim;

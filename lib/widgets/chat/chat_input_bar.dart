@@ -287,23 +287,36 @@ class _ChatInputBarState extends State<ChatInputBar> {
           Container(
             padding: EdgeInsets.fromLTRB(
                 8, 8, 8, bottomPad + 8),
-            decoration: BoxDecoration(
-              color: c.background,
-              border: Border(
-                  top: BorderSide(
-                      color: c.border.withOpacity(0.3),
-                      width: 0.5)),
-            ),
-            child: Row(children: [
-              // Input pill
+            color: c.background,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+              // Input pill: [sticker | textfield | attachment]
               Expanded(
                 child: Container(
                   decoration: BoxDecoration(
                     color: c.surface,
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(28),
                   ),
-                  child: Row(children: [
-                    const SizedBox(width: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                    // Sticker / GIF picker on the left
+                    if (widget.onOpenGiphyPicker != null)
+                      GestureDetector(
+                        onTap: widget.onOpenGiphyPicker,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          child: Image.asset(
+                            'assets/icons/sticker.png',
+                            width: 22,
+                            height: 22,
+                            color: c.textSecondary,
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 12),
                     // Text field
                     Expanded(
                       child: TextField(
@@ -317,9 +330,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         keyboardType: TextInputType.multiline,
                         textInputAction: TextInputAction.newline,
                         decoration: InputDecoration(
-                          hintText: widget.isGroup
-                              ? 'Message'
-                              : 'Message',
+                          hintText: 'Message',
                           hintStyle: TextStyle(
                               color: c.textTertiary,
                               fontFamily: 'Outfit',
@@ -331,19 +342,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         ),
                       ),
                     ),
-                    // Attachment
+                    // Attachment on the right
                     IconButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                      constraints: const BoxConstraints(),
                       icon: Icon(Icons.attach_file,
                           color: c.textSecondary, size: 22),
                       onPressed: widget.onPickAndSendImage,
                     ),
-                    // GIF / sticker (shown when callback is provided)
-                    if (widget.onOpenGiphyPicker != null)
-                      IconButton(
-                        icon: Icon(Icons.gif_box_outlined,
-                            color: c.textSecondary, size: 24),
-                        onPressed: widget.onOpenGiphyPicker,
-                      ),
                   ]),
                 ),
               ),

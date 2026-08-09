@@ -1017,8 +1017,15 @@ class _GiphyBubble extends StatefulWidget {
 }
 
 class _GiphyBubbleState extends State<_GiphyBubble> {
-  bool _playing = false;
+  late bool _playing;
   Timer? _autoStopTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Stickers autoplay immediately; GIFs start paused
+    _playing = widget.message.messageType == 'giphy_sticker';
+  }
 
   @override
   void dispose() {
@@ -1027,14 +1034,14 @@ class _GiphyBubbleState extends State<_GiphyBubble> {
   }
 
   void _toggle() {
+    final isSticker = widget.message.messageType == 'giphy_sticker';
     if (_playing) {
       _autoStopTimer?.cancel();
       setState(() => _playing = false);
     } else {
       setState(() => _playing = true);
-      final isSticker = widget.message.messageType == 'giphy_sticker';
       if (!isSticker) {
-        // Auto-stop after ~9 seconds (approx 3 loops)
+        // Auto-stop GIF after ~9 seconds (approx 3 loops)
         _autoStopTimer = Timer(const Duration(seconds: 9), () {
           if (mounted) setState(() => _playing = false);
         });
@@ -1084,7 +1091,7 @@ class _GiphyBubbleState extends State<_GiphyBubble> {
               fit: BoxFit.cover,
               fadeInDuration: Duration.zero,
             ),
-            if (!_playing)
+            if (!_playing && !isSticker)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
