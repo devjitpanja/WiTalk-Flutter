@@ -199,7 +199,7 @@ class _BubbleContent extends StatelessWidget {
   });
 
   Color get _bubbleColor => isMyMessage
-      ? c.primary
+      ? const Color(0xFF5160FF)
       : c.surface;
 
   Color get _textColor =>
@@ -960,7 +960,7 @@ class _VoiceBubble extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 180, maxWidth: 280),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isMyMessage ? c.primary : c.surface,
+        color: isMyMessage ? const Color(0xFF5160FF) : c.surface,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(18),
           topRight: const Radius.circular(18),
@@ -1008,7 +1008,7 @@ class _PollBubble extends StatelessWidget {
       return _TextBubble(
         message: message,
         isMyMessage: isMyMessage,
-        bubbleColor: isMyMessage ? c.primary : c.surface,
+        bubbleColor: isMyMessage ? const Color(0xFF5160FF) : c.surface,
         textColor: isMyMessage ? Colors.white : c.text,
         c: c,
       );
@@ -1016,7 +1016,7 @@ class _PollBubble extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(maxWidth: 300),
       decoration: BoxDecoration(
-        color: isMyMessage ? c.primary : c.surface,
+        color: isMyMessage ? const Color(0xFF5160FF) : c.surface,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(18),
           topRight: const Radius.circular(18),
@@ -1448,7 +1448,7 @@ class _SharedPostBubble extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(maxWidth: 280),
         decoration: BoxDecoration(
-          color: isMyMessage ? c.primary : c.surface,
+          color: isMyMessage ? const Color(0xFF5160FF) : c.surface,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(18),
             topRight: const Radius.circular(18),
@@ -1595,7 +1595,7 @@ class _SharedTopicBubble extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(maxWidth: 280),
       decoration: BoxDecoration(
-        color: isMyMessage ? c.primary : c.surface,
+        color: isMyMessage ? const Color(0xFF5160FF) : c.surface,
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(18),
           topRight: const Radius.circular(18),

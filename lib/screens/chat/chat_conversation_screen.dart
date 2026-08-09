@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:giphy_get/giphy_get.dart';
+import '../../config/app_config.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
@@ -874,6 +876,51 @@ class _ChatConversationScreenState
         ),
       ),
     );
+  }
+
+  Future<void> _openGiphyPicker() async {
+    final uid = _currentUserId;
+    final convId = _activeChatId;
+    final partner = _chatPartner ?? widget.otherUser;
+    if (uid == null || convId == null || partner == null) return;
+
+    final gif = await GiphyGet.getGif(
+      context: context,
+      apiKey: AppConfig.giphyApiKey,
+      queryText: '',
+      showGIFs: true,
+      showStickers: true,
+      showEmojis: false,
+      tabColor: Theme.of(context).colorScheme.primary,
+    );
+
+    if (gif == null || !mounted) return;
+
+    final gifUrl = gif.images?.original?.url ?? gif.images?.fixedWidth.url;
+    if (gifUrl == null) return;
+
+    final isSticker = gif.isSticker == 1;
+    final messageType = isSticker ? 'giphy_sticker' : 'giphy_gif';
+    final w = gif.images?.original?.width;
+    final h = gif.images?.original?.height;
+    final mediaData = {
+      'gif_id': gif.id,
+      'width': w != null ? int.tryParse(w) : null,
+      'height': h != null ? int.tryParse(h) : null,
+      'aspectRatio': (w != null && h != null)
+          ? (int.tryParse(w) ?? 1) / (int.tryParse(h) ?? 1)
+          : 1.0,
+    };
+
+    await ref.read(chatProvider.notifier).sendMessage(
+          conversationId: convId,
+          receiverId: partner['id'].toString(),
+          content: '',
+          messageType: messageType,
+          mediaUrl: gifUrl,
+          mediaData: mediaData,
+        );
+    _scrollToBottom();
   }
 
   void _scrollToMessage(String messageId) {
@@ -1745,6 +1792,7 @@ class _ChatConversationScreenState
             onAcceptRequest: _acceptRequest,
             onDeleteRequest: _deleteRequest,
             onBlockUnblock: _toggleBlock,
+            onOpenGiphyPicker: _openGiphyPicker,
           ),
       ]),
       ),

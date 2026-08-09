@@ -285,8 +285,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           // Input row — hidden when outgoing request limit reached (mirrors RN)
           if (!(widget.isOutgoingRequest && widget.sentMessageCount >= 2))
           Container(
-            padding: EdgeInsets.fromLTRB(
-                8, 8, 8, bottomPad + 8),
+            padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPad + 8),
             color: c.background,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -294,29 +293,33 @@ class _ChatInputBarState extends State<ChatInputBar> {
               // Input pill: [sticker | textfield | attachment]
               Expanded(
                 child: Container(
+                  constraints: const BoxConstraints(minHeight: 48),
                   decoration: BoxDecoration(
-                    color: c.surface,
-                    borderRadius: BorderRadius.circular(28),
+                    color: c.cardBackground,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: c.border, width: 1),
                   ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                     // Sticker / GIF picker on the left
-                    if (widget.onOpenGiphyPicker != null)
-                      GestureDetector(
-                        onTap: widget.onOpenGiphyPicker,
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                          child: Image.asset(
-                            'assets/icons/sticker.png',
-                            width: 22,
-                            height: 22,
+                    GestureDetector(
+                      onTap: widget.onOpenGiphyPicker,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        child: Image.asset(
+                          'assets/icons/sticker.png',
+                          width: 22,
+                          height: 22,
+                          color: c.textSecondary,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.emoji_emotions_outlined,
+                            size: 22,
                             color: c.textSecondary,
                           ),
                         ),
-                      )
-                    else
-                      const SizedBox(width: 12),
+                      ),
+                    ),
                     // Text field
                     Expanded(
                       child: TextField(
@@ -343,17 +346,18 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       ),
                     ),
                     // Attachment on the right
-                    IconButton(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-                      constraints: const BoxConstraints(),
-                      icon: Icon(Icons.attach_file,
-                          color: c.textSecondary, size: 22),
-                      onPressed: widget.onPickAndSendImage,
+                    GestureDetector(
+                      onTap: widget.onPickAndSendImage,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        child: Icon(Icons.attach_file,
+                            color: c.textSecondary, size: 22),
+                      ),
                     ),
                   ]),
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               // Send / Mic button
               GestureDetector(
                 onTap: _text.trim().isNotEmpty
@@ -362,10 +366,10 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         ? () { _clearEditing(); }
                         : widget.onStartVoiceRecording),
                 child: Container(
-                  width: 44,
-                  height: 44,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                    color: c.primary,
+                    color: c.text,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -374,7 +378,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         : (_editingMessage != null
                             ? Icons.close
                             : Icons.mic),
-                    color: Colors.white,
+                    color: c.background,
                     size: 22,
                   ),
                 ),
