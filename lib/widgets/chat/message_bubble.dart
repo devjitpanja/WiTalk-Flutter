@@ -1112,38 +1112,88 @@ class _GiphyBubbleState extends State<_GiphyBubble> {
     final animatedUrl = widget.message.mediaUrl ?? '';
     final staticUrl = _staticUrl(animatedUrl);
 
-    return GestureDetector(
-      onTap: _toggle,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(7),
-        child: Stack(
-          alignment: Alignment.center,
+    final timeStatus = _TimeStatus(
+      message: widget.message,
+      isMyMessage: widget.isMyMessage,
+      c: widget.c,
+    );
+
+    if (isSticker) {
+      return GestureDetector(
+        onTap: _toggle,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
           children: [
             CachedNetworkImage(
               imageUrl: _playing ? animatedUrl : staticUrl,
               width: w,
               height: h,
-              fit: BoxFit.cover,
+              fit: BoxFit.contain,
               fadeInDuration: Duration.zero,
             ),
-            if (!_playing && !isSticker)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.black54,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Text(
-                  'GIF',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontFamily: 'Outfit',
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
+            const SizedBox(height: 2),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: timeStatus,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _toggle,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(7),
+        child: SizedBox(
+          width: w,
+          height: h,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CachedNetworkImage(
+                imageUrl: _playing ? animatedUrl : staticUrl,
+                width: w,
+                height: h,
+                fit: BoxFit.cover,
+                fadeInDuration: Duration.zero,
+              ),
+              if (!_playing)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Text(
+                    'GIF',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
+              Positioned(
+                bottom: 6,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: timeStatus,
+                ),
               ),
-          ],
+            ],
+          ),
         ),
       ),
     );
