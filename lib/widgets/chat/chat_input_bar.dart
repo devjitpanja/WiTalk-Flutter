@@ -286,7 +286,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           if (!(widget.isOutgoingRequest && widget.sentMessageCount >= 2))
           Container(
             padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPad + 8),
-            color: c.background,
+            color: Colors.white,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
@@ -339,6 +339,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                               fontFamily: 'Outfit',
                               fontSize: 15),
                           border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(
                               vertical: 10),
