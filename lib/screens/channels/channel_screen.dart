@@ -1245,14 +1245,16 @@ class _ChannelScreenState extends State<ChannelScreen> {
             onAction: _isAdmin ? () {} : null))
         else
           Expanded(child: Stack(children: [
-            // Wallpaper
-            Positioned.fill(child: Image.asset(
-              dark ? 'assets/images/chatbg.jpeg' : 'assets/images/LightchatBg.jpeg',
-              fit: BoxFit.cover,
-              color: dark ? Colors.black.withValues(alpha: 0.85) : null,
-              colorBlendMode: dark ? BlendMode.darken : null,
-              errorBuilder: (_, __, ___) => Container(color: c.background),
-            )),
+            Positioned.fill(
+              child: Opacity(
+                opacity: dark ? 0.15 : 1.0,
+                child: Image.asset(
+                  dark ? 'assets/images/chatbg.jpeg' : 'assets/images/LightchatBg.jpeg',
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(color: c.background),
+                ),
+              ),
+            ),
             Column(children: [
               if (_pins.isNotEmpty && !_pinDismissed)
                 _PinnedBanner(
