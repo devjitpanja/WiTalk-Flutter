@@ -89,6 +89,9 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
+      // Clear all tray notifications + stored message history when app comes to foreground.
+      // Mirrors RN: AppState 'active' → FCMService.clearAllNotifications() + clearNotificationHistory()
+      notificationService.clearAllNotifications();
       // Reset so security profile is sent again on this foreground
       _securityProfileSentThisSession = false;
       _runSecurityChecks(reason: 'foreground');

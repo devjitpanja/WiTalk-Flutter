@@ -56,13 +56,13 @@ class MainActivity : FlutterActivity() {
             DeviceIdentifiersPlugin.CHANNEL
         ).setMethodCallHandler(DeviceIdentifiersPlugin(applicationContext))
 
-        // FCM preferences bridge — lets Dart write user_id and api_base_url
-        // into FCMPreferences so the Kotlin inline-reply receiver can read them
-        // without the Flutter engine being active.
+        // FCM preferences bridge — lets Dart write user_id/api_base_url and
+        // clear notifications from the tray when the app comes to foreground.
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             "com.witalk/fcm_prefs"
         ).setMethodCallHandler { call, result ->
+            val nm = applicationContext.getSystemService(android.app.NotificationManager::class.java)
             when (call.method) {
                 "saveUserId" -> {
                     val userId = call.argument<String>("userId") ?: ""
@@ -74,6 +74,35 @@ class MainActivity : FlutterActivity() {
                     val url = call.argument<String>("url") ?: ""
                     applicationContext.getSharedPreferences(WiTalkFCMService.FCM_PREFS, MODE_PRIVATE)
                         .edit().putString("api_base_url", url).apply()
+                    result.success(null)
+                }
+                // Called when app comes to foreground — clears tray + message history
+                "clearAllNotifications" -> {
+                    nm.cancelAll()
+                    WiTalkFCMService.clearAllConversationMessages(applicationContext)
+                    result.success(null)
+                }
+                // Called when a specific chat/group is opened
+                "clearChatNotifications" -> {
+                    val conversationId = call.argument<String>("conversationId") ?: ""
+                    if (conversationId.isNotEmpty()) {
+                        val prefs = applicationContext.getSharedPreferences("NotificationPreferences", MODE_PRIVATE)
+                        val root = try { org.json.JSONObject(prefs.getString("conversation_messages", "{}") ?: "{}") } catch (_: Exception) { org.json.JSONObject() }
+                        root.remove(conversationId)
+                        prefs.edit().putString("conversation_messages", root.toString()).apply()
+                        nm.cancel(conversationId.hashCode())
+                    }
+                    result.success(null)
+                }
+                "clearGroupNotifications" -> {
+                    val groupId = call.argument<String>("groupId") ?: ""
+                    if (groupId.isNotEmpty()) {
+                        val prefs = applicationContext.getSharedPreferences("NotificationPreferences", MODE_PRIVATE)
+                        val root = try { org.json.JSONObject(prefs.getString("group_messages", "{}") ?: "{}") } catch (_: Exception) { org.json.JSONObject() }
+                        root.remove(groupId)
+                        prefs.edit().putString("group_messages", root.toString()).apply()
+                        nm.cancel(groupId.hashCode())
+                    }
                     result.success(null)
                 }
                 else -> result.notImplemented()
