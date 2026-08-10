@@ -27,11 +27,6 @@ class ScreenshotPreventPlugin(private val activity: Activity) :
         const val EVENT_CHANNEL  = "com.witalk/screenshot_prevent_events"
     }
 
-    init {
-        // Secure by default
-        applySecureFlag(true)
-    }
-
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "setSecure" -> {
