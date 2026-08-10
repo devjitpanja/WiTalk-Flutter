@@ -275,7 +275,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
       child: SingleChildScrollView(
         padding: EdgeInsets.only(
           left: 20, right: 20, top: 8,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 28,
+          bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 28,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,

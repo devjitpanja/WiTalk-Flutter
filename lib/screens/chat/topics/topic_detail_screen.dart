@@ -616,7 +616,7 @@ class _TopicDetailScreenState extends ConsumerState<TopicDetailScreen> {
     final isClosed = _topic?['status'] == 'closed';
     return Container(
       padding: EdgeInsets.fromLTRB(
-          12, 8, 12, 8 + MediaQuery.of(context).viewInsets.bottom),
+          12, 8, 12, 8 + MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom),
       decoration: BoxDecoration(
         color: c.surface,
         border: Border(top: BorderSide(color: c.border, width: 0.5)),

@@ -1478,7 +1478,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
           left: 20,
           right: 20,
           top: 8,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 28,
+          bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 28,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1741,7 +1741,7 @@ class _FilterSheetState extends State<_FilterSheet> {
         left: 16,
         right: 16,
         top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 30,
+        bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 30,
       ),
       child: Column(
           mainAxisSize: MainAxisSize.min,

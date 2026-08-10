@@ -150,13 +150,14 @@ class _CreateTopicSheetState extends ConsumerState<CreateTopicSheet> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final navBarHeight = MediaQuery.of(context).padding.bottom;
 
     return Container(
       decoration: BoxDecoration(
         color: c.bottomSheetBg,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
       ),
-      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + bottomInset),
+      padding: EdgeInsets.fromLTRB(20, 0, 20, 20 + bottomInset + navBarHeight),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

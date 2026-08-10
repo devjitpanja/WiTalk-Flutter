@@ -3192,7 +3192,7 @@ class _GroupInviteSheetState extends State<_GroupInviteSheet> {
       ),
       padding: EdgeInsets.only(
         left: 20, right: 20, top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 40,
+        bottom: MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 40,
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
