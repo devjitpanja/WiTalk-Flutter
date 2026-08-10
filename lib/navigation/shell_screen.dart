@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -102,7 +100,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
     }
 
     return Scaffold(
-      extendBody: true,
       body: Stack(
         children: [
           widget.child,
@@ -110,65 +107,61 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
           const GlobalUploadProgressOverlay(),
         ],
       ),
-      bottomNavigationBar: ClipRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-          child: Container(
-            decoration: BoxDecoration(
-              color: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.75),
-              border: Border(
-                top: BorderSide(
-                  color: isDark
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : Colors.black.withValues(alpha: 0.10),
-                  width: 0.5,
-                ),
-              ),
-            ),
-            child: BottomNavigationBar(
-              currentIndex: currentIndex,
-              onTap: (i) => _onTap(context, i),
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: Colors.transparent,
-              selectedItemColor: navTheme.selectedItemColor,
-              unselectedItemColor: navTheme.unselectedItemColor,
-              selectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
-              unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
-              elevation: 0,
-              items: [
-                // ── Home ──────────────────────────────────────────────────────
-                const BottomNavigationBarItem(
-                  icon: Icon(_kIconHomeBold, size: 26),
-                  activeIcon: Icon(_kIconHomeFill, size: 26),
-                  label: 'Home',
-                ),
-                // ── Explore (red dot when online nearby users) ────────────────
-                BottomNavigationBarItem(
-                  icon: _buildExploreIcon(focused: false, hasOnlineNearby: hasOnlineNearby),
-                  activeIcon: _buildExploreIcon(focused: true, hasOnlineNearby: hasOnlineNearby),
-                  label: 'Explore',
-                ),
-                // ── Adda (blinking dot when live rooms exist) ─────────────────
-                BottomNavigationBarItem(
-                  icon: _buildAddaIcon(focused: false, hasActiveRooms: hasActiveRooms, shouldBlink: shouldBlinkAdda),
-                  activeIcon: _buildAddaIcon(focused: true, hasActiveRooms: hasActiveRooms, shouldBlink: false),
-                  label: 'Adda',
-                ),
-                // ── Chat (unread count badge) ──────────────────────────────────
-                BottomNavigationBarItem(
-                  icon: _buildChatIcon(focused: false, unreadCount: unreadCount),
-                  activeIcon: _buildChatIcon(focused: true, unreadCount: unreadCount),
-                  label: 'Chat',
-                ),
-                // ── Menu (red dot when unclaimed missions) ─────────────────────
-                BottomNavigationBarItem(
-                  icon: _buildMenuIcon(focused: false, hasUnclaimedMissions: hasUnclaimedMissions),
-                  activeIcon: _buildMenuIcon(focused: true, hasUnclaimedMissions: hasUnclaimedMissions),
-                  label: 'Menu',
-                ),
-              ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          color: navTheme.backgroundColor,
+          border: Border(
+            top: BorderSide(
+              color: isDark
+                  ? Colors.white.withValues(alpha: 0.08)
+                  : Colors.black.withValues(alpha: 0.08),
+              width: 0.5,
             ),
           ),
+        ),
+        child: Theme(
+          data: Theme.of(context).copyWith(
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+          ),
+          child: BottomNavigationBar(
+          currentIndex: currentIndex,
+          onTap: (i) => _onTap(context, i),
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.transparent,
+          selectedItemColor: navTheme.selectedItemColor,
+          unselectedItemColor: navTheme.unselectedItemColor,
+          selectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
+          unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
+          elevation: 0,
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(_kIconHomeBold, size: 26),
+              activeIcon: Icon(_kIconHomeFill, size: 26),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: _buildExploreIcon(focused: false, hasOnlineNearby: hasOnlineNearby),
+              activeIcon: _buildExploreIcon(focused: true, hasOnlineNearby: hasOnlineNearby),
+              label: 'Explore',
+            ),
+            BottomNavigationBarItem(
+              icon: _buildAddaIcon(focused: false, hasActiveRooms: hasActiveRooms, shouldBlink: shouldBlinkAdda),
+              activeIcon: _buildAddaIcon(focused: true, hasActiveRooms: hasActiveRooms, shouldBlink: false),
+              label: 'Adda',
+            ),
+            BottomNavigationBarItem(
+              icon: _buildChatIcon(focused: false, unreadCount: unreadCount),
+              activeIcon: _buildChatIcon(focused: true, unreadCount: unreadCount),
+              label: 'Chat',
+            ),
+            BottomNavigationBarItem(
+              icon: _buildMenuIcon(focused: false, hasUnclaimedMissions: hasUnclaimedMissions),
+              activeIcon: _buildMenuIcon(focused: true, hasUnclaimedMissions: hasUnclaimedMissions),
+              label: 'Menu',
+            ),
+          ],
+        ),
         ),
       ),
     );
