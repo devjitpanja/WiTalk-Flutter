@@ -1691,7 +1691,26 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _ChatAvatar(name: sender, picUrl: senderPic),
+            GestureDetector(
+              onTap: () {
+                final senderUid = (msg['senderUid'] ?? msg['sender_uid'] ?? '')
+                    .toString();
+                if (senderUid.isEmpty || senderUid == 'system') return;
+                _showParticipantSheet({
+                  'uid': senderUid,
+                  'name': sender,
+                  'profile_pic': senderPic,
+                  'avatar': senderPic,
+                  'isHost': msg['isHost'] == true,
+                  'isAdmin': msg['isAdmin'] == true,
+                  'isMuted': false,
+                  'isEmpty': false,
+                  'isVerified': msg['isVerified'] == true,
+                  'verificationBadge': msg['verificationBadge'],
+                });
+              },
+              child: _ChatAvatar(name: sender, picUrl: senderPic),
+            ),
             const SizedBox(width: 8),
             Expanded(
               child: Column(
