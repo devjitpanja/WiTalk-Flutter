@@ -76,6 +76,8 @@
 	<array>
 		<string>audio</string>
 		<string>voip</string>
+		<string>fetch</string>
+		<string>remote-notification</string>
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>WiTalk needs access to your photo library to select media for posts.</string>

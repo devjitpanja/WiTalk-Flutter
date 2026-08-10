@@ -62,6 +62,8 @@ dependencies {
     // Kotlin coroutines + Play Tasks interop
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3")
+    // Firebase Cloud Messaging — needed by WiTalkFCMService.kt
+    implementation("com.google.firebase:firebase-messaging-ktx:24.1.1")
 }
 
 flutter {

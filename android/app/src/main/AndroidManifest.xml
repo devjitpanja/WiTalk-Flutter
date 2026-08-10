@@ -75,6 +75,24 @@
                 <data android:scheme="https" android:host="www.witalk.in"/>
             </intent-filter>
         </activity>
+        <!-- FCM messaging service — handles all push notifications -->
+        <service
+            android:name=".WiTalkFCMService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+
+        <!-- Handles inline reply actions from notifications -->
+        <receiver
+            android:name=".WiTalkNotificationReplyReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.witalk.ACTION_REPLY"/>
+            </intent-filter>
+        </receiver>
+
         <!-- Audio room foreground service (WhatsApp-style persistent notification) -->
         <service
             android:name=".AudioRoomForegroundService"

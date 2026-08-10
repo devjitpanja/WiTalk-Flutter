@@ -40,7 +40,7 @@ void main() async {
   // Start offline network monitor (connectivity_plus listener)
   initNetworkMonitor();
 
-  // Push notifications (OneSignal)
+  // Push notifications (FCM — WiTalkFCMService.kt handles background/terminated display)
   await notificationService.initialize();
 
   // Load persisted video mute preference
@@ -166,7 +166,7 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
     // app_links — listens for witalk:// and https://witalk.in/* (cold + warm)
     deepLinkService.init(getContext: () => _getRootContext()!);
 
-    // Notification tap handler — routes all OneSignal notification taps
+    // Notification tap handler — routes FCM notification taps to correct screen
     notificationService.setNavigationHandler((data) {
       final ctx = _getRootContext();
       if (ctx == null) return;

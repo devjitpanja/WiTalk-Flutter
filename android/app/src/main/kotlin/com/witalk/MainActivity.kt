@@ -55,5 +55,29 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             DeviceIdentifiersPlugin.CHANNEL
         ).setMethodCallHandler(DeviceIdentifiersPlugin(applicationContext))
+
+        // FCM preferences bridge — lets Dart write user_id and api_base_url
+        // into FCMPreferences so the Kotlin inline-reply receiver can read them
+        // without the Flutter engine being active.
+        MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            "com.witalk/fcm_prefs"
+        ).setMethodCallHandler { call, result ->
+            when (call.method) {
+                "saveUserId" -> {
+                    val userId = call.argument<String>("userId") ?: ""
+                    applicationContext.getSharedPreferences(WiTalkFCMService.FCM_PREFS, MODE_PRIVATE)
+                        .edit().putString(WiTalkFCMService.KEY_USER_ID, userId).apply()
+                    result.success(null)
+                }
+                "saveApiBaseUrl" -> {
+                    val url = call.argument<String>("url") ?: ""
+                    applicationContext.getSharedPreferences(WiTalkFCMService.FCM_PREFS, MODE_PRIVATE)
+                        .edit().putString("api_base_url", url).apply()
+                    result.success(null)
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 }
