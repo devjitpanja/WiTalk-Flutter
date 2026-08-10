@@ -14,7 +14,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/nearby_online_provider.dart';
 import '../../services/location_service.dart';
-import '../../services/ghost_mode_service.dart';
 
 // ─── Data helpers ─────────────────────────────────────────────────────────────
 
@@ -267,60 +266,10 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
   Map<String, dynamic>? _me;
   _UserGroups? _groups;
 
-  // Ghost mode state
-  bool _ghostModeEnabled = false;
-  bool _ghostModeLoading = false;
-
   @override
   void initState() {
     super.initState();
     _loadFiltersAndFetch();
-    _loadGhostModeStatus();
-  }
-
-  Future<void> _loadGhostModeStatus() async {
-    final uid = ref.read(authProvider).uid;
-    if (uid == null) return;
-    final result = await GhostModeService.getStatus(uid);
-    if (mounted) setState(() => _ghostModeEnabled = result.enabled ?? false);
-  }
-
-  Future<void> _handleGhostModePress() async {
-    final uid = ref.read(authProvider).uid;
-    if (uid == null) return;
-    if (_ghostModeEnabled) {
-      setState(() => _ghostModeLoading = true);
-      final result = await GhostModeService.disableGhostMode(uid);
-      if (mounted) {
-        setState(() {
-          _ghostModeLoading = false;
-          if (result.success) _ghostModeEnabled = false;
-        });
-      }
-    } else {
-      _showGhostModeModal(uid);
-    }
-  }
-
-  void _showGhostModeModal(String uid) {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _GhostModeSheet(
-        onSelect: (duration) async {
-          Navigator.of(context).pop();
-          setState(() => _ghostModeLoading = true);
-          final result = await GhostModeService.enableGhostMode(uid, duration);
-          if (mounted) {
-            setState(() {
-              _ghostModeLoading = false;
-              if (result.success) _ghostModeEnabled = true;
-            });
-          }
-        },
-      ),
-    );
   }
 
   Future<void> _loadFiltersAndFetch() async {
@@ -607,40 +556,12 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
 
     final grp = _groups;
 
-    return Stack(
-      children: [
-        CustomScrollView(
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            CupertinoSliverRefreshControl(
-              onRefresh: _refresh,
-            ),
-            // Ghost mode "Not sharing location" banner
-            if (_ghostModeEnabled)
-              SliverToBoxAdapter(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF3B30).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0xFFFF3B30).withOpacity(0.3)),
-                  ),
-                  child: const Row(children: [
-                    Icon(Icons.location_off, size: 16, color: Color(0xFFFF3B30)),
-                    SizedBox(width: 6),
-                    Text(
-                      'Ghost mode active — not sharing your location',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'Outfit',
-                        color: Color(0xFFFF3B30),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ]),
-                ),
-              ),
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        CupertinoSliverRefreshControl(
+          onRefresh: _refresh,
+        ),
             if (grp == null || grp.isEmpty)
               SliverFillRemaining(
                 hasScrollBody: false,
@@ -697,174 +618,6 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
                 ]),
               ),
           ],
-        ),
-        // Ghost mode button — top right, absolute positioned
-        Positioned(
-          top: 8,
-          right: 12,
-          child: GestureDetector(
-            onTap: _ghostModeLoading ? null : _handleGhostModePress,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: _ghostModeEnabled
-                    ? const Color(0xFF5B51F4)
-                    : c.cardBackground,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: _ghostModeEnabled
-                      ? const Color(0xFF5B51F4)
-                      : c.border,
-                  width: 1.5,
-                ),
-              ),
-              child: _ghostModeLoading
-                  ? const Padding(
-                      padding: EdgeInsets.all(10),
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Icon(
-                          Icons.visibility_off_rounded,
-                          size: 20,
-                          color: _ghostModeEnabled
-                              ? Colors.white
-                              : c.textTertiary,
-                        ),
-                        if (_ghostModeEnabled)
-                          Positioned(
-                            top: 6,
-                            right: 6,
-                            child: Container(
-                              width: 10,
-                              height: 10,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF30D158),
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ─── Ghost Mode Bottom Sheet ──────────────────────────────────────────────────
-
-class _GhostModeSheet extends StatelessWidget {
-  final void Function(GhostModeDuration) onSelect;
-  const _GhostModeSheet({required this.onSelect});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Container(
-      decoration: BoxDecoration(
-        color: c.bottomSheetBg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 40),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Icon(Icons.visibility_off_rounded, size: 32, color: Color(0xFF5B51F4)),
-          const SizedBox(height: 12),
-          Text('Enable Ghost Mode', style: TextStyle(
-            color: c.text, fontSize: 20, fontWeight: FontWeight.w700, fontFamily: 'Outfit',
-          )),
-          const SizedBox(height: 6),
-          Text(
-            'Hide yourself from the nearby map for a set duration.',
-            style: TextStyle(color: c.textTertiary, fontSize: 14, fontFamily: 'Outfit', height: 1.5),
-          ),
-          const SizedBox(height: 20),
-          _DurationTile(
-            label: '3 Hours',
-            subtitle: 'Hide for the rest of the afternoon',
-            icon: Icons.hourglass_top_rounded,
-            onTap: () => onSelect(GhostModeDuration.threeHours),
-          ),
-          _DurationTile(
-            label: '24 Hours',
-            subtitle: 'Take a full day off the map',
-            icon: Icons.today_rounded,
-            onTap: () => onSelect(GhostModeDuration.twentyFourHours),
-          ),
-          _DurationTile(
-            label: 'Indefinite',
-            subtitle: 'Stay hidden until you turn it off',
-            icon: Icons.lock_rounded,
-            onTap: () => onSelect(GhostModeDuration.indefinite),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DurationTile extends StatelessWidget {
-  final String label;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _DurationTile({
-    required this.label,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: c.cardBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: c.border),
-        ),
-        child: Row(children: [
-          Icon(icon, size: 22, color: const Color(0xFF5B51F4)),
-          const SizedBox(width: 14),
-          Expanded(child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label, style: TextStyle(
-                color: c.text, fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15,
-              )),
-              Text(subtitle, style: TextStyle(
-                color: c.textTertiary, fontFamily: 'Outfit', fontSize: 12,
-              )),
-            ],
-          )),
-          Icon(Icons.chevron_right, size: 20, color: c.textTertiary),
-        ]),
-      ),
     );
   }
 }

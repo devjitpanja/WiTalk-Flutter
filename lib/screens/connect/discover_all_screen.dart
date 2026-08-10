@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
-import '../../theme/app_colors.dart';
+import '../../theme/theme_colors.dart';
 import 'nearby_people_screen.dart';
 
 const _kPageSize = 20;
@@ -37,10 +37,11 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
   }
 
   void _showPreview(BuildContext context, Map<String, dynamic> user) {
+    final c = context.colors;
     showModalBottomSheet(
       useRootNavigator: true,
       context: context,
-      backgroundColor: AppColors.bottomSheetBg,
+      backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       isScrollControlled: true,
@@ -57,12 +58,13 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final screenW = MediaQuery.of(context).size.width;
     final cardW = (screenW - _kHPad * 2 - _kCardGap) / 2;
     final visible = _visible;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: c.background,
       body: SafeArea(
         child: Column(
           children: [
@@ -76,35 +78,35 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
                     width: 36,
                     height: 36,
                     decoration: BoxDecoration(
-                      color: AppColors.surface,
+                      color: c.surface,
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: const Icon(Icons.arrow_back, size: 22, color: AppColors.text),
+                    child: Icon(Icons.arrow_back, size: 22, color: c.text),
                   ),
                 ),
                 const SizedBox(width: 10),
                 const Icon(Icons.explore, size: 18, color: Color(0xFF9B59B6)),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text('Discover',
                       style: TextStyle(
                           fontSize: 18,
                           fontFamily: 'Outfit',
                           fontWeight: FontWeight.w700,
-                          color: AppColors.text)),
+                          color: c.text)),
                 ),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
-                    color: AppColors.surface,
+                    color: c.surface,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text('${widget.users.length}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontSize: 13,
                           fontFamily: 'Outfit',
                           fontWeight: FontWeight.w600,
-                          color: AppColors.textTertiary)),
+                          color: c.textTertiary)),
                 ),
               ]),
             ),
@@ -112,17 +114,17 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
             // ── Grid ────────────────────────────────────────────────────
             Expanded(
               child: widget.users.isEmpty
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.person_search, size: 56, color: AppColors.textTertiary),
-                          SizedBox(height: 12),
+                          Icon(Icons.person_search, size: 56, color: c.textTertiary),
+                          const SizedBox(height: 12),
                           Text('No profiles to discover',
                               style: TextStyle(
                                   fontSize: 16,
                                   fontFamily: 'Outfit',
-                                  color: AppColors.textTertiary)),
+                                  color: c.textTertiary)),
                         ],
                       ),
                     )
@@ -138,7 +140,6 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
                         padding: const EdgeInsets.fromLTRB(_kHPad, 0, _kHPad, 30),
                         itemCount: (visible.length / 2).ceil() + 1,
                         itemBuilder: (context, rowIdx) {
-                          // Last item = footer
                           final totalRows = (visible.length / 2).ceil();
                           if (rowIdx == totalRows) {
                             return _footer(context);
@@ -187,10 +188,11 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
   }
 
   Widget _footer(BuildContext context) {
+    final c = context.colors;
     if (_loadingMore) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 20),
-        child: Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2)),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2)),
       );
     }
     if (!_hasMore) return const SizedBox(height: 8);
@@ -200,11 +202,11 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
         margin: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.primary.withValues(alpha: 0.08),
+          color: c.primary.withValues(alpha: 0.08),
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.primary, width: 1.5),
+          border: Border.all(color: c.primary, width: 1.5),
         ),
-        child: const Row(
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text('Load More',
@@ -212,9 +214,9 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
                     fontSize: 14,
                     fontFamily: 'Outfit',
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primary)),
-            SizedBox(width: 4),
-            Icon(Icons.expand_more, size: 18, color: AppColors.primary),
+                    color: c.primary)),
+            const SizedBox(width: 4),
+            Icon(Icons.expand_more, size: 18, color: c.primary),
           ],
         ),
       ),
@@ -222,7 +224,7 @@ class _DiscoverAllScreenState extends State<DiscoverAllScreen> {
   }
 }
 
-// ── Profile preview (reused from nearby — identical to the sheet there) ───────
+// ── Profile preview ───────────────────────────────────────────────────────────
 
 class _ProfilePreviewSheet extends StatelessWidget {
   final Map<String, dynamic> user;
@@ -237,9 +239,8 @@ class _ProfilePreviewSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Delegate to the shared helper already in nearby_people_screen.dart
-    // by pushing the profile route directly on button press.
-    // We rebuild the sheet inline to keep this file self-contained.
+    final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     final name = (user['name'] ?? user['username'] ?? 'Unknown') as String;
     final pic = user['profile_pic'] as String?;
     final bio = user['bio'] as String?;
@@ -259,7 +260,9 @@ class _ProfilePreviewSheet extends StatelessWidget {
         : <String>{};
     final isMale = gender == 'male';
     final genderColor = isMale ? const Color(0xFF3591F9) : const Color(0xFFE313AB);
-    final genderBg = isMale ? const Color(0xFF023781) : const Color(0xFF590244);
+    final genderBg = isMale
+        ? (isDark ? const Color(0xFF023781) : const Color(0xFFD6EBFF))
+        : (isDark ? const Color(0xFF590244) : const Color(0xFFFFE5F7));
     final locationParts = [
       if (dist.isNotEmpty) dist,
       if (city != null && city.isNotEmpty) city,
@@ -283,7 +286,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 width: 40, height: 4,
                 margin: const EdgeInsets.only(bottom: 20),
                 decoration: BoxDecoration(
-                  color: AppColors.border,
+                  color: c.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -294,11 +297,11 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 Stack(children: [
                   CircleAvatar(
                     radius: 46,
-                    backgroundColor: AppColors.border,
+                    backgroundColor: c.border,
                     backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
                     child: pic == null
                         ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: const TextStyle(fontSize: 28, color: AppColors.text,
+                            style: TextStyle(fontSize: 28, color: c.text,
                                 fontFamily: 'Outfit', fontWeight: FontWeight.w600))
                         : null,
                   ),
@@ -307,7 +310,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                         child: Container(width: 14, height: 14,
                             decoration: BoxDecoration(color: const Color(0xFF22C55E),
                                 shape: BoxShape.circle,
-                                border: Border.all(color: AppColors.bottomSheetBg, width: 2)))),
+                                border: Border.all(color: c.bottomSheetBg, width: 2)))),
                 ]),
                 const SizedBox(width: 16),
                 Expanded(
@@ -316,8 +319,8 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     Row(children: [
                       Flexible(
                         child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 20, fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w700, color: AppColors.text)),
+                            style: TextStyle(fontSize: 20, fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w700, color: c.text)),
                       ),
                       if (age != null && gender != null && (gender == 'male' || gender == 'female')) ...[
                         const SizedBox(width: 6),
@@ -335,14 +338,14 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     if (bio != null && bio.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(bio, maxLines: 3, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 13, fontFamily: 'Outfit',
-                              color: AppColors.textTertiary, height: 1.4)),
+                          style: TextStyle(fontSize: 13, fontFamily: 'Outfit',
+                              color: c.textTertiary, height: 1.4)),
                     ],
                     if (locationParts.isNotEmpty) ...[
                       const SizedBox(height: 6),
                       Text(locationParts.join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, fontFamily: 'Outfit',
-                              color: AppColors.textTertiary)),
+                          style: TextStyle(fontSize: 12, fontFamily: 'Outfit',
+                              color: c.textTertiary)),
                     ],
                   ]),
                 ),
@@ -350,8 +353,8 @@ class _ProfilePreviewSheet extends StatelessWidget {
             ),
             if (purpose.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text('Purpose', style: TextStyle(fontSize: 15, fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600, color: AppColors.text)),
+              Text('Purpose', style: TextStyle(fontSize: 15, fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600, color: c.text)),
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 8,
                   children: purpose.map((p) {
@@ -359,18 +362,18 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isMatch ? AppColors.primary.withValues(alpha: 0.12) : AppColors.surface,
+                        color: isMatch ? c.primary.withValues(alpha: 0.12) : c.surface,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: isMatch ? AppColors.primary : AppColors.border, width: 1.5),
+                        border: Border.all(color: isMatch ? c.primary : c.border, width: 1.5),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         if (isMatch) ...[
-                          const Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                          Icon(Icons.favorite, size: 12, color: c.primary),
                           const SizedBox(width: 4),
                         ],
                         Text(p, style: TextStyle(fontSize: 13, fontFamily: 'Outfit',
                             fontWeight: FontWeight.w500,
-                            color: isMatch ? AppColors.primary : AppColors.textTertiary)),
+                            color: isMatch ? c.primary : c.textTertiary)),
                       ]),
                     );
                   }).toList()),
@@ -378,14 +381,14 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${purpose.where((p) => myPurpose.contains(p.toLowerCase())).length} matching purpose',
-                  style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.primary),
+                  style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.primary),
                 ),
               ],
             ],
             if (interests.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text('Interests', style: TextStyle(fontSize: 15, fontFamily: 'Outfit',
-                  fontWeight: FontWeight.w600, color: AppColors.text)),
+              Text('Interests', style: TextStyle(fontSize: 15, fontFamily: 'Outfit',
+                  fontWeight: FontWeight.w600, color: c.text)),
               const SizedBox(height: 10),
               Wrap(spacing: 8, runSpacing: 8,
                   children: interests.map((tag) {
@@ -393,18 +396,18 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     return Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       decoration: BoxDecoration(
-                        color: isMatch ? AppColors.primary.withValues(alpha: 0.12) : AppColors.surface,
+                        color: isMatch ? c.primary.withValues(alpha: 0.12) : c.surface,
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: isMatch ? AppColors.primary : AppColors.border, width: 1.5),
+                        border: Border.all(color: isMatch ? c.primary : c.border, width: 1.5),
                       ),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
                         if (isMatch) ...[
-                          const Icon(Icons.favorite, size: 12, color: AppColors.primary),
+                          Icon(Icons.favorite, size: 12, color: c.primary),
                           const SizedBox(width: 4),
                         ],
                         Text(tag, style: TextStyle(fontSize: 13, fontFamily: 'Outfit',
                             fontWeight: FontWeight.w500,
-                            color: isMatch ? AppColors.primary : AppColors.textTertiary)),
+                            color: isMatch ? c.primary : c.textTertiary)),
                       ]),
                     );
                   }).toList()),
@@ -412,7 +415,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   '${interests.where((t) => myInterests.contains(t.toLowerCase())).length} matching interest${interests.where((t) => myInterests.contains(t.toLowerCase())).length > 1 ? 's' : ''}',
-                  style: const TextStyle(fontSize: 12, fontFamily: 'Outfit', color: AppColors.primary),
+                  style: TextStyle(fontSize: 12, fontFamily: 'Outfit', color: c.primary),
                 ),
               ],
             ],
@@ -426,7 +429,7 @@ class _ProfilePreviewSheet extends StatelessWidget {
                     style: TextStyle(fontSize: 15, fontFamily: 'Outfit',
                         fontWeight: FontWeight.w600, color: Colors.white)),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: c.primary,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
