@@ -107,11 +107,10 @@ class ParticipantAvatar extends StatelessWidget {
               alignment: Alignment.center,
               clipBehavior: Clip.none,
               children: [
-                // ── Speaking ripple rings (always behind everything) ──────────
-                // Rendered for BOTH framed and non-framed users.
-                // For non-framed users this produces the "water-drop" concentric
-                // ring effect that matches the RN SoundWaveIndicator ripple.
-                if (isSpeaking)
+                // ── Speaking ripple rings (only when no avatar and no frame) ──
+                // Water-drop ripple shown only for initial-only avatars.
+                // Users with a real avatar get wave bars instead (below).
+                if (isSpeaking && !hasFrame)
                   _PremiumRipple(size: size, isHost: isHost),
 
                 // ── White border — always visible ────────────────────────────
@@ -169,9 +168,9 @@ class ParticipantAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // ── Wave bars for framed speaking (centered over avatar) ──────
-                // RN positions these absolutely in the center of the frame, with
-                // zIndex: 20 — rendered above the frame artwork.
+                // ── Wave bars for speaking users with avatar or frame ─────────
+                // Shown whenever the user has a real avatar image (with or without
+                // a frame). RN positions these in the center with zIndex: 20.
                 if (isSpeaking && hasFrame)
                   SoundWaveIndicator(
                     isSpeaking: true,
@@ -404,7 +403,7 @@ class _RipplePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     const waves = 3;
-    final spread = avatarRadius * 0.65;
+    final spread = avatarRadius * 0.35;
     final baseColor =
         isHost ? const Color(0xFFFFB700) : const Color(0xFFFFFFFF);
 
