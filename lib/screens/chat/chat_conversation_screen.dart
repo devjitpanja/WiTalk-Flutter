@@ -606,6 +606,15 @@ class _ChatConversationScreenState
     final chatId = _activeChatId;
     if (uid == null || chatId == null) return;
 
+    // Capture scroll baseline BEFORE showing the loading spinner so the
+    // net correction (added items - spinner added + spinner removed) is clean.
+    double pixelsBefore = 0;
+    double extentBefore = 0;
+    if (!reset && _scrollCtrl.hasClients) {
+      pixelsBefore = _scrollCtrl.position.pixels;
+      extentBefore = _scrollCtrl.position.maxScrollExtent;
+    }
+
     if (reset) {
       _offset = 0;
       _hasMore = true;
@@ -649,6 +658,15 @@ class _ChatConversationScreenState
       debugPrint('[ChatConversation] _loadMessages error: $e');
     } finally {
       if (mounted) setState(() => _loadingMore = false);
+      // After all rebuilds (messages prepended + spinner removed), correct the
+      // scroll offset so the previously-visible items stay in view (no jump).
+      if (!reset) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_scrollCtrl.hasClients) return;
+          final delta = _scrollCtrl.position.maxScrollExtent - extentBefore;
+          if (delta > 0) _scrollCtrl.jumpTo(pixelsBefore + delta);
+        });
+      }
     }
   }
 

@@ -463,7 +463,34 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // Utility
-      GoRoute(path: '/report/:type/:id', builder: (_, s) => ReportScreen(targetType: s.pathParameters['type']!, targetId: s.pathParameters['id']!)),
+      // /report/:type/:id — used by PostMenu, SearchScreen, ProfileScreen etc.
+      GoRoute(
+        path: '/report/:type/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>?;
+          return ReportScreen(
+            targetType: s.pathParameters['type']!,
+            targetId: s.pathParameters['id']!,
+            reportSource: extra?['reportSource'] as String?,
+            reportSourceId: extra?['reportSourceId']?.toString(),
+          );
+        },
+      ),
+      // /report — used by ChatScreen quick-actions which passes all data via extra
+      GoRoute(
+        path: '/report',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>? ?? {};
+          final entityType = (extra['entityType'] ?? extra['targetType'] ?? '').toString();
+          final entityId = (extra['entityId'] ?? extra['targetId'] ?? '').toString();
+          return ReportScreen(
+            targetType: entityType,
+            targetId: entityId,
+            reportSource: extra['reportSource']?.toString(),
+            reportSourceId: extra['reportSourceId']?.toString(),
+          );
+        },
+      ),
       GoRoute(path: '/write-review/:id', builder: (_, s) => WriteReviewScreen(targetId: s.pathParameters['id']!)),
     ],
   );

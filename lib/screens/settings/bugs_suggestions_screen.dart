@@ -1,11 +1,16 @@
+import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../services/upload_service.dart';
 
+// ── Theme helper ─────────────────────────────────────────────────────────────
 class _T {
   final bool dark;
   const _T(this.dark);
@@ -17,10 +22,10 @@ class _T {
   Color get textTertiary => const Color(0xFF8E8E93);
   Color get primary => dark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
   Color get inputBg => dark ? const Color(0xFF0D1017) : const Color(0xFFF2F2F7);
-  Color get cardBg => dark ? const Color(0xFF1a1f2e) : const Color(0xFFF2F2F7);
+  Color get cardBg => dark ? const Color(0xFF1A1F2E) : const Color(0xFFF2F2F7);
 }
 
-// ─── Status helpers ───────────────────────────────────────────────────────────
+// ── Status helpers ────────────────────────────────────────────────────────────
 Color _statusColor(String? s) {
   switch (s) {
     case 'pending': return const Color(0xFFFF9500);
@@ -49,6 +54,14 @@ String _statusLabel(String? s) {
   }
 }
 
+Color _priorityColor(String p) {
+  switch (p) {
+    case 'critical': return const Color(0xFFFF453A);
+    case 'high': return const Color(0xFFFF9500);
+    default: return const Color(0xFF8E8E93);
+  }
+}
+
 String _timeAgo(String? dateStr) {
   if (dateStr == null) return '';
   try {
@@ -60,17 +73,20 @@ String _timeAgo(String? dateStr) {
     if (diff.inDays < 7) return '${diff.inDays}d ago';
     if (diff.inDays < 30) return '${(diff.inDays / 7).floor()}w ago';
     return '${(diff.inDays / 30).floor()}mo ago';
-  } catch (_) { return ''; }
+  } catch (_) {
+    return '';
+  }
 }
 
-// ─── Screen ───────────────────────────────────────────────────────────────────
+// ── Screen ────────────────────────────────────────────────────────────────────
 class BugsSuggestionsScreen extends ConsumerStatefulWidget {
   const BugsSuggestionsScreen({super.key});
   @override
   ConsumerState<BugsSuggestionsScreen> createState() => _BugsSuggestionsScreenState();
 }
 
-class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> with SingleTickerProviderStateMixin {
+class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen>
+    with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
   List<Map<String, dynamic>> _suggestions = [];
   List<Map<String, dynamic>> _bugs = [];
@@ -99,7 +115,10 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
   Future<void> _fetchSuggestions() async {
     try {
-      final res = await dioClient.get('/v1/feedback/suggestions/public', queryParameters: {'sort': 'votes', 'limit': 50});
+      final res = await dioClient.get(
+        '/v1/feedback/suggestions/public',
+        queryParameters: {'sort': 'votes', 'limit': 50},
+      );
       if (mounted && res.data['success'] == true) {
         final raw = res.data['statusCode']?['suggestions'] ?? res.data['data']?['suggestions'] ?? [];
         setState(() => _suggestions = (raw as List).map((e) => Map<String, dynamic>.from(e as Map)).toList());
@@ -109,7 +128,10 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
   Future<void> _fetchBugs() async {
     try {
-      final res = await dioClient.get('/v1/feedback/bugs/public', queryParameters: {'limit': 50});
+      final res = await dioClient.get(
+        '/v1/feedback/bugs/public',
+        queryParameters: {'limit': 50},
+      );
       if (mounted && res.data['success'] == true) {
         final raw = res.data['statusCode']?['reports'] ?? res.data['data']?['reports'] ?? [];
         setState(() => _bugs = (raw as List).map((e) => Map<String, dynamic>.from(e as Map)).toList());
@@ -133,23 +155,36 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
         final cur = s['user_vote'];
         int votes = (s['votes'] as num?)?.toInt() ?? 0;
         String? newVote = voteType;
-        if (cur == voteType) { newVote = null; votes += voteType == 'upvote' ? -1 : 1; }
-        else if (cur == null) { votes += voteType == 'upvote' ? 1 : -1; }
-        else { votes += voteType == 'upvote' ? 2 : -2; }
+        if (cur == voteType) {
+          newVote = null;
+          votes += voteType == 'upvote' ? -1 : 1;
+        } else if (cur == null) {
+          votes += voteType == 'upvote' ? 1 : -1;
+        } else {
+          votes += voteType == 'upvote' ? 2 : -2;
+        }
         return {...s, 'votes': votes, 'user_vote': newVote};
       }).toList();
     });
 
     try {
-      final res = await dioClient.post('/v1/feedback/suggestions/$id/toggle-vote', data: {'vote_type': voteType});
+      final res = await dioClient.post(
+        '/v1/feedback/suggestions/$id/toggle-vote',
+        data: {'vote_type': voteType},
+      );
       if (mounted && res.data['success'] == true) {
         final d = res.data['statusCode'] ?? res.data['data'] ?? {};
         setState(() {
-          _suggestions = _suggestions.map((s) => s['id'].toString() == id ? {...s, 'votes': d['votes'] ?? s['votes'], 'user_vote': d['user_vote']} : s).toList();
+          _suggestions = _suggestions.map((s) => s['id'].toString() == id
+              ? {...s, 'votes': d['votes'] ?? s['votes'], 'user_vote': d['user_vote']}
+              : s).toList();
         });
       }
-    } catch (_) { _fetchSuggestions(); }
-    finally { _votingIds.remove(id); }
+    } catch (_) {
+      _fetchSuggestions();
+    } finally {
+      _votingIds.remove(id);
+    }
   }
 
   void _showReportBug(_T t) {
@@ -158,19 +193,11 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
       context: context,
       isScrollControlled: true,
       backgroundColor: t.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _SubmitSheet(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _ReportBugSheet(
         t: t,
-        title: 'Report a Bug',
-        icon: Icons.bug_report,
-        iconColor: const Color(0xFFFF6B9D),
-        descHint: 'Describe the bug you encountered (min 10 chars)…',
-        onSubmit: (screenName, desc) async {
-          await dioClient.post('/v1/feedback/bugs', data: {
-            'description': desc,
-            if (screenName.isNotEmpty) 'screen_name': screenName,
-          });
-        },
         onDone: _fetchBugs,
       ),
     );
@@ -182,19 +209,11 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
       context: context,
       isScrollControlled: true,
       backgroundColor: t.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => _SubmitSheet(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => _SuggestIdeaSheet(
         t: t,
-        title: 'Suggest an Idea',
-        icon: Icons.lightbulb,
-        iconColor: const Color(0xFF4A90E2),
-        descHint: 'Describe your suggestion (min 10 chars)…',
-        onSubmit: (screenName, desc) async {
-          await dioClient.post('/v1/feedback/suggestions', data: {
-            'description': desc,
-            if (screenName.isNotEmpty) 'screen_name': screenName,
-          });
-        },
         onDone: _fetchSuggestions,
       ),
     );
@@ -207,101 +226,151 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
     return Scaffold(
       backgroundColor: t.bg,
-      body: SafeArea(child: Column(children: [
-        // Header
-        Container(
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.border))),
-          child: Row(children: [
-            GestureDetector(onTap: () => context.pop(), child: Container(width: 40, height: 56, alignment: Alignment.center, child: Icon(Icons.arrow_back, size: 24, color: t.text))),
-            Expanded(child: Text('Bugs & Suggestions', textAlign: TextAlign.center, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18, color: t.text))),
-            const SizedBox(width: 40),
-          ]),
-        ),
-
-        // Action cards
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-          child: Row(children: [
-            Expanded(child: GestureDetector(
-              onTap: () => _showReportBug(t),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFFFF6B9D), Color(0xFFC44569)]), borderRadius: BorderRadius.circular(12)),
-                child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.bug_report, size: 22, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text('Report Bug', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
-                ]),
+      body: SafeArea(
+        child: Column(children: [
+          // Header
+          Container(
+            decoration: BoxDecoration(
+              color: t.bg,
+              border: Border(bottom: BorderSide(color: t.border)),
+            ),
+            child: Row(children: [
+              GestureDetector(
+                onTap: () => context.pop(),
+                child: Container(
+                  width: 40, height: 56,
+                  alignment: Alignment.center,
+                  child: Icon(Icons.arrow_back, size: 24, color: t.text),
+                ),
               ),
-            )),
-            const SizedBox(width: 12),
-            Expanded(child: GestureDetector(
-              onTap: () => _showSuggestIdea(t),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                decoration: BoxDecoration(gradient: const LinearGradient(colors: [Color(0xFF4A90E2), Color(0xFF357ABD)]), borderRadius: BorderRadius.circular(12)),
-                child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.lightbulb, size: 22, color: Colors.white),
-                  SizedBox(width: 8),
-                  Text('Suggest Idea', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 14, color: Colors.white)),
-                ]),
+              Expanded(
+                child: Text(
+                  'Bugs & Suggestions',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
+                    color: t.text,
+                  ),
+                ),
               ),
-            )),
-          ]),
-        ),
-
-        // Tabs
-        Container(
-          margin: const EdgeInsets.only(top: 8),
-          decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.border))),
-          child: TabBar(
-            controller: _tabCtrl,
-            indicatorColor: t.primary,
-            indicatorWeight: 2,
-
-            dividerColor: Colors.transparent,
-            labelColor: t.primary,
-            unselectedLabelColor: t.textSecondary,
-            labelStyle: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 14),
-            unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 14),
-            tabs: [
-              Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.lightbulb, size: 18),
-                const SizedBox(width: 6),
-                const Text('Suggestions'),
-                if (_suggestions.isNotEmpty) ...[
-                  const SizedBox(width: 6),
-                  _badge(_suggestions.length, t),
-                ],
-              ])),
-              Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.bug_report, size: 18),
-                const SizedBox(width: 6),
-                const Text('Bug Reports'),
-                if (_bugs.isNotEmpty) ...[
-                  const SizedBox(width: 6),
-                  _badge(_bugs.length, t),
-                ],
-              ])),
-            ],
+              const SizedBox(width: 40),
+            ]),
           ),
-        ),
 
-        // Content
-        Expanded(child: _loading
-            ? Center(child: CircularProgressIndicator(color: t.primary))
-            : TabBarView(controller: _tabCtrl, children: [
-                _suggestionList(t),
-                _bugList(t),
-              ])),
-      ])),
+          // Action cards
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Row(children: [
+              Expanded(child: GestureDetector(
+                onTap: () => _showReportBug(t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFFFF6B9D), Color(0xFFC44569)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.bug_report, size: 22, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('Report Bug', style: TextStyle(
+                      fontFamily: 'Outfit', fontWeight: FontWeight.w600,
+                      fontSize: 14, color: Colors.white,
+                    )),
+                  ]),
+                ),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: GestureDetector(
+                onTap: () => _showSuggestIdea(t),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.lightbulb, size: 22, color: Colors.white),
+                    SizedBox(width: 8),
+                    Text('Suggest Idea', style: TextStyle(
+                      fontFamily: 'Outfit', fontWeight: FontWeight.w600,
+                      fontSize: 14, color: Colors.white,
+                    )),
+                  ]),
+                ),
+              )),
+            ]),
+          ),
+
+          // Tabs
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(color: t.border))),
+            child: TabBar(
+              controller: _tabCtrl,
+              indicatorColor: t.primary,
+              indicatorWeight: 2,
+              dividerColor: Colors.transparent,
+              labelColor: t.primary,
+              unselectedLabelColor: t.textSecondary,
+              labelStyle: const TextStyle(
+                fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 14,
+              ),
+              unselectedLabelStyle: const TextStyle(
+                fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 14,
+              ),
+              tabs: [
+                Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.lightbulb, size: 18),
+                  const SizedBox(width: 6),
+                  const Text('Suggestions'),
+                  if (_suggestions.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    _badge(_suggestions.length, t),
+                  ],
+                ])),
+                Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.bug_report, size: 18),
+                  const SizedBox(width: 6),
+                  const Text('Bug Reports'),
+                  if (_bugs.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    _badge(_bugs.length, t),
+                  ],
+                ])),
+              ],
+            ),
+          ),
+
+          // Content
+          Expanded(
+            child: _loading
+                ? Center(child: CircularProgressIndicator(color: t.primary))
+                : TabBarView(
+                    controller: _tabCtrl,
+                    children: [_suggestionList(t), _bugList(t)],
+                  ),
+          ),
+        ]),
+      ),
     );
   }
 
   Widget _badge(int count, _T t) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-    decoration: BoxDecoration(color: t.primary.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
-    child: Text('$count', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 11, color: t.primary)),
+    decoration: BoxDecoration(
+      color: t.primary.withValues(alpha: 0.15),
+      borderRadius: BorderRadius.circular(10),
+    ),
+    child: Text(
+      '$count',
+      style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 11, color: t.primary),
+    ),
   );
 
   Widget _suggestionList(_T t) => CustomScrollView(
@@ -351,33 +420,64 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: t.border)),
+      decoration: BoxDecoration(
+        color: t.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: t.border),
+      ),
       clipBehavior: Clip.hardEdge,
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Vote column
-        Opacity(opacity: isImplemented ? 0.4 : 1, child: Container(
-          width: 48,
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(children: [
-            GestureDetector(
-              onTap: (isVoting || isImplemented) ? null : () => _vote(id, 'upvote'),
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(color: userVote == 'upvote' ? const Color(0x1534C759) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
-                child: Icon(Icons.keyboard_arrow_up, size: 28, color: userVote == 'upvote' ? const Color(0xFF34C759) : t.textSecondary),
+        Opacity(
+          opacity: isImplemented ? 0.4 : 1,
+          child: Container(
+            width: 48,
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(children: [
+              GestureDetector(
+                onTap: (isVoting || isImplemented) ? null : () => _vote(id, 'upvote'),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: userVote == 'upvote' ? const Color(0x1534C759) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.keyboard_arrow_up,
+                    size: 28,
+                    color: userVote == 'upvote' ? const Color(0xFF34C759) : t.textSecondary,
+                  ),
+                ),
               ),
-            ),
-            Text('$votes', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 15, color: votes > 0 ? const Color(0xFF34C759) : votes < 0 ? const Color(0xFFFF453A) : t.text)),
-            GestureDetector(
-              onTap: (isVoting || isImplemented) ? null : () => _vote(id, 'downvote'),
-              child: Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(color: userVote == 'downvote' ? const Color(0x15FF453A) : Colors.transparent, borderRadius: BorderRadius.circular(16)),
-                child: Icon(Icons.keyboard_arrow_down, size: 28, color: userVote == 'downvote' ? const Color(0xFFFF453A) : t.textSecondary),
+              Text(
+                '$votes',
+                style: TextStyle(
+                  fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 15,
+                  color: votes > 0
+                      ? const Color(0xFF34C759)
+                      : votes < 0
+                          ? const Color(0xFFFF453A)
+                          : t.text,
+                ),
               ),
-            ),
-          ]),
-        )),
+              GestureDetector(
+                onTap: (isVoting || isImplemented) ? null : () => _vote(id, 'downvote'),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: userVote == 'downvote' ? const Color(0x15FF453A) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 28,
+                    color: userVote == 'downvote' ? const Color(0xFFFF453A) : t.textSecondary,
+                  ),
+                ),
+              ),
+            ]),
+          ),
+        ),
         // Content
         Expanded(child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 12, 12, 12),
@@ -389,10 +489,18 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
   Widget _bugCard(Map<String, dynamic> item, _T t) => Container(
     margin: const EdgeInsets.only(bottom: 12),
-    decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(12), border: Border.all(color: t.border)),
+    decoration: BoxDecoration(
+      color: t.surface,
+      borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: t.border),
+    ),
     clipBehavior: Clip.hardEdge,
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Container(width: 48, padding: const EdgeInsets.only(top: 16), child: const Icon(Icons.bug_report, size: 24, color: Color(0xFFFF6B9D))),
+      Container(
+        width: 48,
+        padding: const EdgeInsets.only(top: 16),
+        child: const Icon(Icons.bug_report, size: 24, color: Color(0xFFFF6B9D)),
+      ),
       Expanded(child: Padding(
         padding: const EdgeInsets.fromLTRB(4, 12, 12, 12),
         child: _cardContent(item, item['priority']?.toString(), t),
@@ -409,85 +517,461 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen> w
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
-        // Avatar
         ClipOval(child: pic != null && pic.isNotEmpty
             ? CachedNetworkImage(imageUrl: pic, width: 24, height: 24, fit: BoxFit.cover)
-            : Container(width: 24, height: 24, color: t.cardBg, child: Icon(Icons.person, size: 16, color: t.textTertiary))),
+            : Container(
+                width: 24, height: 24,
+                color: t.cardBg,
+                child: Icon(Icons.person, size: 16, color: t.textTertiary),
+              )),
         const SizedBox(width: 6),
-        Expanded(child: Text(username, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 13, color: t.textSecondary))),
+        Expanded(child: Text(
+          username,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 13, color: t.textSecondary),
+        )),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(6)),
-          child: Text(_statusLabel(status), style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 11, color: color)),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            _statusLabel(status),
+            style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 11, color: color),
+          ),
         ),
       ]),
       const SizedBox(height: 6),
-      Text(item['description']?.toString() ?? '', style: TextStyle(fontFamily: 'Outfit', fontSize: 14, color: t.text, height: 1.4)),
+      Text(
+        item['description']?.toString() ?? '',
+        style: TextStyle(fontFamily: 'Outfit', fontSize: 14, color: t.text, height: 1.4),
+      ),
       const SizedBox(height: 8),
       Row(children: [
         if (screenName != null && screenName.isNotEmpty) ...[
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: t.inputBg, borderRadius: BorderRadius.circular(4)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.smartphone, size: 12, color: t.textTertiary),
-                const SizedBox(width: 3),
-                Flexible(child: Text(screenName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: 'Outfit', fontSize: 11, color: t.textTertiary))),
-              ]),
+          Flexible(child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: t.inputBg, borderRadius: BorderRadius.circular(4)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.smartphone, size: 12, color: t.textTertiary),
+              const SizedBox(width: 3),
+              Flexible(child: Text(
+                screenName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontFamily: 'Outfit', fontSize: 11, color: t.textTertiary),
+              )),
+            ]),
+          )),
+          const SizedBox(width: 8),
+        ],
+        if (priority != null && priority.isNotEmpty && priority != 'medium') ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: _priorityColor(priority).withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              priority,
+              style: TextStyle(
+                fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 11,
+                color: _priorityColor(priority),
+              ),
             ),
           ),
           const SizedBox(width: 8),
         ],
-        if (priority != null && priority != 'medium') ...[
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(color: _priorityColor(priority).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(4)),
-            child: Text(priority, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 11, color: _priorityColor(priority))),
-          ),
-          const SizedBox(width: 8),
-        ],
         const Spacer(),
-        Text(_timeAgo(item['created_at']?.toString()), style: TextStyle(fontFamily: 'Outfit', fontSize: 11, color: t.textTertiary)),
+        Text(
+          _timeAgo(item['created_at']?.toString()),
+          style: TextStyle(fontFamily: 'Outfit', fontSize: 11, color: t.textTertiary),
+        ),
       ]),
     ]);
   }
 
-  Color _priorityColor(String p) {
-    switch (p) {
-      case 'critical': return const Color(0xFFFF453A);
-      case 'high': return const Color(0xFFFF9500);
-      default: return const Color(0xFF8E8E93);
+  Widget _emptyState(IconData icon, String title, String subtitle, _T t) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(icon, size: 64, color: t.textTertiary),
+        const SizedBox(height: 16),
+        Text(title, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18, color: t.text)),
+        const SizedBox(height: 4),
+        Text(subtitle, style: TextStyle(fontFamily: 'Outfit', fontSize: 14, color: t.textSecondary), textAlign: TextAlign.center),
+      ]),
+    ),
+  );
+}
+
+// ── Report Bug bottom sheet ───────────────────────────────────────────────────
+class _ReportBugSheet extends StatefulWidget {
+  final _T t;
+  final VoidCallback onDone;
+  const _ReportBugSheet({required this.t, required this.onDone});
+  @override
+  State<_ReportBugSheet> createState() => _ReportBugSheetState();
+}
+
+class _ReportBugSheetState extends State<_ReportBugSheet> {
+  final _screenCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+  final _storage = const FlutterSecureStorage();
+  File? _attachment;
+  bool _submitting = false;
+  double _uploadProgress = 0;
+
+  @override
+  void dispose() {
+    _screenCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    if (_attachment != null) {
+      _snack('You can only attach one image. Remove the current one to add a new one.');
+      return;
+    }
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+      if (picked != null && mounted) {
+        setState(() => _attachment = File(picked.path));
+      }
+    } catch (_) {}
+  }
+
+  Future<String?> _uploadAttachment() async {
+    if (_attachment == null) return null;
+    final uid = await _storage.read(key: 'uid') ?? '';
+    final fileName = 'bug-report-$uid-${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final result = await uploadService.uploadMedia(
+      file: _attachment!,
+      mediaType: 'image',
+      fileName: fileName,
+      userId: uid,
+      onProgress: (p) {
+        if (mounted) setState(() => _uploadProgress = p);
+      },
+    );
+    return result['url']?.toString();
+  }
+
+  bool _validate() {
+    final desc = _descCtrl.text.trim();
+    if (desc.isEmpty) {
+      _snack('Please provide a description of the bug you encountered');
+      return false;
+    }
+    if (desc.length < 10) {
+      _snack('Please provide a more detailed description (at least 10 characters)');
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _submit() async {
+    if (!_validate() || _submitting) return;
+
+    setState(() { _submitting = true; _uploadProgress = 0; });
+    try {
+      String? attachmentUrl;
+      if (_attachment != null) {
+        setState(() => _uploadProgress = 10);
+        attachmentUrl = await _uploadAttachment();
+        setState(() => _uploadProgress = 70);
+      }
+
+      final res = await dioClient.post('/v1/feedback/bugs', data: {
+        'description': _descCtrl.text.trim(),
+        if (_screenCtrl.text.trim().isNotEmpty) 'screen_name': _screenCtrl.text.trim(),
+        'attachment_url': attachmentUrl,
+      });
+
+      setState(() => _uploadProgress = 100);
+
+      if (mounted && res.data['success'] == true) {
+        Navigator.pop(context);
+        widget.onDone();
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Bug report submitted. We'll review it soon!", style: TextStyle(fontFamily: 'Outfit')),
+          backgroundColor: Color(0xFF34C759),
+        ));
+      } else {
+        throw Exception(res.data['message'] ?? 'Failed to submit bug report');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submitting = false);
+        _snack(e.toString().replaceFirst('Exception: ', '').isNotEmpty
+            ? e.toString().replaceFirst('Exception: ', '')
+            : 'Failed to submit bug report. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() { _submitting = false; _uploadProgress = 0; });
     }
   }
 
-  Widget _emptyState(IconData icon, String title, String subtitle, _T t) => Center(child: Padding(
-    padding: const EdgeInsets.all(32),
-    child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-      Icon(icon, size: 64, color: t.textTertiary),
-      const SizedBox(height: 16),
-      Text(title, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18, color: t.text)),
-      const SizedBox(height: 4),
-      Text(subtitle, style: TextStyle(fontFamily: 'Outfit', fontSize: 14, color: t.textSecondary), textAlign: TextAlign.center),
-    ]),
-  ));
-}
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg, style: const TextStyle(fontFamily: 'Outfit')),
+      backgroundColor: const Color(0xFFFF453A),
+    ),
+  );
 
-// ─── Submit bottom sheet ──────────────────────────────────────────────────────
-class _SubmitSheet extends StatefulWidget {
-  final _T t;
-  final String title;
-  final IconData icon;
-  final Color iconColor;
-  final String descHint;
-  final Future<void> Function(String screenName, String description) onSubmit;
-  final VoidCallback onDone;
-  const _SubmitSheet({required this.t, required this.title, required this.icon, required this.iconColor, required this.descHint, required this.onSubmit, required this.onDone});
   @override
-  State<_SubmitSheet> createState() => _SubmitSheetState();
+  Widget build(BuildContext context) {
+    final t = widget.t;
+    final btmPad = MediaQuery.of(context).viewInsets.bottom +
+        MediaQuery.of(context).padding.bottom + 20;
+
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(20, 8, 20, btmPad),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Drag handle
+          Center(child: Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(color: t.border, borderRadius: BorderRadius.circular(2)),
+          )),
+
+          // Title
+          Row(children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6B9D).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.bug_report, size: 20, color: Color(0xFFFF6B9D)),
+            ),
+            const SizedBox(width: 12),
+            Text('Report a Bug', style: TextStyle(
+              fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 18, color: t.text,
+            )),
+          ]),
+          const SizedBox(height: 16),
+
+          // Upload progress bar
+          if (_submitting && _attachment != null)
+            Column(children: [
+              Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFFF6B9D).withValues(alpha: 0.3)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(2),
+                    child: LinearProgressIndicator(
+                      value: _uploadProgress / 100,
+                      backgroundColor: t.border,
+                      valueColor: const AlwaysStoppedAnimation(Color(0xFFFF6B9D)),
+                      minHeight: 4,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Center(child: Text(
+                    'Submitting... ${_uploadProgress.round()}%',
+                    style: const TextStyle(
+                      fontFamily: 'Outfit', fontSize: 14, color: Color(0xFFFF6B9D),
+                    ),
+                  )),
+                ]),
+              ),
+            ]),
+
+          // Screen name
+          Text('Screen Name (Optional)', style: TextStyle(
+            fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16, color: t.text,
+          )),
+          const SizedBox(height: 8),
+          _field(_screenCtrl, 'e.g. Home Screen, Profile Page', maxLines: 1, t: t),
+          const SizedBox(height: 20),
+
+          // Description
+          RichText(text: TextSpan(children: [
+            TextSpan(text: 'Description ', style: TextStyle(
+              fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16, color: t.text,
+            )),
+            const TextSpan(text: '*', style: TextStyle(
+              fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16, color: Color(0xFFFF453A),
+            )),
+          ])),
+          const SizedBox(height: 8),
+          _field(
+            _descCtrl,
+            'Tell us what happened - the more detail the better!',
+            maxLines: 6, maxLength: 5000, t: t,
+          ),
+          const SizedBox(height: 20),
+
+          // Attachment preview or pick button
+          if (_attachment != null) ...[
+            Text('Attachment', style: TextStyle(
+              fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16, color: t.text,
+            )),
+            const SizedBox(height: 8),
+            Stack(children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Image.file(
+                  _attachment!,
+                  width: double.infinity, height: 200,
+                  fit: BoxFit.cover,
+                ),
+              ),
+              Positioned(
+                top: 8, right: 8,
+                child: GestureDetector(
+                  onTap: _submitting ? null : () => setState(() => _attachment = null),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.close, size: 20, color: Colors.white),
+                  ),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 20),
+          ] else ...[
+            GestureDetector(
+              onTap: _submitting ? null : _pickImage,
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: t.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: t.border),
+                ),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.photo_library, size: 24, color: t.primary),
+                  const SizedBox(width: 8),
+                  Text('Choose Photo', style: TextStyle(
+                    fontFamily: 'Outfit', fontWeight: FontWeight.w500, fontSize: 14, color: t.primary,
+                  )),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+
+          // Info note
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: t.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: t.border),
+            ),
+            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Icon(Icons.info_outline, size: 20, color: t.textSecondary),
+              const SizedBox(width: 12),
+              Expanded(child: Text(
+                'Provide as much detail as possible to help us resolve the issue quickly. Screenshots are very helpful!',
+                style: TextStyle(
+                  fontFamily: 'Outfit', fontSize: 14, color: t.textSecondary, height: 1.4,
+                ),
+              )),
+            ]),
+          ),
+          const SizedBox(height: 16),
+
+          // Submit button
+          GestureDetector(
+            onTap: _submitting ? null : _submit,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: _submitting
+                    ? const Color(0xFFFF6B9D).withValues(alpha: 0.6)
+                    : const Color(0xFFFF6B9D),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: _submitting
+                  ? const Center(child: SizedBox(
+                      width: 22, height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ))
+                  : const Center(child: Text(
+                      'Submit',
+                      style: TextStyle(
+                        fontFamily: 'Outfit', fontWeight: FontWeight.w600,
+                        fontSize: 15, color: Colors.white,
+                      ),
+                    )),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(
+    TextEditingController ctrl,
+    String hint, {
+    required int maxLines,
+    int? maxLength,
+    required _T t,
+  }) => TextField(
+    controller: ctrl,
+    maxLines: maxLines,
+    maxLength: maxLength,
+    enabled: !_submitting,
+    style: TextStyle(fontFamily: 'Outfit', fontSize: 16, color: t.text),
+    decoration: InputDecoration(
+      hintText: hint,
+      hintStyle: TextStyle(fontFamily: 'Outfit', color: t.textTertiary),
+      counterStyle: TextStyle(color: t.textTertiary),
+      filled: true,
+      fillColor: t.surface,
+      contentPadding: const EdgeInsets.all(12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: t.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: t.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: t.border),
+      ),
+      disabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: t.border.withValues(alpha: 0.5)),
+      ),
+    ),
+  );
 }
 
-class _SubmitSheetState extends State<_SubmitSheet> {
+// ── Suggest Idea bottom sheet ─────────────────────────────────────────────────
+class _SuggestIdeaSheet extends StatefulWidget {
+  final _T t;
+  final VoidCallback onDone;
+  const _SuggestIdeaSheet({required this.t, required this.onDone});
+  @override
+  State<_SuggestIdeaSheet> createState() => _SuggestIdeaSheetState();
+}
+
+class _SuggestIdeaSheetState extends State<_SuggestIdeaSheet> {
   final _screenCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   bool _submitting = false;
@@ -503,59 +987,126 @@ class _SubmitSheetState extends State<_SubmitSheet> {
     final desc = _descCtrl.text.trim();
     if (desc.isEmpty) { _snack('Please provide a description'); return; }
     if (desc.length < 10) { _snack('Please provide a more detailed description (at least 10 characters)'); return; }
+
     setState(() => _submitting = true);
     try {
-      await widget.onSubmit(_screenCtrl.text.trim(), desc);
-      if (mounted) {
+      final res = await dioClient.post('/v1/feedback/suggestions', data: {
+        'description': desc,
+        if (_screenCtrl.text.trim().isNotEmpty) 'screen_name': _screenCtrl.text.trim(),
+      });
+
+      if (mounted && res.data['success'] == true) {
         Navigator.pop(context);
         widget.onDone();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Submitted! Thank you.', style: TextStyle(fontFamily: 'Outfit')), backgroundColor: Color(0xFF34C759)));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Submitted! Thank you.', style: TextStyle(fontFamily: 'Outfit')),
+          backgroundColor: Color(0xFF34C759),
+        ));
+      } else {
+        throw Exception(res.data['message'] ?? 'Failed to submit suggestion');
       }
     } catch (_) {
-      if (mounted) { setState(() => _submitting = false); _snack('Failed to submit. Please try again.'); }
+      if (mounted) {
+        setState(() => _submitting = false);
+        _snack('Failed to submit. Please try again.');
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
-  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg, style: const TextStyle(fontFamily: 'Outfit')), backgroundColor: const Color(0xFFFF453A)));
+  void _snack(String msg) => ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg, style: const TextStyle(fontFamily: 'Outfit')),
+      backgroundColor: const Color(0xFFFF453A),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final t = widget.t;
-    final btmPad = MediaQuery.of(context).viewInsets.bottom + MediaQuery.of(context).padding.bottom + 20;
+    final btmPad = MediaQuery.of(context).viewInsets.bottom +
+        MediaQuery.of(context).padding.bottom + 20;
 
     return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(20, 8, 20, btmPad),
-      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Center(child: Container(width: 36, height: 4, margin: const EdgeInsets.only(bottom: 16), decoration: BoxDecoration(color: t.border, borderRadius: BorderRadius.circular(2)))),
-        Row(children: [
-          Container(width: 36, height: 36, decoration: BoxDecoration(color: widget.iconColor.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)), child: Icon(widget.icon, size: 20, color: widget.iconColor)),
-          const SizedBox(width: 12),
-          Text(widget.title, style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 18, color: t.text)),
-        ]),
-        const SizedBox(height: 16),
-        Text('Screen / Feature (optional)', style: TextStyle(fontFamily: 'Outfit', fontSize: 13, color: t.textTertiary)),
-        const SizedBox(height: 6),
-        _field(_screenCtrl, 'e.g. Home Screen, Chat', maxLines: 1, t: t),
-        const SizedBox(height: 12),
-        Text('Description *', style: TextStyle(fontFamily: 'Outfit', fontSize: 13, color: t.textTertiary)),
-        const SizedBox(height: 6),
-        _field(_descCtrl, widget.descHint, maxLines: 5, maxLength: 5000, t: t),
-        const SizedBox(height: 16),
-        GestureDetector(
-          onTap: _submitting ? null : _submit,
-          child: Container(
-            width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14),
-            decoration: BoxDecoration(color: widget.iconColor, borderRadius: BorderRadius.circular(14)),
-            child: _submitting
-                ? const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))
-                : const Center(child: Text('Submit', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 15, color: Colors.white))),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(
+            width: 36, height: 4,
+            margin: const EdgeInsets.only(bottom: 16),
+            decoration: BoxDecoration(color: t.border, borderRadius: BorderRadius.circular(2)),
+          )),
+
+          Row(children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFF4A90E2).withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.lightbulb, size: 20, color: Color(0xFF4A90E2)),
+            ),
+            const SizedBox(width: 12),
+            Text('Suggest an Idea', style: TextStyle(
+              fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 18, color: t.text,
+            )),
+          ]),
+          const SizedBox(height: 16),
+
+          Text('Screen / Feature (optional)', style: TextStyle(
+            fontFamily: 'Outfit', fontSize: 13, color: t.textTertiary,
+          )),
+          const SizedBox(height: 6),
+          _field(_screenCtrl, 'e.g. Home Screen, Chat', maxLines: 1, t: t),
+          const SizedBox(height: 12),
+
+          Text('Description *', style: TextStyle(
+            fontFamily: 'Outfit', fontSize: 13, color: t.textTertiary,
+          )),
+          const SizedBox(height: 6),
+          _field(_descCtrl, 'Describe your suggestion (min 10 chars)…', maxLines: 5, maxLength: 5000, t: t),
+          const SizedBox(height: 16),
+
+          GestureDetector(
+            onTap: _submitting ? null : _submit,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: _submitting
+                    ? const Color(0xFF4A90E2).withValues(alpha: 0.6)
+                    : const Color(0xFF4A90E2),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: _submitting
+                  ? const Center(child: SizedBox(
+                      width: 22, height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    ))
+                  : const Center(child: Text(
+                      'Submit',
+                      style: TextStyle(
+                        fontFamily: 'Outfit', fontWeight: FontWeight.w600,
+                        fontSize: 15, color: Colors.white,
+                      ),
+                    )),
+            ),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
-  Widget _field(TextEditingController ctrl, String hint, {required int maxLines, int? maxLength, required _T t}) => TextField(
+  Widget _field(
+    TextEditingController ctrl,
+    String hint, {
+    required int maxLines,
+    int? maxLength,
+    required _T t,
+  }) => TextField(
     controller: ctrl,
     maxLines: maxLines,
     maxLength: maxLength,
@@ -564,11 +1115,21 @@ class _SubmitSheetState extends State<_SubmitSheet> {
       hintText: hint,
       hintStyle: TextStyle(fontFamily: 'Outfit', color: t.textTertiary),
       counterStyle: TextStyle(color: t.textTertiary),
-      filled: true, fillColor: Colors.transparent,
+      filled: true,
+      fillColor: Colors.transparent,
       contentPadding: const EdgeInsets.all(12),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.border)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.border)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: t.border)),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: t.border),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: t.border),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: t.border),
+      ),
     ),
   );
 }

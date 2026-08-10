@@ -55,6 +55,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   bool _uploadingMedia = false;
   bool _topicsEnabled = false;
 
+  // Scroll-to-bottom FAB
+  bool _showScrollToBottom = false;
+  bool _isAtBottom = true;
+
   List<_ListItem> _listItems = [];
   String? _currentUserId;
   int _prevMessageCount = 0;
@@ -220,6 +224,15 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     debugPrint('[GroupChat] _loadMessages reset=$reset uid=$uid');
     if (uid == null) return;
 
+    // Capture scroll baseline BEFORE showing the loading spinner so the
+    // net correction (added items - spinner added + spinner removed) is clean.
+    double pixelsBefore = 0;
+    double extentBefore = 0;
+    if (!reset && _scrollCtrl.hasClients) {
+      pixelsBefore = _scrollCtrl.position.pixels;
+      extentBefore = _scrollCtrl.position.maxScrollExtent;
+    }
+
     if (reset) {
       _offset = 0;
       _hasMore = true;
@@ -261,6 +274,16 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     }
 
     if (mounted) setState(() => _loadingMore = false);
+
+    // After all rebuilds (messages prepended + spinner removed), correct the
+    // scroll offset so the previously-visible items stay in view (no jump).
+    if (!reset) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollCtrl.hasClients) return;
+        final delta = _scrollCtrl.position.maxScrollExtent - extentBefore;
+        if (delta > 0) _scrollCtrl.jumpTo(pixelsBefore + delta);
+      });
+    }
   }
 
   ChatMessage _normalizeGroupMessage(Map<String, dynamic> m) {
@@ -292,11 +315,25 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   }
 
   void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+
+    // Load older messages when near top
     if (_scrollCtrl.position.pixels <=
             _scrollCtrl.position.minScrollExtent + 200 &&
         _hasMore &&
         !_loadingMore) {
       _loadMessages();
+    }
+
+    // Scroll-to-bottom button visibility
+    final distanceFromBottom =
+        _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels;
+    final atBottom = distanceFromBottom <= 100;
+    if (atBottom != _isAtBottom) {
+      setState(() {
+        _isAtBottom = atBottom;
+        _showScrollToBottom = !atBottom;
+      });
     }
   }
 
@@ -775,11 +812,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         ref.watch(conversationMessagesProvider(widget.groupId));
     _buildListItems(messages);
 
-    // Auto-scroll to bottom when new messages arrive and user is near bottom
+    // Auto-scroll only when user is already near the bottom (mirrors WhatsApp behaviour)
     if (messages.length > _prevMessageCount && _prevMessageCount > 0) {
-      final isNearBottom = _scrollCtrl.hasClients &&
-          _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels < 200;
-      if (isNearBottom) {
+      if (_isAtBottom) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
       }
     }
@@ -1016,6 +1051,38 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                           );
                         },
                       ),
+
+            // Scroll-to-bottom button
+            if (_showScrollToBottom)
+              Positioned(
+                right: 16,
+                bottom: 12,
+                child: GestureDetector(
+                  onTap: _scrollToBottom,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: c.background.computeLuminance() > 0.5
+                          ? Colors.white
+                          : const Color(0xFF2C2C2E),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                              alpha: c.background.computeLuminance() > 0.5
+                                  ? 0.2
+                                  : 0.4),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Icon(Icons.keyboard_arrow_down,
+                        color: c.text, size: 22),
+                  ),
+                ),
+              ),
           ]),
         ),
         if (_isRecordingVoice)
