@@ -746,6 +746,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: _kBg,
+        systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
         backgroundColor: _kBg,
