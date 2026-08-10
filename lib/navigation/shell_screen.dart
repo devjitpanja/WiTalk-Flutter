@@ -19,6 +19,17 @@ class ShellScreen extends ConsumerStatefulWidget {
   ConsumerState<ShellScreen> createState() => _ShellScreenState();
 }
 
+// Static const IconData to satisfy tree-shake-icons in release builds
+const _kIconHomeBold   = IconData(0xe2c2, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
+const _kIconHomeFill   = IconData(0xe2c2, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
+const _kIconMapBold    = IconData(0xe1c8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
+const _kIconMapFill    = IconData(0xe1c8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
+const _kIconAddaBold   = IconData(0xe326, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
+const _kIconAddaFill   = IconData(0xe326, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
+const _kIconChatBold   = IconData(0xe16c, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
+const _kIconChatFill   = IconData(0xe16c, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
+const _kIconMenuBold   = IconData(0xe2f0, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
+
 class _ShellScreenState extends ConsumerState<ShellScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _addaDotController;
@@ -126,9 +137,9 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
               elevation: 0,
               items: [
                 // ── Home ──────────────────────────────────────────────────────
-                BottomNavigationBarItem(
-                  icon: Icon(IconData(0xe2c2, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'), size: 26),
-                  activeIcon: Icon(IconData(0xe2c2, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter'), size: 26),
+                const BottomNavigationBarItem(
+                  icon: Icon(_kIconHomeBold, size: 26),
+                  activeIcon: Icon(_kIconHomeFill, size: 26),
                   label: 'Home',
                 ),
                 // ── Explore (red dot when online nearby users) ────────────────
@@ -168,7 +179,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
       clipBehavior: Clip.none,
       children: [
         Icon(
-          IconData(0xe1c8, fontFamily: focused ? 'PhosphorFill' : 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+          focused ? _kIconMapFill : _kIconMapBold,
           size: 26,
         ),
         if (hasOnlineNearby && !focused)
@@ -193,7 +204,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
       clipBehavior: Clip.none,
       children: [
         Icon(
-          IconData(0xe326, fontFamily: focused ? 'PhosphorFill' : 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+          focused ? _kIconAddaFill : _kIconAddaBold,
           size: 26,
         ),
         if (hasActiveRooms && !focused)
@@ -219,7 +230,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
       clipBehavior: Clip.none,
       children: [
         Icon(
-          IconData(0xe16c, fontFamily: focused ? 'PhosphorFill' : 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+          focused ? _kIconChatFill : _kIconChatBold,
           size: 26,
         ),
         if (unreadCount > 0)
@@ -254,8 +265,8 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(
-          IconData(0xe2f0, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter'),
+        const Icon(
+          _kIconMenuBold,
           size: 26,
         ),
         if (hasUnclaimedMissions)

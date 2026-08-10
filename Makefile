@@ -34,13 +34,30 @@ web:
 mac:
 	flutter run -d macos
 
-# --- Build ---
+# --- Build Android ---
 
-build-apk:
-	flutter build apk
+# Signed release APK → build/app/outputs/flutter-apk/app-release.apk
+apk:
+	flutter build apk --release
+	@echo "✅ APK ready at: build/app/outputs/flutter-apk/app-release.apk"
 
-build-aab:
-	flutter build appbundle
+# Signed release AAB → build/app/outputs/bundle/release/app-release.aab
+aab:
+	flutter build appbundle --release
+	@echo "✅ AAB ready at: build/app/outputs/bundle/release/app-release.aab"
+
+# Build both APK and AAB
+android: apk aab
+	@echo "✅ Android builds complete"
+
+# Split APKs per ABI (smaller downloads, good for direct distribution)
+apk-split:
+	flutter build apk --release --split-per-abi
+	@echo "✅ Split APKs ready at: build/app/outputs/flutter-apk/"
+
+# Legacy aliases
+build-apk: apk
+build-aab: aab
 
 build-ipa:
 	flutter build ipa
