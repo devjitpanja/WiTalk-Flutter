@@ -474,6 +474,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
     Widget cardFor(Map<String, dynamic> u) => NearbyUserCard(
           user: u,
           isBirthday: isBirthday,
+          wide: users.length == 1 && !isBirthday,
           onTap: (u) => _showProfilePreview(context, u),
           onSayHi: (u) => context.push('/user/${u['id'] ?? u['uid']}'),
         );
@@ -878,14 +879,10 @@ class _SectionBlock extends StatelessWidget {
             child: children.first,
           )
         else if (single)
-          // Single non-wide card: constrain height + width like the list does
+          // Single item: full-width wide card (matches RN singleCardWrap)
           Padding(
-            padding: const EdgeInsets.only(left: 12, right: 16),
-            child: SizedBox(
-              height: 260,
-              width: cardWidth,
-              child: children.first,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: children.first,
           )
         else
           SizedBox(
@@ -911,10 +908,11 @@ class _SectionBlock extends StatelessWidget {
 class NearbyUserCard extends StatelessWidget {
   final Map<String, dynamic> user;
   final bool isBirthday;
+  final bool wide;
   final void Function(Map<String, dynamic>) onTap;
   final void Function(Map<String, dynamic>)? onSayHi;
 
-  const NearbyUserCard({super.key, required this.user, required this.onTap, this.onSayHi, this.isBirthday = false});
+  const NearbyUserCard({super.key, required this.user, required this.onTap, this.onSayHi, this.isBirthday = false, this.wide = false});
 
   @override
   Widget build(BuildContext context) {
@@ -948,7 +946,7 @@ class NearbyUserCard extends StatelessWidget {
           ),
         ),
         clipBehavior: Clip.antiAlias,
-        child: isBirthday
+        child: (isBirthday || wide)
             ? _WideCardBody(
                 name: name,
                 pic: pic,
@@ -961,7 +959,7 @@ class NearbyUserCard extends StatelessWidget {
                 interests: displayTags,
                 ci: ci,
                 pct: pct,
-                isBirthday: true,
+                isBirthday: isBirthday,
                 bdColor: bdColor,
                 onTap: () => (onSayHi ?? onTap)(user))
             : Stack(
@@ -1227,6 +1225,7 @@ class _WideCardBody extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Column(
       children: [
         if (isBirthday)
@@ -1295,9 +1294,9 @@ class _WideCardBody extends StatelessWidget {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 5, vertical: 2),
                           decoration: BoxDecoration(
-                            color: pct >= 70
-                                ? const Color(0x60065F46)
-                                : const Color(0x5092400E),
+                            color: isDark
+                                ? (pct >= 70 ? const Color(0x60065F46) : const Color(0x5092400E))
+                                : (pct >= 70 ? const Color(0xFFDCFCE7) : const Color(0xFFFEF9C3)),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text('${pct.round()}%',
@@ -1305,9 +1304,9 @@ class _WideCardBody extends StatelessWidget {
                                   fontSize: 9,
                                   fontFamily: 'Outfit',
                                   fontWeight: FontWeight.w700,
-                                  color: pct >= 70
-                                      ? const Color(0xFF4ADE80)
-                                      : const Color(0xFFFCD34D))),
+                                  color: isDark
+                                      ? (pct >= 70 ? const Color(0xFF4ADE80) : const Color(0xFFFCD34D))
+                                      : (pct >= 70 ? const Color(0xFF16A34A) : const Color(0xFFD97706)))),
                         ),
                       ],
                     ]),
