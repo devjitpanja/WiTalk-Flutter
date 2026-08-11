@@ -286,7 +286,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           if (!(widget.isOutgoingRequest && widget.sentMessageCount >= 2))
           Container(
             padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPad + 8),
-            color: Colors.white,
+            color: Colors.transparent,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
