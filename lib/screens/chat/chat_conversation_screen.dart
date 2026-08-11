@@ -176,6 +176,19 @@ class _ChatConversationScreenState
   }
 
   @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      final pos = _scrollCtrl.position;
+      // Only track keyboard if user is near the bottom (within 200px).
+      // If they've scrolled up to read older messages, don't force them back.
+      if (pos.maxScrollExtent - pos.pixels <= 200) {
+        _scrollCtrl.jumpTo(pos.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _activeChatId != null) {
       ref.read(chatProvider.notifier).setActiveConversation(_activeChatId!);
