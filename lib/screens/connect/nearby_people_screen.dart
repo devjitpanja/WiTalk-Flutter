@@ -11,6 +11,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/chat_provider.dart';
 import '../../providers/location_provider.dart';
 import '../../providers/nearby_online_provider.dart';
 import '../../services/location_service.dart';
@@ -476,7 +477,29 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
           isBirthday: isBirthday,
           wide: users.length == 1 && !isBirthday,
           onTap: (u) => _showProfilePreview(context, u),
-          onSayHi: (u) => context.push('/user/${u['id'] ?? u['uid']}'),
+          onSayHi: (u) {
+                final otherUserId = (u['uid'] ?? u['id'])?.toString();
+                final otherUser = {
+                  'id': otherUserId,
+                  'name': u['name'],
+                  'username': u['username'],
+                  'profile_pic': u['profile_pic'],
+                  'gender': u['gender'],
+                };
+                final existing = ref.read(conversationsProvider).where(
+                  (c) => c.otherUserId == otherUserId ||
+                      c.otherUser?['id']?.toString() == otherUserId,
+                ).firstOrNull;
+                if (existing != null) {
+                  context.push('/chat/conversation/${existing.id}', extra: {
+                    'otherUser': otherUser,
+                    'status': existing.status,
+                    'initiatorId': existing.initiatorId,
+                  });
+                } else {
+                  context.push('/chat/new', extra: {'otherUser': otherUser});
+                }
+              },
         );
     return [
       _SectionBlock(
