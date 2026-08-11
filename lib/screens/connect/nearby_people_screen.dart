@@ -454,7 +454,7 @@ class _NearbyPeopleScreenState extends ConsumerState<NearbyPeopleScreen> {
       isScrollControlled: true,
       builder: (_) => _ProfilePreviewSheet(user: user, me: _me,
           onOpenProfile: () {
-            Navigator.of(context).pop();
+            Navigator.of(context, rootNavigator: true).pop();
             context.push('/user/${user['id'] ?? user['uid']}');
           }),
     );

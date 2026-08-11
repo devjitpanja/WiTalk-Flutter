@@ -323,7 +323,7 @@ class _ForYouTabState extends ConsumerState<ForYouTab> {
                             return SizedBox(
                               width: 72,
                               child: GestureDetector(
-                                onTap: () => context.push('/user/${p['id'] ?? p['user_id']}'),
+                                onTap: () => context.push('/user/${p['id'] ?? p['uid'] ?? p['user_id']}'),
                                 child: Column(
                                   children: [
                                     Stack(
