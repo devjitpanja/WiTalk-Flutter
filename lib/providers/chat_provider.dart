@@ -1389,7 +1389,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _db.chatDao.replaceLocalMessage(tempId,
         _messageToCompanion(serverMsg)).ignore();
 
-    state = state.copyWith(messages: {...state.messages, convId: updated});
+    // Update conversation tile's lastMessageStatus so the clock icon flips to
+    // double-tick without waiting for a pull-to-refresh.
+    final convIdx = state.conversations.indexWhere((c) => c.id == convId);
+    List<ChatConversation> updatedConvs = state.conversations;
+    if (convIdx != -1) {
+      updatedConvs = List<ChatConversation>.from(state.conversations);
+      updatedConvs[convIdx] =
+          state.conversations[convIdx].copyWith(lastMessageStatus: 'sent');
+    }
+
+    state = state.copyWith(
+      messages: {...state.messages, convId: updated},
+      conversations: updatedConvs,
+    );
   }
 
   // ── Conversation helpers ──────────────────────────────────────────────────────
