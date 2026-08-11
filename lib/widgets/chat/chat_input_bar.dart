@@ -288,7 +288,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
             padding: EdgeInsets.fromLTRB(12, 8, 12, bottomPad + 8),
             color: Colors.transparent,
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
               // Input pill: [sticker | textfield | attachment]
               Expanded(
@@ -300,13 +300,13 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     border: Border.all(color: c.border, width: 1),
                   ),
                   child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                     // Sticker / GIF picker on the left
                     GestureDetector(
                       onTap: widget.onOpenGiphyPicker,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Image.asset(
                           'assets/icons/sticker.png',
                           width: 22,
@@ -320,7 +320,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                         ),
                       ),
                     ),
-                    // Text field
+                    // Text field — max 3 lines, scrollable beyond
                     Expanded(
                       child: TextField(
                         controller: _controller,
@@ -329,7 +329,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                             color: c.text,
                             fontFamily: 'Outfit',
                             fontSize: 15),
-                        maxLines: null,
+                        maxLines: 3,
+                        minLines: 1,
                         keyboardType: TextInputType.multiline,
                         textInputAction: TextInputAction.newline,
                         decoration: InputDecoration(
@@ -351,7 +352,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     GestureDetector(
                       onTap: widget.onPickAndSendImage,
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Icon(Icons.attach_file,
                             color: c.textSecondary, size: 22),
                       ),
