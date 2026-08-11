@@ -1034,6 +1034,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                             senderAdminTitle: senderAdminTitle,
                             currentUserId: uid,
                             isHighlighted: _highlightedMessageId == msg.id,
+                            onTapAvatar: msg.senderId.isNotEmpty
+                                ? () => context.push('/profile/${msg.senderId}')
+                                : null,
                             onLongPress: () =>
                                 _onMessageLongPress(msg),
                             onReplySwipe: (m) {

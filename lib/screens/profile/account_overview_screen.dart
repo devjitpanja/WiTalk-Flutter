@@ -167,6 +167,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
   Map<String, dynamic>? _userData;
   bool _loading = true;
   double _levelProgress = 0;
+  int _profileCompletion = 0;
   Map<String, dynamic> _streakData = {
     'currentStreak': 0,
     'longestStreak': 0,
@@ -242,6 +243,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
             'account_type': prefs.getString('aov_userData_accountType') ?? 'personal',
           };
           _levelProgress = prefs.getDouble('aov_levelProgress') ?? 0;
+          _profileCompletion = prefs.getInt('aov_profileCompletion') ?? 0;
           _accountType = prefs.getString('aov_accountType') ?? 'personal';
           _loading = false;
         });
@@ -318,12 +320,15 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
       await prefs.setInt('aov_userData_maxLevelPoints', (fresh['maxLevelPoints'] as num?)?.toInt() ?? 150);
       await prefs.setDouble('aov_levelProgress', freshProgress);
       await prefs.setString('aov_accountType', freshAccountType);
+      final freshCompletion = _calcProfileCompletion(fresh);
+      await prefs.setInt('aov_profileCompletion', freshCompletion);
 
       if (mounted) {
         setState(() {
           _userData = fresh;
           _accountType = freshAccountType;
           _levelProgress = freshProgress;
+          _profileCompletion = freshCompletion;
           if (!silent) _loading = false;
         });
       }
@@ -688,7 +693,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
     final levelTitle = _userData?['levelTitle']?.toString() ?? 'Newcomer';
     final levelPoints = (_userData?['levelPoints'] as num?)?.toInt() ?? 0;
     final maxLevelPoints = (_userData?['maxLevelPoints'] as num?)?.toInt() ?? 150;
-    final completion = _calcProfileCompletion(_userData);
+    final completion = _profileCompletion;
     final isVerified = _isVerified || (_userData?['is_verified'] == true);
     Map<String, dynamic>? badgeData;
     if (_userData?['verification_badge'] is Map) {
