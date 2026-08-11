@@ -970,6 +970,7 @@ class _VoiceBubble extends StatelessWidget {
           bottomLeft: Radius.circular(isMyMessage ? 18 : 4),
           bottomRight: Radius.circular(isMyMessage ? 4 : 18),
         ),
+        border: isMyMessage ? null : Border.all(color: c.border, width: 1),
       ),
       child: Column(
         children: [
@@ -1115,9 +1116,10 @@ class _GiphyBubbleState extends State<_GiphyBubble> {
     final animatedUrl = widget.message.mediaUrl ?? '';
     final staticUrl = _staticUrl(animatedUrl);
 
+    // Always render white on the dark semi-transparent overlay pill
     final timeStatus = _TimeStatus(
       message: widget.message,
-      isMyMessage: widget.isMyMessage,
+      isMyMessage: true,
       c: widget.c,
     );
 
