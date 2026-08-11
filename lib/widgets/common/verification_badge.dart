@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../cache/witalk_image_cache.dart';
 
 /// Matches the RN VerificationBadge behaviour exactly.
 ///
@@ -36,6 +37,7 @@ class VerificationBadge extends StatelessWidget {
 
     if (isImageUrl) {
       return CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
         imageUrl: iconUrl,
         width: size,
         height: size,

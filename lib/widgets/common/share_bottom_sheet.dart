@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/chat_api_service.dart';
 import '../../theme/theme_colors.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ── Data models ────────────────────────────────────────────────────────────────
 
@@ -876,6 +877,7 @@ class _Avatar extends StatelessWidget {
       return ClipRRect(
         borderRadius: BorderRadius.circular(radius),
         child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
           imageUrl: url!,
           width: size,
           height: size,

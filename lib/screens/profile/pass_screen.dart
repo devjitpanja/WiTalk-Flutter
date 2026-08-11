@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Tier config ──────────────────────────────────────────────────────────────
 const _tierGradients = {
@@ -164,6 +165,7 @@ class _PassCardState extends State<_PassCard> {
             decoration: BoxDecoration(gradient: LinearGradient(colors: gradColors, begin: Alignment.topLeft, end: Alignment.bottomRight)),
             child: imageUrl != null && imageUrl.isNotEmpty && !_imgError
                 ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                     imageUrl: imageUrl,
                     fit: BoxFit.contain,
                     width: double.infinity,

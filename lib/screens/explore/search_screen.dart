@@ -6,6 +6,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/post_card.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ---------------------------------------------------------------------------
 // Search history item model
@@ -771,7 +772,8 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
             child: pic != null
-                ? CachedNetworkImage(imageUrl: pic, width: 50, height: 50, fit: BoxFit.cover,
+                ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, width: 50, height: 50, fit: BoxFit.cover,
                     placeholder: (ctx, url) => Container(width: 50, height: 50, color: c.border),
                     errorWidget: (ctx, url, err) => Container(width: 50, height: 50, color: c.border))
                 : Container(width: 50, height: 50, color: c.border,

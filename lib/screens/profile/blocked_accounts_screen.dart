@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class _T {
   final bool dark;
@@ -118,7 +119,8 @@ class _BlockedAccountsScreenState extends ConsumerState<BlockedAccountsScreen> {
           onTap: () => context.push('/user/$id'),
           child: Row(children: [
             ClipOval(child: pic != null && pic.isNotEmpty
-                ? CachedNetworkImage(imageUrl: pic, width: 46, height: 46, fit: BoxFit.cover)
+                ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, width: 46, height: 46, fit: BoxFit.cover)
                 : Container(width: 46, height: 46, color: t.primary, alignment: Alignment.center, child: Text(name.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 18, color: Colors.white)))),
             const SizedBox(width: 12),
             Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:intl/intl.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Theme helper ─────────────────────────────────────────────────────────────
 class _T {
@@ -314,7 +315,8 @@ class _MyPurchasesScreenState extends ConsumerState<MyPurchasesScreen> {
           // Avatar + type dot
           SizedBox(width: 46, height: 46, child: Stack(children: [
             ClipRRect(borderRadius: BorderRadius.circular(23), child: communityPic != null && communityPic.isNotEmpty
-                ? CachedNetworkImage(imageUrl: communityPic, width: 46, height: 46, fit: BoxFit.cover)
+                ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: communityPic, width: 46, height: 46, fit: BoxFit.cover)
                 : Container(width: 46, height: 46, decoration: BoxDecoration(color: t.avatarFallback, shape: BoxShape.circle), child: Icon(Icons.group, size: 22, color: t.primary))),
             Positioned(bottom: -2, right: -2, child: Container(
               width: 18, height: 18,

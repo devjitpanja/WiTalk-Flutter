@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/missions_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Cache keys ───────────────────────────────────────────────────────────────
 const _kCacheUser = 'account_overview_user_cache_ts';
@@ -717,6 +718,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
                   ClipOval(
                     child: pic != null && pic.isNotEmpty
                         ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                             imageUrl: pic,
                             width: 56,
                             height: 56,

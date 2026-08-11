@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/theme_colors.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class NotMemberBottomSheet extends StatelessWidget {
   final String groupName;
@@ -74,6 +75,7 @@ class NotMemberBottomSheet extends StatelessWidget {
                 borderRadius: BorderRadius.circular(36),
                 child: groupPicture != null && groupPicture!.isNotEmpty
                     ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                         imageUrl: groupPicture!,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => Icon(Icons.group, size: 32, color: c.textTertiary),

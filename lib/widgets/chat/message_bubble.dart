@@ -11,6 +11,7 @@ import '../../api/dio_client.dart';
 import 'voice_message_player.dart';
 import 'poll_message.dart';
 import 'message_reactions.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ── Message bubble — renders all message types from ChatConversation ──────────
 // Mirrors the message rendering logic in ChatConversation.jsx and
@@ -723,6 +724,7 @@ class _LinkPreviewCard extends StatelessWidget {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(8)),
               child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: image,
                   height: 120,
                   width: double.infinity,
@@ -886,6 +888,7 @@ class _ImageBubble extends StatelessWidget {
         ),
         child: Stack(children: [
           CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
             imageUrl: message.mediaUrl ?? '',
             width: w,
             height: h,
@@ -1126,6 +1129,7 @@ class _GiphyBubbleState extends State<_GiphyBubble> {
           mainAxisSize: MainAxisSize.min,
           children: [
             CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
               imageUrl: _playing ? animatedUrl : staticUrl,
               width: w,
               height: h,
@@ -1157,6 +1161,7 @@ class _GiphyBubbleState extends State<_GiphyBubble> {
             alignment: Alignment.center,
             children: [
               CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                 imageUrl: _playing ? animatedUrl : staticUrl,
                 width: w,
                 height: h,
@@ -1238,6 +1243,7 @@ class _VideoBubble extends StatelessWidget {
                     Radius.circular(isMyMessage ? 4 : 16),
               ),
               child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                 imageUrl:
                     message.mediaData!['thumbnail'] as String,
                 width: 220,
@@ -1375,6 +1381,7 @@ class _SharedPostBubble extends StatelessWidget {
             // Thumbnail / media background
             if (mediaUrl != null && mediaUrl.isNotEmpty)
               CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                 imageUrl: mediaUrl,
                 fit: BoxFit.cover,
                 placeholder: (ctx2, unused1) => Container(color: Colors.black26),
@@ -1413,6 +1420,7 @@ class _SharedPostBubble extends StatelessWidget {
                     if (profilePic != null)
                       ClipOval(
                         child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                           imageUrl: profilePic,
                           width: 26, height: 26,
                           fit: BoxFit.cover,
@@ -1515,6 +1523,7 @@ class _SharedPostBubble extends StatelessWidget {
               ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                 child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: mediaUrl,
                   height: 160,
                   width: double.infinity,
@@ -1540,6 +1549,7 @@ class _SharedPostBubble extends StatelessWidget {
                         if (profilePic != null)
                           ClipOval(
                             child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                               imageUrl: profilePic,
                               width: 20, height: 20,
                               fit: BoxFit.cover,
@@ -1661,6 +1671,7 @@ class _SharedTopicBubble extends StatelessWidget {
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(18)),
               child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: image as String,
                   height: 120,
                   width: double.infinity,
@@ -2546,6 +2557,7 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
                   child: avatarUrl != null
                       ? ClipOval(
                           child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                             imageUrl: avatarUrl,
                             width: 44,
                             height: 44,

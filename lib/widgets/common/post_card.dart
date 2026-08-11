@@ -19,6 +19,7 @@ import '../../utils/time_utils.dart';
 import 'comment_bottom_sheet.dart';
 import 'share_bottom_sheet.dart';
 import 'verification_badge.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Content parsing ────────────────────────────────────────────────────────
 enum _PartType { text, link, mention, hashtag }
@@ -529,6 +530,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
               if (pic != null && !_profilePicError)
                 ClipOval(
                   child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                     imageUrl: pic,
                     width: 40,
                     height: 40,
@@ -822,6 +824,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         // Thumbnail placeholder
         if ((_mediaItems[_mediaIndex]['thumbnail'] as String?) != null)
           CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
             imageUrl: _mediaItems[_mediaIndex]['thumbnail'] as String,
             fit: BoxFit.cover,
           )
@@ -938,6 +941,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
           ImageFiltered(
             imageFilter: _blurFilter,
             child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
               imageUrl: thumbnail,
               fit: BoxFit.cover,
               fadeInDuration: Duration.zero,
@@ -955,6 +959,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
         // 3. Full-quality image — fades in over the thumbnail/shimmer naturally
         if (!hasError)
           CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
             imageUrl: url,
             fit: BoxFit.cover,
             // 300ms matches RN Animated.timing duration

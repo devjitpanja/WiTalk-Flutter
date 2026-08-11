@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'sound_wave_indicator.dart';
 import '../common/verification_badge.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class ParticipantAvatar extends StatelessWidget {
   final String? uid;
@@ -147,6 +148,7 @@ class ParticipantAvatar extends StatelessWidget {
                   child: resolvedAvatarUrl != null && resolvedAvatarUrl.isNotEmpty
                       ? ClipOval(
                           child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                             imageUrl: resolvedAvatarUrl,
                             width: size,
                             height: size,
@@ -162,6 +164,7 @@ class ParticipantAvatar extends StatelessWidget {
                 if (hasFrame)
                   Positioned.fill(
                     child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                       imageUrl: resolvedFrameUrl,
                       fit: BoxFit.contain,
                       errorWidget: (_, __, ___) => const SizedBox.shrink(),

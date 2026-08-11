@@ -8,6 +8,7 @@ import 'package:timeago/timeago.dart' as timeago;
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/notification_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // Groups notifications into time-bucketed sections identical to the RN app.
 List<Map<String, dynamic>> _groupByTime(List<NotificationItem> notifications) {
@@ -666,6 +667,7 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(4),
                             child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                               imageUrl: notif.thumbnailUrl!,
                               width: 40,
                               height: 40,
@@ -710,6 +712,7 @@ class _SwipeableNotifTileState extends State<_SwipeableNotifTile>
         padding: const EdgeInsets.only(top: 2),
         child: ClipOval(
           child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
             imageUrl: pic,
             width: 40,
             height: 40,

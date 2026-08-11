@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../api/channel_api.dart';
 import '../../theme/theme_colors.dart';
+import '../../cache/witalk_image_cache.dart';
 
 extension _CtxX on BuildContext {
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
@@ -229,7 +230,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
       Container(width: 22, height: 22, decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary),
         clipBehavior: Clip.antiAlias,
         child: icon != null
-          ? CachedNetworkImage(imageUrl: icon, fit: BoxFit.cover,
+          ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: icon, fit: BoxFit.cover,
               errorWidget: (_, __, ___) => Center(child: Text(init,
                 style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white))))
           : Center(child: Text(init,
@@ -300,6 +302,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           width: double.infinity,
           height: clampedH,
           child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
             imageUrl: url,
             width: screenW,
             height: clampedH,
@@ -340,7 +343,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
             return ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: url != null
-                ? CachedNetworkImage(imageUrl: url, width: tile, height: tile, fit: BoxFit.cover,
+                ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: url, width: tile, height: tile, fit: BoxFit.cover,
                     placeholder: (_, __) => Container(width: tile, height: tile, color: c.border.withValues(alpha: 0.3)),
                     errorWidget: (_, __, ___) => Container(width: tile, height: tile,
                       color: c.border.withValues(alpha: 0.3),
@@ -534,6 +538,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
           ClipRRect(
             borderRadius: const BorderRadius.only(),
             child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
               imageUrl: url, width: w, height: h, fit: BoxFit.cover,
               placeholder: (_, __) => Container(width: w, height: h, color: c.border.withValues(alpha: 0.3)),
               errorWidget: (_, __, ___) => Container(width: w, height: h, color: c.border)),
@@ -1423,7 +1428,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
             decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary),
             clipBehavior: Clip.antiAlias,
             child: icon != null
-              ? CachedNetworkImage(imageUrl: icon, width: 38, height: 38, fit: BoxFit.cover,
+              ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: icon, width: 38, height: 38, fit: BoxFit.cover,
                   errorWidget: (_, __, ___) => Center(child: Text(init,
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white))))
               : Center(child: Text(init,

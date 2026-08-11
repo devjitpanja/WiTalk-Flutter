@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
 import '../../services/upload_service.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ── Theme helper ─────────────────────────────────────────────────────────────
 class _T {
@@ -518,7 +519,8 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen>
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(children: [
         ClipOval(child: pic != null && pic.isNotEmpty
-            ? CachedNetworkImage(imageUrl: pic, width: 24, height: 24, fit: BoxFit.cover)
+            ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, width: 24, height: 24, fit: BoxFit.cover)
             : Container(
                 width: 24, height: 24,
                 color: t.cardBg,

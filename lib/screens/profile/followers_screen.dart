@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/custom_alert_dialog.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -572,6 +573,7 @@ class _FollowersScreenState extends ConsumerState<FollowersScreen> {
     Widget child;
     if (url != null && url.isNotEmpty) {
       child = CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
         imageUrl: url,
         fit: BoxFit.cover,
         placeholder: (_, __) => Container(color: colors.border),
@@ -653,7 +655,8 @@ class _FollowersScreenState extends ConsumerState<FollowersScreen> {
                           width: 52,
                           height: 52,
                           child: pic != null
-                              ? CachedNetworkImage(imageUrl: pic, fit: BoxFit.cover)
+                              ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, fit: BoxFit.cover)
                               : _avatarFallback(user['name'] as String? ?? '', colors),
                         ),
                       ),

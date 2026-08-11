@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:ui';
+import '../../cache/witalk_image_cache.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -607,6 +608,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
           // Background
           if (pic != null)
             CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
               imageUrl: pic,
               fit: BoxFit.cover,
               imageBuilder: (_, img) => ImageFiltered(
@@ -661,6 +663,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
           Center(
             child: pic != null
                 ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                     imageUrl: pic,
                     imageBuilder: (_, img) => Container(
                       width: 96,
@@ -1936,6 +1939,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
   }) {
     if (url != null && url.isNotEmpty) {
       return CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
         imageUrl: url,
         imageBuilder: (_, img) => Container(
           width: size,

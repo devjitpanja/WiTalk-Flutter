@@ -8,6 +8,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/location_service.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Providers ───────────────────────────────────────────────────────────────
 
@@ -486,7 +487,8 @@ class _CommunityIconCard extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: pic != null
-                  ? CachedNetworkImage(imageUrl: pic, width: 70, height: 70, fit: BoxFit.cover,
+                  ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, width: 70, height: 70, fit: BoxFit.cover,
                       placeholder: (_, __) => Container(width: 70, height: 70, color: c.cardBackground),
                       errorWidget: (_, __, ___) => _FallbackGroupIcon(size: 70))
                   : _FallbackGroupIcon(size: 70),
@@ -555,7 +557,8 @@ class _CommunityWideCard extends StatelessWidget {
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
               child: pic != null
-                  ? CachedNetworkImage(imageUrl: pic, width: 64, height: 64, fit: BoxFit.cover,
+                  ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, width: 64, height: 64, fit: BoxFit.cover,
                       placeholder: (_, __) => Container(width: 64, height: 64, color: c.border),
                       errorWidget: (_, __, ___) => _FallbackGroupIcon(size: 64))
                   : _FallbackGroupIcon(size: 64),

@@ -2,6 +2,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import '../api/dio_client.dart';
+import '../cache/app_cache_manager.dart';
 import 'storage.dart';
 import 'logger.dart';
 
@@ -38,7 +39,15 @@ Future<bool> performLogout({bool clearStorage = true}) async {
       AppLogger.emoji('✅', 'Socket connections closed');
     } catch (_) {}
 
-    // 4. Clear all local storage & token gate
+    // 4. Clear media cache (images, video) — account isolation
+    try {
+      await appCacheManager.clearOnLogout();
+      AppLogger.emoji('✅', 'Media cache cleared on logout');
+    } catch (e) {
+      AppLogger.error('[AuthUtils] Media cache clear error (non-fatal)', e);
+    }
+
+    // 5. Clear all local storage & token gate
     clearTokenCache();
     resetTokenGate();
     if (clearStorage) {

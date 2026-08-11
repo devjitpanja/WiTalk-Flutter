@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import '../../cache/witalk_image_cache.dart';
 
 import '../../theme/theme_colors.dart';
 import '../../services/audio_room_service.dart';
@@ -109,6 +110,7 @@ class _CommunityAddaListScreenState extends ConsumerState<CommunityAddaListScree
               ClipRRect(
                 borderRadius: BorderRadius.circular(18),
                 child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: widget.groupPicture!,
                   width: 36,
                   height: 36,

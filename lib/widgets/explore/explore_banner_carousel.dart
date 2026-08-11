@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../api/dio_client.dart';
 import '../../services/deep_link_service.dart';
 import '../../theme/app_colors.dart';
+import '../../cache/witalk_image_cache.dart';
 
 final _bannersProvider = FutureProvider.autoDispose<Map<String, dynamic>>((ref) async {
   try {
@@ -191,6 +192,7 @@ class _AutoplayPageViewState extends State<_AutoplayPageView> {
           onTap: isInteractive ? () => widget.onPress(banner) : null,
           child: imageUrl != null
               ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: imageUrl,
                   width: widget.carouselWidth,
                   height: widget.bannerHeight,

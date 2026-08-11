@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../theme/theme_colors.dart';
 import 'wave_bar_anim.dart';
 import 'animated_tag_border.dart';
+import '../../cache/witalk_image_cache.dart';
 
 const Map<String, IconData> _iconMap = {
   'star': Icons.star,
@@ -241,6 +242,7 @@ class PersonalAddaCard extends StatelessWidget {
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(7),
                                     child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                       imageUrl: room['group_picture'].toString(),
                                       width: 14,
                                       height: 14,
@@ -544,6 +546,7 @@ class PersonalAddaCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(20),
                             child: hostPic != null && hostPic.isNotEmpty
                                 ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                     imageUrl: hostPic,
                                     fit: BoxFit.cover,
                                     errorWidget: (_, __, ___) => Container(
@@ -634,6 +637,7 @@ class PersonalAddaCard extends StatelessWidget {
                                             final pic = p['profile_pic']?.toString() ?? p['avatar']?.toString() ?? p['picture']?.toString();
                                             if (pic != null && pic.isNotEmpty) {
                                               return CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                                 imageUrl: pic,
                                                 fit: BoxFit.cover,
                                                 errorWidget: (_, __, ___) => Container(

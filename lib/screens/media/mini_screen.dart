@@ -14,6 +14,7 @@ import '../../theme/theme_colors.dart';
 import '../../widgets/common/comment_bottom_sheet.dart';
 import '../../widgets/common/share_bottom_sheet.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../cache/witalk_image_cache.dart';
 
 String _formatCount(int n) {
   if (n >= 1000000) {
@@ -1078,6 +1079,7 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
             if (_thumbnail != null && !_initialized)
               Positioned.fill(
                 child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: _thumbnail!,
                   fit: _coverMode ? BoxFit.cover : BoxFit.contain,
                   width: double.infinity,
@@ -1455,7 +1457,8 @@ class _MiniSeekBarState extends State<_MiniSeekBar>
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: widget.thumbnail != null
-                    ? CachedNetworkImage(imageUrl: widget.thumbnail!, fit: BoxFit.cover)
+                    ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: widget.thumbnail!, fit: BoxFit.cover)
                     : const ColoredBox(color: Colors.black),
               ),
               Container(

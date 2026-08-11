@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
 import '../../utils/image_utils.dart';
+import '../../cache/witalk_image_cache.dart';
 
 String _fmtPoints(num? points) {
   if (points == null || points == 0) return '0';
@@ -549,6 +550,7 @@ class _RankScreenState extends ConsumerState<RankScreen>
                               child: profilePicUrl != null &&
                                       profilePicUrl.isNotEmpty
                                   ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                       imageUrl: profilePicUrl,
                                       width: avatarSize,
                                       height: avatarSize,
@@ -800,6 +802,7 @@ class _RankScreenState extends ConsumerState<RankScreen>
               child: ClipOval(
                 child: profilePicUrl != null && profilePicUrl.isNotEmpty
                     ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                         imageUrl: profilePicUrl,
                         fit: BoxFit.cover,
                         placeholder: (context, url) => Container(

@@ -15,6 +15,7 @@ import '../../api/dio_client.dart';
 import '../../widgets/common/verification_badge.dart';
 import '../../providers/follow_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ─── Level ring gradient colors ──────────────────────────────────────────────
 List<Color> _levelRingColors(int level) {
@@ -781,7 +782,8 @@ class _HeroCard extends StatelessWidget {
                     decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: colors.surface, width: 2)),
                     child: ClipOval(
                       child: profilePic != null
-                          ? CachedNetworkImage(imageUrl: profilePic!, fit: BoxFit.cover, width: double.infinity, height: double.infinity, errorWidget: (_, __, ___) => _AvatarFallback(name: name, colors: colors))
+                          ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: profilePic!, fit: BoxFit.cover, width: double.infinity, height: double.infinity, errorWidget: (_, __, ___) => _AvatarFallback(name: name, colors: colors))
                           : _AvatarFallback(name: name, colors: colors),
                     ),
                   ),
@@ -790,7 +792,8 @@ class _HeroCard extends StatelessWidget {
                 if (avatarFrameUrl != null)
                   Positioned(top: -16, left: -16, child: SizedBox(
                     width: 124, height: 124,
-                    child: CachedNetworkImage(imageUrl: avatarFrameUrl!, fit: BoxFit.contain),
+                    child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: avatarFrameUrl!, fit: BoxFit.contain),
                   )),
               ]),
             ),
@@ -1093,7 +1096,8 @@ class _PostTile extends StatelessWidget {
       onTap: onTap,
       child: Stack(fit: StackFit.expand, children: [
         imgUrl != null
-            ? CachedNetworkImage(imageUrl: imgUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => ColoredBox(color: colors.surface))
+            ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: imgUrl, fit: BoxFit.cover, errorWidget: (_, __, ___) => ColoredBox(color: colors.surface))
             : Container(
                 color: colors.surface,
                 padding: const EdgeInsets.all(8),
@@ -1262,7 +1266,8 @@ class _AboutSection extends StatelessWidget {
                 child: SizedBox(width: 68, child: Column(children: [
                   ClipRRect(borderRadius: BorderRadius.circular(14), child: SizedBox(width: 52, height: 52,
                     child: pic != null
-                        ? CachedNetworkImage(imageUrl: pic, fit: BoxFit.cover)
+                        ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, fit: BoxFit.cover)
                         : Container(color: colors.primary.withValues(alpha: 0.3), child: Center(child: Text(gName[0].toUpperCase(), style: TextStyle(color: colors.primary, fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 20)))),
                   )),
                   const SizedBox(height: 5),

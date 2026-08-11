@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:youtube_player_flutter/youtube_player_flutter.dart';
+import '../../cache/witalk_image_cache.dart';
 
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
@@ -689,6 +690,7 @@ class _VideoCard extends StatelessWidget {
               child: Stack(
                 children: [
                   CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                     imageUrl: thumbUrl,
                     width: double.infinity,
                     height: double.infinity,

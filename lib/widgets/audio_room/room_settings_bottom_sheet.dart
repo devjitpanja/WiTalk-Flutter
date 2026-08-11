@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../cache/witalk_image_cache.dart';
 import 'package:flutter/services.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dart:math' as math;
@@ -727,6 +728,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
             child: profilePic != null
                 ? ClipOval(
                     child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                       imageUrl: profilePic,
                       fit: BoxFit.cover,
                       width: 40,

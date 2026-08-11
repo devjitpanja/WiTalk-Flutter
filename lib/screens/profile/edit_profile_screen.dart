@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../cache/witalk_image_cache.dart';
 
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
@@ -1008,7 +1009,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                   child: isLocal
                       ? Image.file(_selectedImage!, fit: BoxFit.cover)
                       : (_profilePic.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: _profilePic, fit: BoxFit.cover,
+                          ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: _profilePic, fit: BoxFit.cover,
                               placeholder: (_, __) => Container(color: colors.surface),
                               errorWidget: (_, __, ___) => Container(color: colors.surface,
                                   child: Icon(Icons.person, color: colors.textTertiary, size: 40)))

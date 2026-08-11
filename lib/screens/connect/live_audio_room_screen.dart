@@ -22,6 +22,7 @@ import '../../widgets/audio_room/youtube_picker_bottom_sheet.dart';
 import '../../widgets/audio_room/chat_gpt_bottom_sheet.dart';
 import '../../widgets/audio_room/google_ai_bottom_sheet.dart';
 import '../../widgets/audio_room/ask_ai_bottom_sheet.dart';
+import '../../cache/witalk_image_cache.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _kBg = Color(0xFF080C17);
@@ -2203,6 +2204,7 @@ class _ChatAvatar extends StatelessWidget {
       child: picUrl != null && picUrl!.isNotEmpty
           ? ClipOval(
               child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                 imageUrl: picUrl!,
                 width: 28,
                 height: 28,
@@ -2424,7 +2426,8 @@ class _AudienceListSheet extends StatelessWidget {
                       decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [Color(0xFF2D4A7A), Color(0xFF1A3050)])),
                       clipBehavior: Clip.antiAlias,
                       child: (pic != null && pic.isNotEmpty)
-                          ? ClipOval(child: CachedNetworkImage(imageUrl: pic, width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letterWidget(name), placeholder: (_, __) => _letterWidget(name)))
+                          ? ClipOval(child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, width: 36, height: 36, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letterWidget(name), placeholder: (_, __) => _letterWidget(name)))
                           : _letterWidget(name),
                     ),
                     title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit')),

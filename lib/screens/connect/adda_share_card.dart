@@ -2,6 +2,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import '../../cache/witalk_image_cache.dart';
 
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
@@ -267,7 +268,8 @@ class _AddaShareCardState extends State<AddaShareCard> {
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(34),
                                     child: userAvatar != null && userAvatar.isNotEmpty
-                                        ? CachedNetworkImage(imageUrl: userAvatar, fit: BoxFit.cover)
+                                        ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: userAvatar, fit: BoxFit.cover)
                                         : Container(
                                             decoration: const BoxDecoration(
                                               gradient: LinearGradient(colors: [Color(0xFF7B61FF), Color(0xFFAFA9EC)]),

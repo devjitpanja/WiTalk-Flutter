@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
 import '../../widgets/common/post_card.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class CityScreen extends ConsumerWidget {
   final String cityId;
@@ -31,7 +32,8 @@ class CityScreen extends ConsumerWidget {
               leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => context.pop()),
               flexibleSpace: FlexibleSpaceBar(
                 title: Text(name, style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
-                background: cover != null ? CachedNetworkImage(imageUrl: cover, fit: BoxFit.cover) : Container(color: AppColors.primaryButton.withOpacity(0.3)),
+                background: cover != null ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: cover, fit: BoxFit.cover) : Container(color: AppColors.primaryButton.withOpacity(0.3)),
               ),
             ),
             SliverToBoxAdapter(child: Padding(padding: const EdgeInsets.all(16), child: Row(children: [

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'dashed_circle_painter.dart';
 import 'participant_avatar.dart';
+import '../../cache/witalk_image_cache.dart';
 
 /// Premium redesigned GridSeatingLayout.
 /// 4-column flex-wrap grid with improved visual hierarchy.
@@ -529,6 +530,7 @@ class GridSeatingLayout extends StatelessWidget {
         child: avatar != null && avatar.isNotEmpty
             ? ClipOval(
                 child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                   imageUrl: avatar,
                   width: 30,
                   height: 30,

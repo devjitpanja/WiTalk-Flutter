@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import '../../cache/witalk_image_cache.dart';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -2651,7 +2652,8 @@ class _CreateAudioRoomScreenState extends ConsumerState<CreateAudioRoomScreen> {
     if (url != null && url.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(size / 2),
-        child: CachedNetworkImage(imageUrl: url, width: size, height: size, fit: BoxFit.cover,
+        child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: url, width: size, height: size, fit: BoxFit.cover,
           errorWidget: (_, __, ___) => _avatarFallback(name, size, c)),
       );
     }
@@ -2673,7 +2675,8 @@ class _CreateAudioRoomScreenState extends ConsumerState<CreateAudioRoomScreen> {
     if (url != null && url.isNotEmpty) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(size / 2),
-        child: CachedNetworkImage(imageUrl: url, width: size, height: size, fit: BoxFit.cover,
+        child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: url, width: size, height: size, fit: BoxFit.cover,
           errorWidget: (_, __, ___) => _avatarFallback(name, size, c)),
       );
     }

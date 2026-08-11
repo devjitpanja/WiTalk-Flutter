@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 const _monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const _dayLabels = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
@@ -381,7 +382,8 @@ class _StreakScreenState extends ConsumerState<StreakScreen> with SingleTickerPr
                   decoration: BoxDecoration(color: const Color(0x20F57C00), border: isFirst ? Border.all(color: const Color(0xFFFFD700), width: 2.5) : null, shape: BoxShape.circle),
                   child: ClipOval(
                     child: pic != null && pic.isNotEmpty
-                        ? CachedNetworkImage(imageUrl: pic, fit: BoxFit.cover, width: double.infinity, height: double.infinity,
+                        ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: pic, fit: BoxFit.cover, width: double.infinity, height: double.infinity,
                             errorWidget: (_, __, ___) => Center(child: Text(name.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFFF57C00)))))
                         : Center(child: Text(name.substring(0, 1).toUpperCase(), style: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 17, color: Color(0xFFF57C00)))),
                   ),

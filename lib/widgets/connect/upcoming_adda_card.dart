@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import '../../theme/theme_colors.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class UpcomingAddaCard extends StatelessWidget {
   final Map<String, dynamic> room;
@@ -281,6 +282,7 @@ class UpcomingAddaCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14),
                             child: avatarUri != null && avatarUri.isNotEmpty
                                 ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                     imageUrl: avatarUri,
                                     fit: BoxFit.cover,
                                     errorWidget: (_, __, ___) => Container(

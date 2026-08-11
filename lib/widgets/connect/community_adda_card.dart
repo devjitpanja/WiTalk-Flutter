@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
+import '../../cache/witalk_image_cache.dart';
 
 const Map<String, dynamic> _communityPalette = {
   'gradientLight': [Color(0xFFFFFFFF), Color(0xFFF5F3FF), Color(0xFFEDE9FE)],
@@ -99,6 +100,7 @@ class CommunityAddaCard extends StatelessWidget {
                           borderRadius: BorderRadius.circular(20),
                           child: communityPicture != null && communityPicture.isNotEmpty
                               ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                   imageUrl: communityPicture,
                                   fit: BoxFit.cover,
                                   errorWidget: (_, __, ___) => Container(
@@ -304,6 +306,7 @@ class CommunityAddaCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(19),
                 child: hostPic != null && hostPic.isNotEmpty
                     ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                         imageUrl: hostPic,
                         fit: BoxFit.cover,
                         errorWidget: (_, __, ___) => Container(
@@ -422,6 +425,7 @@ class CommunityAddaCard extends StatelessWidget {
                                       final pic = p['profile_pic']?.toString() ?? p['avatar']?.toString() ?? p['picture']?.toString();
                                       if (pic != null && pic.isNotEmpty) {
                                         return CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                           imageUrl: pic,
                                           fit: BoxFit.cover,
                                           errorWidget: (_, __, ___) => Container(

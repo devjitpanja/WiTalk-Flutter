@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class _T {
   final bool dark;
@@ -200,6 +201,7 @@ class _AboutAccountScreenState extends ConsumerState<AboutAccountScreen> {
               children: [
                 ClipOval(
                   child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                     imageUrl: (user['profile_pic'] as String?) ?? '',
                     width: 80,
                     height: 80,

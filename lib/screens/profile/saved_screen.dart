@@ -6,6 +6,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class _T {
   final bool dark;
@@ -229,11 +230,13 @@ class _SavedScreenState extends ConsumerState<SavedScreen> {
     if (isVideo) {
       final thumb = first?['thumbnail']?.toString();
       content = thumb != null && thumb.isNotEmpty
-          ? CachedNetworkImage(imageUrl: thumb, fit: BoxFit.cover, width: double.infinity, height: double.infinity)
+          ? CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: thumb, fit: BoxFit.cover, width: double.infinity, height: double.infinity)
           : Container(color: Colors.black, child: const Center(child: Icon(Icons.play_circle_outline, size: 40, color: Colors.white)));
     } else if (first != null && first['type'] == 'image') {
       final url = first['url']?.toString() ?? '';
-      content = CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
+      content = CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),imageUrl: url, fit: BoxFit.cover, width: double.infinity, height: double.infinity);
     } else {
       content = Container(
         color: t.textOnlyBg,

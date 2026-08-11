@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/audio_room_service.dart';
+import '../../cache/witalk_image_cache.dart';
 
 class UserProfileBottomSheet extends StatefulWidget {
   final Map<String, dynamic>? participant;
@@ -353,6 +354,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                     child: avatarUrl != null
                                         ? ClipOval(
                                             child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                               imageUrl: avatarUrl,
                                               width: kAvatarSize,
                                               height: kAvatarSize,
@@ -365,6 +367,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                   if (hasFrame)
                                     Positioned.fill(
                                       child: CachedNetworkImage(
+        cacheManager: WiTalkImageCache(),
                                         imageUrl: avatarFrameUrl!,
                                         fit: BoxFit.contain,
                                         errorWidget: (_, __, ___) => const SizedBox.shrink(),
