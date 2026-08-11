@@ -85,6 +85,17 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   }
 
   @override
+  void didChangeMetrics() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      final pos = _scrollCtrl.position;
+      if (pos.maxScrollExtent - pos.pixels <= 200) {
+        _scrollCtrl.jumpTo(pos.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       ref
@@ -843,7 +854,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         .join(', ');
     final isTyping = typingNames.isNotEmpty;
 
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: c.background,
       appBar: AppBar(
         backgroundColor: c.background,
@@ -951,8 +964,22 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                   : Brightness.light,
         ),
       ),
-      body: SafeArea(
+      body: Stack(children: [
+        // Background pinned to full body — never resizes with keyboard
+        Positioned.fill(
+          child: Image.asset(
+            c.background.computeLuminance() > 0.5
+                ? 'assets/images/LightchatBg.jpeg'
+                : 'assets/images/chatbg.jpeg',
+            fit: BoxFit.cover,
+            opacity: AlwaysStoppedAnimation(
+                c.background.computeLuminance() > 0.5 ? 1.0 : 0.15),
+          ),
+        ),
+        SafeArea(
         top: false,
+        child: Padding(
+        padding: EdgeInsets.only(bottom: keyboardHeight),
         child: Column(children: [
         // Pinned message banner (Telegram-style, cycles through all pins)
         if (_pinnedMessages.isNotEmpty)
@@ -972,17 +999,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           ),
         Expanded(
           child: Stack(children: [
-            // Chat background image (matches RN: dark/light variant)
-            Positioned.fill(
-              child: Image.asset(
-                c.background.computeLuminance() > 0.5
-                    ? 'assets/images/LightchatBg.jpeg'
-                    : 'assets/images/chatbg.jpeg',
-                fit: BoxFit.cover,
-                opacity: AlwaysStoppedAnimation(
-                    c.background.computeLuminance() > 0.5 ? 1.0 : 0.15),
-              ),
-            ),
             _loading && _listItems.isEmpty
                 ? Center(
                     child: CircularProgressIndicator(color: c.primary))
@@ -1112,6 +1128,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           ),
       ]),
       ),
+      ),
+      ]),
     );
   }
 
