@@ -1644,7 +1644,10 @@ class _ChatConversationScreenState
               : Brightness.light,
         ),
       ),
-      body: Stack(children: [
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        behavior: HitTestBehavior.translucent,
+        child: Stack(children: [
         // Background pinned to full body — never resizes with keyboard
         Positioned.fill(
           child: Image.asset(
@@ -1833,6 +1836,7 @@ class _ChatConversationScreenState
       ),
       ),
       ]),
+      ),
     );
   }
 
