@@ -23,6 +23,7 @@ import '../../widgets/chat/message_actions_bottom_sheet.dart';
 import '../../widgets/chat/voice_recorder.dart';
 import '../../widgets/chat/quick_emoji_picker.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../widgets/chat/full_screen_image_viewer.dart';
 
 // ── Module-level cache — persists across mounts like RN conversationSyncTimestamps
 final _conversationSyncTimestamps = <String, int>{};
@@ -1729,7 +1730,19 @@ class _ChatConversationScreenState
                                   .read(chatProvider.notifier)
                                   .toggleReaction(msg.id, emoji, uid);
                             },
-                            onTapImage: () {},
+                            onTapImage: msg.messageType == 'image' && msg.mediaUrl != null
+                                ? () => Navigator.of(context).push(
+                                    PageRouteBuilder(
+                                      opaque: false,
+                                      pageBuilder: (_, __, ___) => FullScreenImageViewer(
+                                        imageUrl: msg.mediaUrl!,
+                                        caption: msg.content.isNotEmpty ? msg.content : null,
+                                      ),
+                                      transitionsBuilder: (_, anim, __, child) =>
+                                          FadeTransition(opacity: anim, child: child),
+                                    ),
+                                  )
+                                : null,
                             onReplyTap: replyToId != null
                                 ? () => _scrollToMessage(replyToId)
                                 : null,
