@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
@@ -102,6 +103,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
   Timer? _typingTimer;
   Timer? _linkPreviewTimer;
   bool _isSending = false;
+  int _visualLines = 1;
+  double _pillWidth = 0;
 
   @override
   void initState() {
@@ -121,10 +124,28 @@ class _ChatInputBarState extends State<ChatInputBar> {
     super.dispose();
   }
 
+  void _updateVisualLines(String text) {
+    if (_pillWidth <= 0) return;
+    // Icon widths (8+22+8 each side) + border = ~80px reserved
+    const iconSpace = 80.0;
+    final maxWidth = _pillWidth - iconSpace;
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text.isEmpty ? ' ' : text,
+        style: const TextStyle(fontFamily: 'Outfit', fontSize: 15),
+      ),
+      maxLines: null,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    final lines = painter.computeLineMetrics().length;
+    if (lines != _visualLines) setState(() => _visualLines = lines);
+  }
+
   void _onTextChanged() {
     final text = _controller.text;
     if (_isSending) return;
     setState(() => _text = text);
+    _updateVisualLines(text);
 
     // Typing indicator
     if (text.isNotEmpty) {
@@ -292,11 +313,22 @@ class _ChatInputBarState extends State<ChatInputBar> {
               children: [
               // Input pill: [sticker | textfield | attachment]
               Expanded(
-                child: Container(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_pillWidth != constraints.maxWidth) {
+                        _pillWidth = constraints.maxWidth;
+                        _updateVisualLines(_text);
+                      }
+                    });
+                    return AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   constraints: const BoxConstraints(minHeight: 48),
                   decoration: BoxDecoration(
                     color: c.cardBackground,
-                    borderRadius: BorderRadius.circular(999),
+                    borderRadius: BorderRadius.circular(
+                      lerpDouble(999, 10, ((_visualLines - 1) / 2).clamp(0.0, 1.0))!,
+                    ),
                     border: Border.all(color: c.border, width: 1),
                   ),
                   child: Row(
@@ -358,6 +390,8 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       ),
                     ),
                   ]),
+                );
+                  }
                 ),
               ),
               const SizedBox(width: 8),
