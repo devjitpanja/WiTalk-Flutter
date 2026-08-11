@@ -2930,6 +2930,7 @@ class DateDivider extends StatelessWidget {
         decoration: BoxDecoration(
           color: c.surface.withValues(alpha: 0.8),
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.border, width: 1),
         ),
         child: Text(label,
             style: TextStyle(
