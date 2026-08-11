@@ -8,7 +8,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../../api/dio_client.dart';
@@ -17,6 +16,7 @@ import '../../api/upload_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/theme_colors.dart';
 import '../../constants/purposes_and_interests.dart';
+import '../../utils/storage.dart';
 import '../../widgets/common/city_input.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -182,10 +182,6 @@ class EditProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
-  final _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
-
   // Controllers
   final _nameCtrl       = TextEditingController();
   final _usernameCtrl   = TextEditingController();
@@ -340,7 +336,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   Future<void> _loadProfile() async {
     try {
       setState(() => _loading = true);
-      _uid = await _storage.read(key: 'uid');
+      _uid = await AppStorage.get('uid') as String?;
       if (_uid == null) return;
 
       final res = await dioClient.get(AppEndpoints.userProfile(_uid!));
