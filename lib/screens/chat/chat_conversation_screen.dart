@@ -70,6 +70,7 @@ class _ChatConversationScreenState
   static const _pageSize = 30; // match RN limit=30
 
   bool _uploadingMedia = false;
+  XFile? _selectedImage;
   bool _isRecordingVoice = false;
   bool _isMuted = false;
   bool _isBlocked = false;
@@ -985,6 +986,12 @@ class _ChatConversationScreenState
     final replyTo = _inputCtrl.replyingTo;
     final linkPreview = _inputCtrl.composeLinkPreview;
 
+    // If an image is selected, send it (with optional caption) before text
+    if (_selectedImage != null && editing == null) {
+      await _sendSelectedImage(text);
+      return;
+    }
+
     if (text.isEmpty) return;
 
     final uid = _currentUserId;
@@ -1077,31 +1084,40 @@ class _ChatConversationScreenState
     // recomputes automatically from the provider whenever a message is added.
   }
 
-  Future<String?> _pickAndSendImage() async {
-    final partner = _chatPartner;
-    final uid = _currentUserId;
-    if (partner == null || uid == null) return null;
-
+  Future<void> _pickImage() async {
     final picked = await _imagePicker.pickImage(
         source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) return null;
+    if (picked == null || !mounted) return;
+    setState(() => _selectedImage = picked);
+  }
 
-    setState(() => _uploadingMedia = true);
+  Future<void> _sendSelectedImage(String caption) async {
+    final image = _selectedImage;
+    final partner = _chatPartner;
+    final uid = _currentUserId;
+    if (image == null || partner == null || uid == null) return;
+
+    // Clear the selected image and input immediately (optimistic UX)
+    setState(() {
+      _selectedImage = null;
+      _uploadingMedia = true;
+    });
+    _inputCtrl.clear();
+
     try {
-      final result =
-          await UploadService().uploadMedia(
-              file: File(picked.path),
-              mediaType: 'image',
-              fileName: picked.name,
-              userId: uid ?? '');
+      final result = await UploadService().uploadMedia(
+          file: File(image.path),
+          mediaType: 'image',
+          fileName: image.name,
+          userId: uid);
       final url = result['url'] as String?;
-      if (url == null) return null;
+      if (url == null) return;
 
-      final imageFile = File(picked.path);
+      final imageFile = File(image.path);
       final decodedImage =
           await decodeImageFromList(await imageFile.readAsBytes());
 
-      // Lazy conversation creation for image send
+      // Lazy conversation creation
       if (_activeChatId == null) {
         final res = await chatApiService.createConversation(
           userId: uid,
@@ -1111,7 +1127,7 @@ class _ChatConversationScreenState
         String? convId;
         if (dataMap is Map) convId = dataMap['id']?.toString();
         convId ??= res['id']?.toString();
-        if (convId == null) return null;
+        if (convId == null) return;
         if (mounted) setState(() => _activeChatId = convId);
         ref.read(chatProvider.notifier).joinConversation(convId);
         ref.read(chatProvider.notifier).setActiveConversation(convId);
@@ -1121,7 +1137,7 @@ class _ChatConversationScreenState
       await ref.read(chatProvider.notifier).sendMessage(
             conversationId: _activeChatId!,
             receiverId: partner['id'].toString(),
-            content: '',
+            content: caption,
             messageType: 'image',
             mediaUrl: url,
             mediaData: {
@@ -1138,7 +1154,6 @@ class _ChatConversationScreenState
     } finally {
       if (mounted) setState(() => _uploadingMedia = false);
     }
-    return null;
   }
 
   Future<void> _handleSendVoice(
@@ -1838,12 +1853,14 @@ class _ChatConversationScreenState
                 ref.read(chatProvider.notifier).startTyping(convId),
             stopTyping: (convId) =>
                 ref.read(chatProvider.notifier).stopTyping(convId),
-            onPickAndSendImage: _pickAndSendImage,
+            onPickImage: _pickImage,
             onStartVoiceRecording: () => setState(() => _isRecordingVoice = true),
             onAcceptRequest: _acceptRequest,
             onDeleteRequest: _deleteRequest,
             onBlockUnblock: _toggleBlock,
             onOpenGiphyPicker: _openGiphyPicker,
+            selectedImage: _selectedImage,
+            onRemoveSelectedImage: () => setState(() => _selectedImage = null),
           ),
       ]),
       ),

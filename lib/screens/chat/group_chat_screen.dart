@@ -18,6 +18,7 @@ import '../../widgets/chat/chat_input_bar.dart';
 import '../../widgets/chat/message_actions_bottom_sheet.dart';
 import '../../widgets/chat/message_reactions.dart';
 import '../../widgets/chat/voice_recorder.dart';
+import '../../widgets/chat/full_screen_image_viewer.dart';
 
 // Module-level group details cache — avoids "Updating..." flash on re-open
 final _groupDetailsCache = <String, Map<String, dynamic>>{};
@@ -53,6 +54,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   bool _isMember = true;
   bool _isMuted = false;
   bool _uploadingMedia = false;
+  XFile? _selectedImage;
   bool _topicsEnabled = false;
 
   // Scroll-to-bottom FAB
@@ -411,6 +413,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     final uid = _currentUserId;
     if (uid == null) return;
 
+    if (_selectedImage != null && editing == null) {
+      await _sendSelectedImage(text);
+      return;
+    }
+
     if (text.isEmpty) return;
 
     if (editing != null) {
@@ -546,42 +553,48 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     }
   }
 
-  Future<String?> _pickAndSendImage() async {
-    final uid = _currentUserId;
-    if (uid == null) return null;
-
+  Future<void> _pickImage() async {
     final picked = await _imagePicker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,
     );
-    if (picked == null) return null;
+    if (picked == null || !mounted) return;
+    setState(() => _selectedImage = picked);
+  }
 
-    setState(() => _uploadingMedia = true);
+  Future<void> _sendSelectedImage(String caption) async {
+    final image = _selectedImage;
+    final uid = _currentUserId;
+    if (image == null || uid == null) return;
+
+    setState(() {
+      _selectedImage = null;
+      _uploadingMedia = true;
+    });
+    _inputCtrl.clear();
+
     try {
-      final uploadSvc = UploadService();
-      final result =
-          await uploadSvc.uploadMedia(
-              file: File(picked.path),
-              mediaType: 'image',
-              fileName: picked.name,
-              userId: uid ?? '');
+      final result = await UploadService().uploadMedia(
+          file: File(image.path),
+          mediaType: 'image',
+          fileName: image.name,
+          userId: uid);
       final url = result['url'] as String?;
-      if (url == null) return null;
+      if (url == null) return;
 
-      final imageFile = File(picked.path);
-      final decodedImage = await decodeImageFromList(
-          await imageFile.readAsBytes());
-      final mediaData = {
-        'width': decodedImage.width,
-        'height': decodedImage.height,
-      };
+      final imageFile = File(image.path);
+      final decodedImage =
+          await decodeImageFromList(await imageFile.readAsBytes());
 
       await ref.read(chatProvider.notifier).sendGroupMessage(
             groupId: widget.groupId,
-            content: '',
+            content: caption,
             messageType: 'image',
             mediaUrl: url,
-            mediaData: mediaData,
+            mediaData: {
+              'width': decodedImage.width,
+              'height': decodedImage.height,
+            },
           );
       _scrollToBottom();
     } catch (_) {
@@ -592,7 +605,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     } finally {
       if (mounted) setState(() => _uploadingMedia = false);
     }
-    return null;
   }
 
   void _onMessageLongPress(ChatMessage message) {
@@ -1067,6 +1079,19 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                                   .read(chatProvider.notifier)
                                   .toggleReaction(msg.id, emoji, uid);
                             },
+                            onTapImage: msg.messageType == 'image' && msg.mediaUrl != null
+                                ? () => Navigator.of(context).push(
+                                    PageRouteBuilder(
+                                      opaque: false,
+                                      pageBuilder: (_, __, ___) => FullScreenImageViewer(
+                                        imageUrl: msg.mediaUrl!,
+                                        caption: msg.content.isNotEmpty ? msg.content : null,
+                                      ),
+                                      transitionsBuilder: (_, anim, __, child) =>
+                                          FadeTransition(opacity: anim, child: child),
+                                    ),
+                                  )
+                                : null,
                             onReplyTap: replyToId != null
                                 ? () => _scrollToMessage(replyToId)
                                 : null,
@@ -1125,9 +1150,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 ref.read(chatProvider.notifier).startTyping(id, isGroup: true),
             stopTyping: (id) =>
                 ref.read(chatProvider.notifier).stopTyping(id, isGroup: true),
-            onPickAndSendImage: _pickAndSendImage,
+            onPickImage: _pickImage,
             onStartVoiceRecording: () => setState(() => _isRecordingVoice = true),
             onOpenGiphyPicker: _openGiphyPicker,
+            selectedImage: _selectedImage,
+            onRemoveSelectedImage: () => setState(() => _selectedImage = null),
           ),
       ]),
       ),

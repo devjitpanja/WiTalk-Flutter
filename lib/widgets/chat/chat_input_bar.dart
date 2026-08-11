@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
 import '../../api/dio_client.dart';
@@ -49,7 +51,7 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback onSend;
   final void Function(String conversationId) startTyping;
   final void Function(String conversationId) stopTyping;
-  final Future<String?> Function() onPickAndSendImage;
+  final Future<void> Function() onPickImage;
   final VoidCallback onStartVoiceRecording;
   final VoidCallback? onAcceptRequest;
   final VoidCallback? onDeleteRequest;
@@ -57,6 +59,9 @@ class ChatInputBar extends StatefulWidget {
   final VoidCallback? onOpenGiphyPicker;
   final bool isGroup;
   final Map<String, dynamic>? groupInfo;
+  // Selected image (not yet sent)
+  final XFile? selectedImage;
+  final VoidCallback? onRemoveSelectedImage;
 
   const ChatInputBar({
     super.key,
@@ -79,7 +84,7 @@ class ChatInputBar extends StatefulWidget {
     required this.onSend,
     required this.startTyping,
     required this.stopTyping,
-    required this.onPickAndSendImage,
+    required this.onPickImage,
     required this.onStartVoiceRecording,
     this.onAcceptRequest,
     this.onDeleteRequest,
@@ -87,6 +92,8 @@ class ChatInputBar extends StatefulWidget {
     this.onOpenGiphyPicker,
     this.isGroup = false,
     this.groupInfo,
+    this.selectedImage,
+    this.onRemoveSelectedImage,
   });
 
   @override
@@ -259,6 +266,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
             c: c,
           ),
 
+        // Selected image preview (not yet sent)
+        if (widget.selectedImage != null && _editingMessage == null)
+          _SelectedImagePreview(
+            imageFile: File(widget.selectedImage!.path),
+            onRemove: widget.onRemoveSelectedImage ?? () {},
+            c: c,
+          ),
+
         // Link preview
         if (_composeLinkPreview != null &&
             _editingMessage == null)
@@ -382,7 +397,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     ),
                     // Attachment on the right
                     GestureDetector(
-                      onTap: widget.onPickAndSendImage,
+                      onTap: widget.onPickImage,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
                         child: Icon(Icons.attach_file,
@@ -397,7 +412,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
               const SizedBox(width: 8),
               // Send / Mic button
               GestureDetector(
-                onTap: _text.trim().isNotEmpty
+                onTap: (_text.trim().isNotEmpty || widget.selectedImage != null)
                     ? widget.onSend
                     : (_editingMessage != null
                         ? () { _clearEditing(); }
@@ -410,7 +425,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    _text.trim().isNotEmpty
+                    (_text.trim().isNotEmpty || widget.selectedImage != null)
                         ? Icons.send
                         : (_editingMessage != null
                             ? Icons.close
@@ -839,6 +854,55 @@ class _UploadingBanner extends StatelessWidget {
         Text('Sending...',
             style: TextStyle(
                 color: c.textSecondary, fontFamily: 'Outfit')),
+      ]),
+    );
+  }
+}
+
+class _SelectedImagePreview extends StatelessWidget {
+  final File imageFile;
+  final VoidCallback onRemove;
+  final ThemeColors c;
+
+  const _SelectedImagePreview({
+    required this.imageFile,
+    required this.onRemove,
+    required this.c,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(
+            top: BorderSide(color: c.border.withOpacity(0.3), width: 0.5)),
+      ),
+      child: Row(children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: Image.file(
+            imageFile,
+            width: 56,
+            height: 56,
+            fit: BoxFit.cover,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            'Image selected',
+            style: TextStyle(
+                fontSize: 13,
+                fontFamily: 'Outfit',
+                color: c.textSecondary),
+          ),
+        ),
+        IconButton(
+          icon: Icon(Icons.close, size: 18, color: c.textSecondary),
+          onPressed: onRemove,
+        ),
       ]),
     );
   }
