@@ -1520,7 +1520,9 @@ class _ChatConversationScreenState
       _stopTypingAnimation();
     }
 
+    final keyboardHeight = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: c.background,
       appBar: AppBar(
         // RN: backgroundColor: theme.surface
@@ -1629,22 +1631,24 @@ class _ChatConversationScreenState
               : Brightness.light,
         ),
       ),
-      body: SafeArea(
+      body: Stack(children: [
+        // Background pinned to full body — never resizes with keyboard
+        Positioned.fill(
+          child: Image.asset(
+            isDarkMode
+                ? 'assets/images/chatbg.jpeg'
+                : 'assets/images/LightchatBg.jpeg',
+            fit: BoxFit.cover,
+            opacity: AlwaysStoppedAnimation(isDarkMode ? 0.15 : 1.0),
+          ),
+        ),
+        SafeArea(
         top: false,
+        child: Padding(
+        padding: EdgeInsets.only(bottom: keyboardHeight),
         child: Column(children: [
         Expanded(
           child: Stack(children: [
-            // Chat background image
-            Positioned.fill(
-              child: Image.asset(
-                isDarkMode
-                    ? 'assets/images/chatbg.jpeg'
-                    : 'assets/images/LightchatBg.jpeg',
-                fit: BoxFit.cover,
-                opacity: AlwaysStoppedAnimation(isDarkMode ? 0.15 : 1.0),
-              ),
-            ),
-
             // Encryption notice + messages
             _loading && _listItems.isEmpty
                 ? Center(
@@ -1814,6 +1818,8 @@ class _ChatConversationScreenState
           ),
       ]),
       ),
+      ),
+      ]),
     );
   }
 
