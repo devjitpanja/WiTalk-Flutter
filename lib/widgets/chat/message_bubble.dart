@@ -858,13 +858,10 @@ class _ImageBubble extends StatelessWidget {
     final mediaData = message.mediaData;
     final naturalW = (mediaData?['width'] as num?)?.toDouble();
     final naturalH = (mediaData?['height'] as num?)?.toDouble();
+    final maxW = MediaQuery.of(context).size.width * 0.65;
+    const maxH = 320.0;
     double w = 220, h = 200;
-    if (naturalW != null &&
-        naturalH != null &&
-        naturalW > 0 &&
-        naturalH > 0) {
-      final maxW = MediaQuery.of(context).size.width * 0.6;
-      final maxH = 320.0;
+    if (naturalW != null && naturalH != null && naturalW > 0 && naturalH > 0) {
       w = naturalW;
       h = naturalH;
       if (w > maxW) {
@@ -877,70 +874,109 @@ class _ImageBubble extends StatelessWidget {
       }
     }
 
+    final hasCaption = message.content.isNotEmpty;
+    final bubbleRadius = BorderRadius.only(
+      topLeft: const Radius.circular(16),
+      topRight: const Radius.circular(16),
+      bottomLeft: Radius.circular(isMyMessage ? 16 : 4),
+      bottomRight: Radius.circular(isMyMessage ? 4 : 16),
+    );
+
+    const imageMargin = 6.0;
+    final imageRadius = BorderRadius.circular(10);
+
     return GestureDetector(
       onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.only(
-          topLeft: const Radius.circular(16),
-          topRight: const Radius.circular(16),
-          bottomLeft: Radius.circular(isMyMessage ? 16 : 4),
-          bottomRight: Radius.circular(isMyMessage ? 4 : 16),
+      child: Container(
+        width: w + imageMargin * 2,
+        decoration: BoxDecoration(
+          color: isMyMessage ? const Color(0xFF5160FF) : c.surface,
+          borderRadius: bubbleRadius,
+          border: Border.all(
+            color: isMyMessage
+                ? Colors.white.withValues(alpha: 0.12)
+                : c.border,
+            width: 1,
+          ),
         ),
-        child: Stack(children: [
-          CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),
-            imageUrl: message.mediaUrl ?? '',
-            width: w,
-            height: h,
-            fit: BoxFit.cover,
-            placeholder: (ctx2, unused1) => Container(
-                width: w,
-                height: h,
-                color: c.surface),
-            errorWidget: (ctx2, unused1, unused2) => Container(
-              width: w,
-              height: h,
-              color: c.surface,
-              child: Icon(Icons.broken_image,
-                  color: c.textTertiary),
-            ),
-          ),
-          Positioned(
-            bottom: 6,
-            right: 8,
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.45),
-                borderRadius: BorderRadius.circular(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Image with margin + rounded corners
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                imageMargin,
+                imageMargin,
+                imageMargin,
+                hasCaption ? 0 : imageMargin,
               ),
-              child: _TimeStatus(
-                  message: message,
-                  isMyMessage: isMyMessage,
-                  c: c),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: imageRadius,
+                    child: CachedNetworkImage(
+                      cacheManager: WiTalkImageCache(),
+                      imageUrl: message.mediaUrl ?? '',
+                      width: w,
+                      height: h,
+                      fit: BoxFit.cover,
+                      placeholder: (ctx2, unused1) =>
+                          Container(width: w, height: h, color: c.surface),
+                      errorWidget: (ctx2, unused1, unused2) => Container(
+                        width: w,
+                        height: h,
+                        color: c.surface,
+                        child: Icon(Icons.broken_image, color: c.textTertiary),
+                      ),
+                    ),
+                  ),
+                  // Timestamp overlay only when there is no caption
+                  if (!hasCaption)
+                    Positioned(
+                      bottom: 6,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: _TimeStatus(
+                            message: message, isMyMessage: isMyMessage, c: c),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (message.content.isNotEmpty)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: Container(
-                padding: const EdgeInsets.fromLTRB(10, 4, 10, 8),
-                color: Colors.black.withValues(alpha: 0.4),
-                child: Text(
-                  message.content,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontFamily: 'Outfit'),
+            // Caption + timestamp below the image
+            if (hasCaption)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      message.content,
+                      style: TextStyle(
+                        color: isMyMessage ? Colors.white : c.text,
+                        fontSize: 14,
+                        fontFamily: 'Outfit',
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.bottomRight,
+                      child: _TimeStatus(
+                          message: message, isMyMessage: isMyMessage, c: c),
+                    ),
+                  ],
                 ),
               ),
-            ),
-        ]),
+          ],
+        ),
       ),
     );
   }

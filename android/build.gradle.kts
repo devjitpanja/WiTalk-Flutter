@@ -32,6 +32,8 @@ subprojects {
 
 // flutter_webrtc 0.12.12+hotfix.1 hard-codes compileSdkVersion 31 in its
 // own build.gradle. It has been patched in the pub cache to use 36.
+// gal 1.9.1 hard-codes compileSdkVersion 33 in its own build.gradle.
+// It has been patched in the pub cache to use 36.
 // No subproject override needed here.
 
 tasks.register<Delete>("clean") {
