@@ -347,7 +347,7 @@ class _Bubble extends StatefulWidget {
   final VoidCallback onLongPress;
   final void Function(String) onReact;
   final Future<void> Function(String) onScrollTo;
-  final Future<void> Function(Map<String, dynamic>, int) onVotePoll;
+  final Future<void> Function(Map<String, dynamic>, List<int>) onVotePoll;
 
   const _Bubble({
     required this.item, required this.channelName, this.channelIcon,
@@ -365,6 +365,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
   late final AnimationController _ac;
   late final Animation<double> _alpha;
   bool _voting = false;
+  List<int> _selectedPollIndices = [];
 
   @override
   void initState() {
@@ -700,12 +701,28 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     if (poll == null) return _buildText(c, dark);
 
     final question = poll['question'] as String? ?? '';
-    final options = (poll['options'] as List?) ?? [];
+    final options = poll['options'] is List
+        ? List<String>.from((poll['options'] as List).map((e) => e.toString()))
+        : <String>[];
+    final voteCounts = poll['vote_counts'] is List
+        ? List<int>.from((poll['vote_counts'] as List).map((e) => (e as num?)?.toInt() ?? 0))
+        : <int>[];
+    final myVotes = poll['my_votes'] is List
+        ? List<int>.from((poll['my_votes'] as List).map((e) => (e as num?)?.toInt() ?? 0))
+        : <int>[];
     final hasVoted = poll['has_voted'] == true;
     final total = (poll['total_votes'] as num?)?.toInt() ?? 0;
-    final isQuiz = poll['settings'] is Map && (poll['settings'] as Map)['quiz'] == true;
+    final settings = poll['settings'] is Map
+        ? Map<String, dynamic>.from(poll['settings'] as Map)
+        : <String, dynamic>{};
+    final isQuiz = settings['quiz'] == true;
+    final isMultiple = !isQuiz && settings['multiple'] == true;
+    final correctOption = isQuiz ? (settings['correct_option'] as num?)?.toInt() : null;
     final isClosed = poll['is_closed'] == true;
     final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+
+    final displayResults = hasVoted || isClosed;
+    final canSelect = !_voting && widget.canVote && !hasVoted && !isClosed;
 
     return Container(
       width: double.infinity,
@@ -718,110 +735,158 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           _header(c),
-          const SizedBox(height: 10),
-          Row(children: [
-            Icon(isQuiz ? Icons.quiz_outlined : Icons.poll_outlined, size: 13, color: c.textTertiary),
-            const SizedBox(width: 4),
-            Text(
-              isQuiz ? 'Quiz' : isClosed ? 'Closed Poll' : 'Anonymous Poll',
-              style: TextStyle(fontSize: 12, color: c.textTertiary, fontWeight: FontWeight.w500),
-            ),
-          ]),
           const SizedBox(height: 8),
           Text(question,
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text, height: 1.35)),
-          const SizedBox(height: 12),
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.text, height: 1.35)),
+          const SizedBox(height: 4),
+          Text(
+            isQuiz ? 'Quiz' : isClosed ? 'Closed Poll' : 'Poll',
+            style: TextStyle(fontSize: 12, color: c.textTertiary),
+          ),
+          const SizedBox(height: 10),
           ...List.generate(options.length, (idx) {
-            final o = Map<String, dynamic>.from(options[idx] as Map);
-            final label = o['text'] as String? ?? '';
-            final votes = (o['vote_count'] as num?)?.toInt() ?? 0;
+            final label = options[idx];
+            final votes = idx < voteCounts.length ? voteCounts[idx] : 0;
             final pct = total > 0 ? votes / total : 0.0;
-            final sel = o['is_selected'] == true;
-            final canTap = !_voting && widget.canVote && !hasVoted && !isClosed;
+            final pctInt = (pct * 100).round();
+            final isMyVote = myVotes.contains(idx);
+            final isCorrect = isQuiz && correctOption == idx;
+            final isWrongMyVote = isQuiz && isMyVote && !isCorrect;
+            final isSelected = _selectedPollIndices.contains(idx);
+
+            if (displayResults) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  SizedBox(width: 22, child: isCorrect
+                    ? const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF4CAF50))
+                    : isMyVote
+                      ? Container(width: 8, height: 8, margin: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isWrongMyVote ? const Color(0xFFFF453A) : c.primary,
+                          ))
+                      : const SizedBox()),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(children: [
+                      SizedBox(
+                        width: 38,
+                        child: Text('$pctInt%',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.text)),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(child: Text(label,
+                        style: TextStyle(fontSize: 14, color: c.text), maxLines: 2)),
+                    ]),
+                    const SizedBox(height: 4),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: SizedBox(
+                        height: 4,
+                        child: LayoutBuilder(builder: (_, box) => Stack(children: [
+                          Container(color: c.border),
+                          Container(
+                            width: box.maxWidth * pct,
+                            color: isCorrect
+                              ? const Color(0xFF4CAF50)
+                              : isMyVote ? c.primary : c.textTertiary,
+                          ),
+                        ])),
+                      ),
+                    ),
+                  ])),
+                ]),
+              );
+            }
 
             return GestureDetector(
-              onTap: canTap ? () async {
-                if (_voting) return;
-                setState(() => _voting = true);
-                try { await widget.onVotePoll(widget.item, idx); }
-                finally { if (mounted) setState(() => _voting = false); }
+              onTap: canSelect ? () {
+                setState(() {
+                  if (isMultiple) {
+                    if (_selectedPollIndices.contains(idx)) {
+                      _selectedPollIndices = _selectedPollIndices.where((i) => i != idx).toList();
+                    } else {
+                      _selectedPollIndices = [..._selectedPollIndices, idx];
+                    }
+                  } else {
+                    _selectedPollIndices = [idx];
+                  }
+                });
               } : null,
               child: Container(
                 margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: sel ? c.primary : c.primary.withValues(alpha: canTap ? 0.45 : 0.25),
-                    width: sel ? 1.5 : 1,
+                    color: isSelected ? c.primary : c.border,
+                    width: isSelected ? 1.5 : 1,
                   ),
-                  color: sel ? c.primary.withValues(alpha: 0.1) : c.primary.withValues(alpha: 0.03),
                 ),
-                clipBehavior: Clip.hardEdge,
-                child: Stack(children: [
-                  if (hasVoted && pct > 0)
-                    Positioned.fill(
-                      child: FractionallySizedBox(
-                        alignment: Alignment.centerLeft,
-                        widthFactor: pct,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: sel
-                              ? c.primary.withValues(alpha: 0.2)
-                              : c.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
+                child: Row(children: [
+                  Container(
+                    width: 20, height: 20, margin: const EdgeInsets.only(right: 10),
+                    decoration: BoxDecoration(
+                      shape: isMultiple ? BoxShape.rectangle : BoxShape.circle,
+                      borderRadius: isMultiple ? BorderRadius.circular(5) : null,
+                      border: Border.all(color: isSelected ? c.primary : c.border, width: 2),
+                      color: isSelected ? c.primary : null,
                     ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                    child: Row(children: [
-                      if (!hasVoted)
-                        Container(
-                          width: 18, height: 18, margin: const EdgeInsets.only(right: 8),
-                          decoration: BoxDecoration(
-                            shape: isQuiz ? BoxShape.rectangle : BoxShape.circle,
-                            borderRadius: isQuiz ? BorderRadius.circular(4) : null,
-                            border: Border.all(color: c.primary.withValues(alpha: 0.6), width: 1.5),
-                          ),
-                        ),
-                      Expanded(child: Text(label,
-                        style: TextStyle(fontSize: 14, color: c.text,
-                          fontWeight: sel ? FontWeight.w600 : FontWeight.normal))),
-                      if (hasVoted) ...[
-                        Text('${(pct * 100).round()}%',
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                            color: sel ? c.primary : c.textSecondary)),
-                        if (sel) ...[
-                          const SizedBox(width: 4),
-                          Icon(Icons.check_circle_rounded, size: 15, color: c.primary),
-                        ],
-                      ],
-                    ]),
+                    child: isSelected
+                      ? (isMultiple
+                          ? const Icon(Icons.check, size: 13, color: Color(0xFFFFFFFF))
+                          : Center(child: Container(width: 8, height: 8,
+                              decoration: const BoxDecoration(shape: BoxShape.circle,
+                                color: Color(0xFFFFFFFF)))))
+                      : null,
                   ),
+                  Expanded(child: Text(label,
+                    style: TextStyle(fontSize: 15, color: c.text))),
                 ]),
               ),
             );
           }),
-          if (_voting)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Center(child: SizedBox(width: 18, height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: c.primary))),
+          if (!displayResults && canSelect && _selectedPollIndices.isNotEmpty)
+            GestureDetector(
+              onTap: _voting ? null : () async {
+                setState(() => _voting = true);
+                try { await widget.onVotePoll(widget.item, List<int>.from(_selectedPollIndices)); }
+                finally {
+                  if (mounted) setState(() {
+                    _voting = false;
+                    _selectedPollIndices = [];
+                  });
+                }
+              },
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: _voting ? c.border : c.primary,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Center(
+                  child: _voting
+                    ? SizedBox(width: 18, height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: const Color(0xFFFFFFFF)))
+                    : const Text('Vote',
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                          color: Color(0xFFFFFFFF))),
+                ),
+              ),
             ),
-          Row(children: [
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
             Text(
-              total > 0 ? '$total vote${total == 1 ? '' : 's'}' : 'No votes yet',
-              style: TextStyle(fontSize: 12, color: c.textTertiary)),
-            if (isClosed) ...[
-              const SizedBox(width: 8),
+              total > 0 ? '$total vote${total == 1 ? '' : 's'}' : 'No votes',
+              style: TextStyle(fontSize: 13, color: c.textSecondary)),
+            if (isClosed)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                 decoration: BoxDecoration(
                   color: c.border.withValues(alpha: 0.5),
                   borderRadius: BorderRadius.circular(6)),
                 child: Text('Closed', style: TextStyle(fontSize: 11, color: c.textTertiary))),
-            ],
           ]),
           _reactionsRow(c),
           const SizedBox(height: 4),
@@ -1257,9 +1322,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
     );
   }
 
-  Future<void> _votePoll(Map<String, dynamic> msg, int optionIdx) async {
+  Future<void> _votePoll(Map<String, dynamic> msg, List<int> optionIndices) async {
     try {
-      final res = await ChannelApi.votePoll(widget.channelId, msg['id'].toString(), [optionIdx]);
+      final res = await ChannelApi.votePoll(widget.channelId, msg['id'].toString(), optionIndices);
       final updatedPoll = res.data?['poll'] as Map<String, dynamic>?;
       if (updatedPoll != null && mounted) {
         setState(() {
