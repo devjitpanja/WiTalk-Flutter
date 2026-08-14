@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:giphy_get/giphy_get.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../api/channel_api.dart';
+import '../../services/socket_service.dart';
+import '../../services/upload_service.dart';
 import '../../theme/theme_colors.dart';
 import '../../cache/witalk_image_cache.dart';
 
@@ -1110,6 +1114,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
   bool _uploadingImage = false;
   double _uploadProgress = 0;
   List<Map<String, dynamic>> _pendingImages = [];
+  List<XFile> _xFiles = [];
+
+  late final void Function(dynamic) _socketNewMsg;
+  late final void Function(dynamic) _socketDelMsg;
+  late final void Function(dynamic) _socketPollUpdate;
 
   String? _highlightId;
 
@@ -1129,11 +1138,20 @@ class _ChannelScreenState extends State<ChannelScreen> {
     _isChannelAdminBanned = widget.initialChannel?['is_banned'] == true || widget.initialChannel?['is_banned'] == 1;
     _banReason = widget.initialChannel?['ban_reason'] as String?;
     _scrollCtrl.addListener(_onScroll);
+    _socketNewMsg = _onSocketNewMessage;
+    _socketDelMsg = _onSocketMessageDeleted;
+    _socketPollUpdate = _onSocketPollUpdate;
+    socketService.onChannel('channel_new_message', _socketNewMsg);
+    socketService.onChannel('channel_message_deleted', _socketDelMsg);
+    socketService.onChannel('channel_poll_update', _socketPollUpdate);
     _init();
   }
 
   @override
   void dispose() {
+    socketService.offChannel('channel_new_message', _socketNewMsg);
+    socketService.offChannel('channel_message_deleted', _socketDelMsg);
+    socketService.offChannel('channel_poll_update', _socketPollUpdate);
     _textCtrl.dispose(); _scrollCtrl.dispose(); _focusNode.dispose();
     _viewTimer?.cancel();
     super.dispose();
@@ -1450,24 +1468,43 @@ class _ChannelScreenState extends State<ChannelScreen> {
     if ((trimmed.isEmpty && _pendingImages.isEmpty) || _sending) return;
     setState(() => _sending = true);
 
-    if (_pendingImages.isNotEmpty) {
-      final imgs = List<Map<String, dynamic>>.from(_pendingImages);
+    if (_xFiles.isNotEmpty) {
+      final files = List<XFile>.from(_xFiles);
       final cap = trimmed;
       final rid = _replyingTo?['id']?.toString();
       setState(() {
-        _pendingImages.clear(); _textCtrl.clear(); _replyingTo = null;
+        _xFiles.clear(); _pendingImages.clear(); _textCtrl.clear(); _replyingTo = null;
         _uploadingImage = true; _uploadProgress = 0;
       });
       try {
-        final uploaded = imgs.map((i) => {'url': i['uri'] as String, 'width': i['width'] ?? 1080, 'height': i['height'] ?? 1080}).toList();
+        final uploaded = <Map<String, dynamic>>[];
+        for (int i = 0; i < files.length; i++) {
+          final f = files[i];
+          final ext = f.path.contains('.') ? f.path.split('.').last : 'jpg';
+          final fileName = 'ch_img_${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
+          final result = await uploadService.uploadMedia(
+            file: File(f.path),
+            mediaType: 'image',
+            fileName: fileName,
+            userId: _myUserId ?? '',
+            onProgress: (p) {
+              final base = i / files.length;
+              final frac = (p / 100) / files.length;
+              if (mounted) setState(() => _uploadProgress = base + frac);
+            },
+          );
+          final url = result['url'] as String? ?? result['location'] as String? ?? '';
+          if (url.isEmpty) throw Exception('Upload failed for image ${i + 1}');
+          uploaded.add({'url': url, 'width': result['width'] ?? 1080, 'height': result['height'] ?? 1080});
+        }
         final single = uploaded.length == 1;
         final res = await ChannelApi.sendMessage(widget.channelId, {
-          'content': cap.isEmpty ? null : cap,
+          if (cap.isNotEmpty) 'content': cap,
           'message_type': single ? 'image' : 'image_album',
           'media_url': uploaded.first['url'],
           'media_data': single
-            ? {'width': uploaded.first['width'], 'height': uploaded.first['height']}
-            : {'images': uploaded},
+              ? {'width': uploaded.first['width'], 'height': uploaded.first['height']}
+              : {'images': uploaded},
           if (rid != null) 'reply_to_id': rid,
         });
         final m = res.data?['message'] as Map<String, dynamic>?;
@@ -1534,12 +1571,14 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   Future<void> _pickImages() async {
-    final rem = 10 - _pendingImages.length;
+    final rem = 10 - _xFiles.length;
     if (rem <= 0) { _snack('Max 10 photos'); return; }
     final res = await ImagePicker().pickMultiImage(limit: rem);
     if (res.isEmpty) return;
-    final picked = res.map((f) => {'uri': f.path, 'width': 1080, 'height': 1080}).toList();
-    if (mounted) setState(() => _pendingImages = [..._pendingImages, ...picked].take(10).toList());
+    if (mounted) setState(() {
+      _xFiles = [..._xFiles, ...res].take(10).toList();
+      _pendingImages = _xFiles.map((f) => {'uri': f.path, 'width': 1080, 'height': 1080}).toList();
+    });
   }
 
   Future<void> _subscribe() async {
@@ -1553,6 +1592,369 @@ class _ChannelScreenState extends State<ChannelScreen> {
         _loadMessages();
       }
     } catch (_) { _snack('Could not update subscription', error: true); }
+  }
+
+  // ── Socket Handlers ───────────────────────────────────────────────────────────
+  void _onSocketNewMessage(dynamic data) {
+    if (!mounted) return;
+    final msg = data is Map<String, dynamic> ? data
+        : (data is Map ? Map<String, dynamic>.from(data) : null);
+    if (msg == null) return;
+    final msgChannelId = msg['channel_id']?.toString();
+    if (msgChannelId != null && msgChannelId != widget.channelId) return;
+    if (!mounted) return;
+    setState(() {
+      if (!_messages.any((m) => m['id'].toString() == msg['id'].toString())) {
+        _messages = [..._messages, msg];
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollCtrl.hasClients) return;
+      final fromBottom = _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels;
+      if (fromBottom < 200) _scrollToBottom();
+    });
+    unawaited(ChannelApi.markRead(widget.channelId, msg['id'].toString()).then((_) {}).catchError((_) {}));
+  }
+
+  void _onSocketMessageDeleted(dynamic data) {
+    if (!mounted) return;
+    final msgId = data is Map
+        ? (data['message_id']?.toString() ?? data['id']?.toString())
+        : null;
+    if (msgId == null) return;
+    setState(() {
+      _messages = _messages.where((m) => m['id'].toString() != msgId).toList();
+      _pins = _pins.where((p) => p['id'].toString() != msgId).toList();
+    });
+  }
+
+  void _onSocketPollUpdate(dynamic data) {
+    if (!mounted) return;
+    final msgId = data is Map ? data['message_id']?.toString() : null;
+    final poll = data is Map ? data['poll'] : null;
+    if (msgId == null || poll == null) return;
+    final pollMap = poll is Map<String, dynamic> ? poll : Map<String, dynamic>.from(poll as Map);
+    setState(() {
+      _messages = _messages.map((m) =>
+          m['id'].toString() == msgId ? {...m, 'poll': pollMap} : m).toList();
+    });
+  }
+
+  // ── GIF / Sticker ─────────────────────────────────────────────────────────────
+  Future<void> _showGiphyPicker() async {
+    try {
+      final gif = await GiphyGet.getGif(
+        context: context,
+        apiKey: '5ojz23F0ynoyvgiMLhPB8q8bLw3EN9nH',
+        tabColor: context.colors.primary,
+        showGIFs: true,
+        showStickers: true,
+        showEmojis: false,
+        queryText: '',
+      );
+      if (gif == null || !mounted) return;
+      await _sendGif(gif);
+    } catch (_) {
+      _snack('Could not open GIF picker', error: true);
+    }
+  }
+
+  Future<void> _sendGif(GiphyGif gif) async {
+    if (_sending) return;
+    setState(() => _sending = true);
+    try {
+      final url = gif.images?.original?.url ?? '';
+      final staticUrl = gif.images?.originalStill.url ?? url;
+      final bool isSticker = (gif.isSticker ?? 0) == 1;
+      final w = double.tryParse(gif.images?.original?.width ?? '1') ?? 1.0;
+      final h = double.tryParse(gif.images?.original?.height ?? '1') ?? 1.0;
+      final ar = h > 0 ? w / h : 1.0;
+
+      final res = await ChannelApi.sendMessage(widget.channelId, {
+        'message_type': isSticker ? 'giphy_sticker' : 'giphy_gif',
+        'media_url': url,
+        'media_data': {'staticUrl': staticUrl, 'aspectRatio': ar, 'id': gif.id ?? ''},
+        if (_replyingTo != null) 'reply_to_id': _replyingTo!['id']?.toString(),
+      });
+      final m = res.data?['message'] as Map<String, dynamic>?;
+      if (m != null && mounted) {
+        setState(() {
+          _replyingTo = null;
+          if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) {
+            _messages = [..._messages, m];
+          }
+        });
+        _scrollToBottom();
+      }
+    } catch (_) {
+      _snack('Failed to send GIF', error: true);
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  // ── Poll Creation ─────────────────────────────────────────────────────────────
+  void _showPollCreationSheet() {
+    final c = context.colors;
+    final dark = context.isDark;
+    final questionCtrl = TextEditingController();
+    final optionCtrls = <TextEditingController>[
+      TextEditingController(),
+      TextEditingController(),
+    ];
+    bool isMultiple = false;
+    bool isQuiz = false;
+    int correctOption = -1;
+    bool creating = false;
+
+    showModalBottomSheet(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: c.bottomSheetBg,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (sheetCtx, setSS) {
+          final canCreate = questionCtrl.text.trim().isNotEmpty &&
+              optionCtrls.length >= 2 &&
+              optionCtrls.every((oc) => oc.text.trim().isNotEmpty) &&
+              (!isQuiz || correctOption >= 0);
+          final fieldBg = dark ? const Color(0xFF1C2B3A) : const Color(0xFFF0F2F5);
+
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              // Handle
+              Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 12),
+                  decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
+              // Header row
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: Row(children: [
+                  GestureDetector(
+                    onTap: () => Navigator.pop(sheetCtx),
+                    child: Icon(Icons.close, size: 22, color: c.textSecondary)),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text('New Poll',
+                      style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: c.text))),
+                  GestureDetector(
+                    onTap: canCreate && !creating ? () async {
+                      setSS(() => creating = true);
+                      try {
+                        await _sendPoll(
+                          question: questionCtrl.text.trim(),
+                          options: optionCtrls.map((oc) => oc.text.trim()).toList(),
+                          isMultiple: isMultiple && !isQuiz,
+                          isQuiz: isQuiz,
+                          correctOption: isQuiz ? correctOption : null,
+                        );
+                        if (mounted) Navigator.pop(sheetCtx);
+                      } catch (_) {
+                        if (mounted) setSS(() => creating = false);
+                      }
+                    } : null,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 150),
+                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+                      decoration: BoxDecoration(
+                        color: canCreate && !creating ? c.primary : c.primary.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(20)),
+                      child: creating
+                          ? const SizedBox(width: 16, height: 16,
+                              child: CircularProgressIndicator(color: Color(0xFFFFFFFF), strokeWidth: 2))
+                          : const Text('Create',
+                              style: TextStyle(color: Color(0xFFFFFFFF), fontSize: 14, fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                ]),
+              ),
+              Divider(height: 1, color: c.border.withValues(alpha: 0.5)),
+              // Body
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 24),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('Question', style: TextStyle(fontSize: 12, color: c.textTertiary,
+                        fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                    const SizedBox(height: 6),
+                    Container(
+                      decoration: BoxDecoration(color: fieldBg, borderRadius: BorderRadius.circular(12)),
+                      child: TextField(
+                        controller: questionCtrl,
+                        maxLines: 2,
+                        maxLength: 255,
+                        onChanged: (_) => setSS(() {}),
+                        style: TextStyle(color: c.text, fontSize: 15),
+                        decoration: InputDecoration(
+                          hintText: 'Ask a question…',
+                          hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.all(14),
+                          counterText: '',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Text('Options', style: TextStyle(fontSize: 12, color: c.textTertiary,
+                        fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                    const SizedBox(height: 8),
+                    ...List.generate(optionCtrls.length, (i) => Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      child: Row(children: [
+                        // Radio (quiz) or drag handle indicator
+                        if (isQuiz)
+                          GestureDetector(
+                            onTap: () => setSS(() => correctOption = i),
+                            child: Container(
+                              width: 22, height: 22, margin: const EdgeInsets.only(right: 10),
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: correctOption == i ? c.primary : c.border, width: 2),
+                                color: correctOption == i ? c.primary : null,
+                              ),
+                              child: correctOption == i
+                                  ? const Center(child: Icon(Icons.check, size: 13, color: Color(0xFFFFFFFF)))
+                                  : null,
+                            ),
+                          )
+                        else
+                          Container(
+                            width: 22, height: 22, margin: const EdgeInsets.only(right: 10),
+                            decoration: BoxDecoration(
+                              color: c.border.withValues(alpha: 0.35),
+                              borderRadius: BorderRadius.circular(6)),
+                          ),
+                        // Option text field
+                        Expanded(child: Container(
+                          decoration: BoxDecoration(
+                            color: fieldBg, borderRadius: BorderRadius.circular(10)),
+                          child: TextField(
+                            controller: optionCtrls[i],
+                            onChanged: (_) => setSS(() {}),
+                            style: TextStyle(color: c.text, fontSize: 15),
+                            decoration: InputDecoration(
+                              hintText: 'Option ${i + 1}',
+                              hintStyle: TextStyle(color: c.textTertiary, fontSize: 14),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                            ),
+                          ),
+                        )),
+                        // Remove button
+                        if (optionCtrls.length > 2)
+                          GestureDetector(
+                            onTap: () => setSS(() {
+                              optionCtrls.removeAt(i);
+                              if (correctOption == i) correctOption = -1;
+                              else if (correctOption > i) correctOption--;
+                            }),
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Icon(Icons.remove_circle_outline_rounded,
+                                  color: c.danger, size: 20)),
+                          ),
+                      ]),
+                    )),
+                    // Add option
+                    if (optionCtrls.length < 10)
+                      GestureDetector(
+                        onTap: () => setSS(() => optionCtrls.add(TextEditingController())),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Row(children: [
+                            Container(
+                              width: 22, height: 22,
+                              decoration: BoxDecoration(
+                                color: c.primary.withValues(alpha: 0.12),
+                                shape: BoxShape.circle),
+                              child: Icon(Icons.add, size: 15, color: c.primary)),
+                            const SizedBox(width: 10),
+                            Text('Add an Option',
+                                style: TextStyle(color: c.primary, fontSize: 14,
+                                    fontWeight: FontWeight.w500)),
+                          ]),
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    Divider(color: c.border.withValues(alpha: 0.5)),
+                    const SizedBox(height: 4),
+                    // Multiple Answers toggle
+                    Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Multiple Answers',
+                            style: TextStyle(fontSize: 15, color: c.text, fontWeight: FontWeight.w500)),
+                        Text('Allow selecting multiple options',
+                            style: TextStyle(fontSize: 12, color: c.textTertiary)),
+                      ])),
+                      Switch(
+                        value: isMultiple && !isQuiz,
+                        onChanged: isQuiz ? null : (v) => setSS(() => isMultiple = v),
+                        activeThumbColor: c.primary,
+                        activeTrackColor: c.primary.withValues(alpha: 0.4),
+                      ),
+                    ]),
+                    const SizedBox(height: 4),
+                    // Quiz Mode toggle
+                    Row(children: [
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text('Quiz Mode',
+                            style: TextStyle(fontSize: 15, color: c.text, fontWeight: FontWeight.w500)),
+                        Text('One correct answer · no vote retraction',
+                            style: TextStyle(fontSize: 12, color: c.textTertiary)),
+                      ])),
+                      Switch(
+                        value: isQuiz,
+                        onChanged: (v) => setSS(() {
+                          isQuiz = v;
+                          if (v) isMultiple = false;
+                          else correctOption = -1;
+                        }),
+                        activeThumbColor: c.primary,
+                        activeTrackColor: c.primary.withValues(alpha: 0.4),
+                      ),
+                    ]),
+                  ]),
+                ),
+              ),
+            ]),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _sendPoll({
+    required String question,
+    required List<String> options,
+    required bool isMultiple,
+    required bool isQuiz,
+    required int? correctOption,
+  }) async {
+    final res = await ChannelApi.sendMessage(widget.channelId, {
+      'message_type': 'poll',
+      'poll': {
+        'question': question,
+        'options': options,
+        'settings': {
+          'multiple': isMultiple,
+          'quiz': isQuiz,
+          'correct_option': correctOption,
+        },
+      },
+      if (_replyingTo != null) 'reply_to_id': _replyingTo!['id']?.toString(),
+    });
+    final m = res.data?['message'] as Map<String, dynamic>?;
+    if (m != null && mounted) {
+      setState(() {
+        _replyingTo = null;
+        if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) {
+          _messages = [..._messages, m];
+        }
+      });
+      _scrollToBottom();
+    }
   }
 
   void _snack(String t, {bool error = false, bool success = false}) {
@@ -1759,6 +2161,16 @@ class _ChannelScreenState extends State<ChannelScreen> {
     final data = _listData;
     final hasMessages = data.any((d) => d['type'] == null);
     return Stack(children: [
+      // Background image — dark: chatbg at 15% opacity, light: LightchatBg at full opacity
+      Positioned.fill(
+        child: Opacity(
+          opacity: dark ? 0.15 : 1.0,
+          child: Image.asset(
+            dark ? 'assets/images/chatbg.jpeg' : 'assets/images/LightchatBg.jpeg',
+            fit: BoxFit.cover,
+          ),
+        ),
+      ),
       ListView.builder(
         controller: _scrollCtrl,
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -1876,7 +2288,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   }
 
   Widget _buildInputArea(ThemeColors c, bool dark) {
-    final hasContent = _textCtrl.text.trim().isNotEmpty || _pendingImages.isNotEmpty;
+    final hasContent = _textCtrl.text.trim().isNotEmpty || _xFiles.isNotEmpty;
     final inputBg = dark ? const Color(0xFF17212B) : const Color(0xFFFFFFFF);
     final fieldBg = dark ? const Color(0xFF0E1621) : const Color(0xFFF0F2F5);
 
@@ -1894,18 +2306,18 @@ class _ChannelScreenState extends State<ChannelScreen> {
           preview: _editingMsg?['content'] as String? ?? '',
           onDismiss: () => setState(() { _editingMsg = null; _textCtrl.clear(); })),
 
-      // Pending images strip
-      if (_pendingImages.isNotEmpty)
+      // Pending images strip — shows real thumbnails via Image.file
+      if (_xFiles.isNotEmpty)
         Container(
           height: 88,
           color: inputBg,
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
-            itemCount: _pendingImages.length + (_pendingImages.length < 10 ? 1 : 0),
+            itemCount: _xFiles.length + (_xFiles.length < 10 ? 1 : 0),
             separatorBuilder: (_, __) => const SizedBox(width: 6),
             itemBuilder: (ctx, i) {
-              if (i == _pendingImages.length) {
+              if (i == _xFiles.length) {
                 return GestureDetector(
                   onTap: _pickImages,
                   child: Container(
@@ -1916,19 +2328,28 @@ class _ChannelScreenState extends State<ChannelScreen> {
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                       Icon(Icons.add_photo_alternate_outlined, size: 22, color: c.textSecondary),
                       const SizedBox(height: 2),
-                      Text('${10 - _pendingImages.length} left',
+                      Text('${10 - _xFiles.length} left',
                         style: TextStyle(fontSize: 10, color: c.textTertiary)),
                     ])));
               }
               return Stack(children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(10),
-                  child: Container(width: 72, height: 72, color: c.border),
+                  child: Image.file(
+                    File(_xFiles[i].path),
+                    width: 72, height: 72, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      width: 72, height: 72,
+                      color: c.border.withValues(alpha: 0.4)),
+                  ),
                 ),
                 Positioned(top: 2, right: 2, child: GestureDetector(
                   onTap: () {
-                    final list = [..._pendingImages]; list.removeAt(i);
-                    setState(() => _pendingImages = list);
+                    final xList = [..._xFiles]; xList.removeAt(i);
+                    setState(() {
+                      _xFiles = xList;
+                      _pendingImages = xList.map((f) => {'uri': f.path, 'width': 1080, 'height': 1080}).toList();
+                    });
                   },
                   child: Container(
                     padding: const EdgeInsets.all(2),
@@ -1940,7 +2361,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
             },
           )),
 
-      // Upload progress
+      // Upload progress bar
       if (_uploadingImage)
         Container(
           padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
@@ -1954,10 +2375,11 @@ class _ChannelScreenState extends State<ChannelScreen> {
                 valueColor: AlwaysStoppedAnimation<Color>(c.primary),
                 minHeight: 3)),
             const SizedBox(height: 4),
-            Text('Uploading…', style: TextStyle(fontSize: 11, color: c.textTertiary)),
+            Text('Uploading… ${(_uploadProgress * 100).toStringAsFixed(0)}%',
+              style: TextStyle(fontSize: 11, color: c.textTertiary)),
           ])),
 
-      // Input row
+      // Input row: [sticker] [pill: text + paperclip] [send/mic]
       Container(
         padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
         decoration: BoxDecoration(
@@ -1965,19 +2387,21 @@ class _ChannelScreenState extends State<ChannelScreen> {
           border: Border(top: BorderSide(color: c.border, width: 0.5)),
         ),
         child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          // Attach button
+          // Sticker / GIF button (left)
           GestureDetector(
-            onTap: () => _attachSheet(c),
-            child: Container(
-              width: 38, height: 38,
-              margin: const EdgeInsets.only(right: 8, bottom: 3),
-              decoration: BoxDecoration(
-                color: c.primary.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
+            onTap: _showGiphyPicker,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8, bottom: 6),
+              child: Image.asset(
+                'assets/icons/sticker.png',
+                width: 26, height: 26,
+                color: c.textSecondary,
+                errorBuilder: (_, __, ___) =>
+                    Icon(Icons.emoji_emotions_outlined, size: 26, color: c.textSecondary),
               ),
-              child: Icon(Icons.attach_file_rounded, size: 20, color: c.primary)),
+            ),
           ),
-          // Text field
+          // Text field pill (with paperclip inside)
           Expanded(child: Container(
             decoration: BoxDecoration(
               color: fieldBg,
@@ -1986,7 +2410,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
             constraints: const BoxConstraints(minHeight: 44, maxHeight: 120),
             child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
               Expanded(child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                padding: const EdgeInsets.fromLTRB(14, 10, 6, 10),
                 child: TextField(
                   controller: _textCtrl,
                   focusNode: _focusNode,
@@ -1996,7 +2420,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
                   buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
                   decoration: InputDecoration(
                     hintText: _editingMsg != null ? 'Edit message…'
-                      : _pendingImages.isNotEmpty ? 'Add a caption…'
+                      : _xFiles.isNotEmpty ? 'Add a caption…'
                       : 'Broadcast a message…',
                     hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
                     border: InputBorder.none,
@@ -2006,19 +2430,31 @@ class _ChannelScreenState extends State<ChannelScreen> {
                   onChanged: (_) => setState(() {}),
                 ),
               )),
-              if (_pendingImages.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8, bottom: 10),
-                  child: Container(
-                    width: 22, height: 22,
-                    decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
-                    child: Center(child: Text('${_pendingImages.length}',
-                      style: const TextStyle(color: Color(0xFFFFFFFF), fontSize: 11, fontWeight: FontWeight.bold)))),
+              // Paperclip (or image count badge) — right inside pill
+              GestureDetector(
+                onTap: () => _attachSheet(c),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 10, bottom: 10),
+                  child: _xFiles.isNotEmpty
+                    ? Container(
+                        width: 22, height: 22,
+                        decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
+                        child: Center(child: Text('${_xFiles.length}',
+                          style: const TextStyle(color: Color(0xFFFFFFFF), fontSize: 11,
+                              fontWeight: FontWeight.bold))))
+                    : Image.asset(
+                        'assets/icons/paperclip.png',
+                        width: 22, height: 22,
+                        color: c.textSecondary,
+                        errorBuilder: (_, __, ___) =>
+                            Icon(Icons.attach_file_rounded, size: 20, color: c.textSecondary),
+                      ),
                 ),
+              ),
             ])),
           ),
           const SizedBox(width: 8),
-          // Send button
+          // Send / Mic button
           GestureDetector(
             onTap: hasContent ? _send : null,
             child: AnimatedContainer(
@@ -2059,17 +2495,29 @@ class _ChannelScreenState extends State<ChannelScreen> {
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
             decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-            _AttachOpt(icon: Icons.photo_library_outlined, label: 'Photos', color: c.primary,
+            _AttachOpt(
+              icon: Icons.photo_library_outlined,
+              label: 'Photos',
+              color: const Color(0xFF30D158),
+              subtitle: 'Share up to 10',
               onTap: () { Navigator.pop(ctx); _pickImages(); }),
-            _AttachOpt(icon: Icons.poll_outlined, label: 'Poll', color: c.primary,
-              onTap: () { Navigator.pop(ctx); _snack('Poll creation coming soon'); }),
-            _AttachOpt(icon: Icons.gif_box_outlined, label: 'GIF', color: c.primary,
-              onTap: () { Navigator.pop(ctx); _snack('GIF picker coming soon'); }),
+            _AttachOpt(
+              icon: Icons.poll_outlined,
+              label: 'Poll',
+              color: const Color(0xFF5E6AD2),
+              subtitle: 'Create a poll',
+              onTap: () { Navigator.pop(ctx); Future.delayed(const Duration(milliseconds: 200), _showPollCreationSheet); }),
+            _AttachOpt(
+              icon: Icons.gif_box_outlined,
+              label: 'GIF',
+              color: const Color(0xFFFF9F0A),
+              subtitle: 'Send a GIF',
+              onTap: () { Navigator.pop(ctx); Future.delayed(const Duration(milliseconds: 200), _showGiphyPicker); }),
           ]),
         ]),
       )),
@@ -2081,9 +2529,13 @@ class _ChannelScreenState extends State<ChannelScreen> {
 class _AttachOpt extends StatelessWidget {
   final IconData icon;
   final String label;
+  final String? subtitle;
   final Color color;
   final VoidCallback onTap;
-  const _AttachOpt({required this.icon, required this.label, required this.color, required this.onTap});
+  const _AttachOpt({
+    required this.icon, required this.label, required this.color, required this.onTap,
+    this.subtitle,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2093,10 +2545,14 @@ class _AttachOpt extends StatelessWidget {
       child: Column(children: [
         Container(
           width: 64, height: 64,
-          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
-          child: Icon(icon, size: 28, color: color)),
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
+          child: Icon(icon, size: 30, color: color)),
         const SizedBox(height: 8),
-        Text(label, style: TextStyle(fontSize: 13, color: c.text, fontWeight: FontWeight.w500)),
+        Text(label, style: TextStyle(fontSize: 13, color: c.text, fontWeight: FontWeight.w600)),
+        if (subtitle != null) ...[
+          const SizedBox(height: 2),
+          Text(subtitle!, style: TextStyle(fontSize: 11, color: c.textTertiary)),
+        ],
       ]),
     );
   }
