@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../theme/theme_colors.dart';
+import '../../utils/storage.dart';
 import '../../providers/chat_provider.dart';
 import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
@@ -1361,16 +1362,123 @@ class _SharedPostBubble extends StatelessWidget {
     final postId = meta['postId']?.toString() ?? meta['post_id']?.toString();
 
     if (postType == 'video' || postType == 'mini') {
-      // Navigate to MiniScreen (reel viewer)
-      context.push('/mini', extra: {
-        'posts': [meta],
-        'initialIndex': 0,
-      });
+      _navigateToMini(context, meta, suffix, postId);
     } else if (suffix != null && suffix.isNotEmpty) {
       context.push('/post-view/$suffix');
     } else if (postId != null && postId.isNotEmpty) {
       context.push('/post/$postId');
     }
+  }
+
+  Future<void> _navigateToMini(
+    BuildContext context,
+    Map<String, dynamic> meta,
+    String? suffix,
+    String? postId,
+  ) async {
+    // Fetch full post data from the API so MiniScreen gets a properly structured
+    // post with media array — mirrors RN's SharedPostCard onPress logic.
+    final userId = await AppStorage.get('uid') as String?;
+    debugPrint('[MiniNav] userId=$userId suffix=$suffix postId=$postId');
+
+    Map<String, dynamic>? postData;
+
+    // Try suffix endpoint first (returns computed counts + isLiked)
+    if (suffix != null && suffix.isNotEmpty) {
+      try {
+        debugPrint('[MiniNav] Trying suffix endpoint: /v1/posts/share/$suffix');
+        final res = await dioClient.get(
+          '/v1/posts/share/$suffix',
+          queryParameters: userId != null ? {'userId': userId} : null,
+        );
+        debugPrint('[MiniNav] Suffix response status=${res.statusCode} keys=${res.data?.keys?.toList()}');
+        final dataNode = res.data?['data'];
+        final posts = (dataNode?['posts'] ?? res.data?['posts']) as List?;
+        debugPrint('[MiniNav] posts list length=${posts?.length}');
+        if (posts != null && posts.isNotEmpty) {
+          postData = Map<String, dynamic>.from(posts.first as Map);
+          debugPrint('[MiniNav] postData from suffix: id=${postData['id']} likes=${postData['likes']} comments=${postData['comments']} isLiked=${postData['isLiked']}');
+        }
+      } catch (e) {
+        debugPrint('[MiniNav] Suffix endpoint error: $e');
+      }
+    }
+
+    // Fallback to single post endpoint
+    if (postData == null && postId != null && postId.isNotEmpty) {
+      try {
+        debugPrint('[MiniNav] Trying single endpoint: /v1/posts/single/$postId');
+        final res = await dioClient.get(
+          '/v1/posts/single/$postId',
+          queryParameters: userId != null ? {'userId': userId} : null,
+        );
+        debugPrint('[MiniNav] Single response status=${res.statusCode} keys=${res.data?.keys?.toList()}');
+        final d = res.data;
+        postData = (d?['post'] ?? d?['data']) as Map<String, dynamic>?;
+        if (postData == null) {
+          final posts = (d?['posts']) as List?;
+          if (posts != null && posts.isNotEmpty) {
+            postData = Map<String, dynamic>.from(posts.first as Map);
+          }
+        }
+        if (postData != null) {
+          debugPrint('[MiniNav] postData from single: id=${postData['id']} likes=${postData['likes']} comments=${postData['comments']}');
+        }
+      } catch (e) {
+        debugPrint('[MiniNav] Single endpoint error: $e');
+      }
+    }
+
+    // Build a properly structured post with media array so _filterVideoPosts passes
+    final videoUrl = (meta['video_url'] ?? meta['media_url'])?.toString();
+    final thumbnailUrl = (meta['thumbnail_url'] ?? meta['media_url'])?.toString();
+
+    final Map<String, dynamic> post = postData != null
+        ? {
+            ...postData,
+            'id': postData['id'] ?? postId,
+            'media_type': postData['media_type'] ?? 'video',
+            'media': postData['media'] ?? [
+              {'type': 'video', 'url': videoUrl, 'thumbnail': thumbnailUrl}
+            ],
+            'user': postData['user'] ?? {
+              'id': meta['userId'],
+              'name': meta['name'] ?? meta['username'] ?? 'Unknown',
+              'username': meta['username'],
+              'profile_pic': meta['profile_pic'],
+            },
+          }
+        : {
+            'id': postId,
+            'user_id': meta['userId'],
+            'content': (meta['content'] ?? meta['caption'] ?? '').toString(),
+            'media_type': 'video',
+            'media': [
+              {'type': 'video', 'url': videoUrl, 'thumbnail': thumbnailUrl}
+            ],
+            'user': {
+              'id': meta['userId'],
+              'name': (meta['name'] ?? meta['username'] ?? 'Unknown').toString(),
+              'username': meta['username']?.toString(),
+              'profile_pic': meta['profile_pic']?.toString(),
+            },
+            'likes': 0,
+            'comments': 0,
+            'shares': 0,
+            'views': 0,
+            'isLiked': false,
+            'isFollowing': false,
+          };
+
+    debugPrint('[MiniNav] Final post: id=${post['id']} likes=${post['likes']} comments=${post['comments']} isLiked=${post['isLiked']} mediaType=${post['media_type']} mediaLen=${(post['media'] as List?)?.length}');
+
+    if (!context.mounted) return;
+    context.push('/mini', extra: {
+      'posts': [post],
+      'initialIndex': 0,
+      'fromVideoClick': true,
+      'userId': userId,
+    });
   }
 
   @override
@@ -3041,9 +3149,7 @@ class _SwipeToReplyState extends State<_SwipeToReply> {
   }
 
   void _onHorizontalEnd(DragEndDetails d) {
-    // Also require minimum velocity to prevent accidental slow drags
-    final vx = d.velocity.pixelsPerSecond.dx.abs();
-    if (_triggered && vx > 80) widget.onReply();
+    if (_triggered) widget.onReply();
     setState(() {
       _drag = 0;
       _triggered = false;

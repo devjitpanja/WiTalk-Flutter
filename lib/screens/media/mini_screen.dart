@@ -99,7 +99,12 @@ class _MiniScreenState extends ConsumerState<MiniScreen> with TickerProviderStat
     if (mounted) setState(() => _userId = uid);
 
     if (widget.initialPosts.isNotEmpty) {
+      debugPrint('[MiniScreen] initialPosts count=${widget.initialPosts.length}');
+      for (final p in widget.initialPosts) {
+        debugPrint('[MiniScreen] post id=${p['id']} likes=${p['likes']} comments=${p['comments']} isLiked=${p['isLiked']} mediaType=${p['media_type']} media=${p['media']}');
+      }
       final filtered = _filterVideoPosts(widget.initialPosts);
+      debugPrint('[MiniScreen] after filter count=${filtered.length}');
       if (mounted) setState(() { _posts = filtered; _loadingInitial = false; });
       _fetchMore(reset: false);
     } else {
@@ -111,7 +116,9 @@ class _MiniScreenState extends ConsumerState<MiniScreen> with TickerProviderStat
     return raw.where((p) {
       final media    = p['media'] as List?;
       final hasVideo = media?.any((m) => (m as Map)['type'] == 'video') == true;
-      return hasVideo || p['media_type'] == 'video';
+      final passes   = hasVideo || p['media_type'] == 'video';
+      debugPrint('[MiniScreen] filter post id=${p['id']} hasVideo=$hasVideo media_type=${p['media_type']} passes=$passes');
+      return passes;
     }).toList();
   }
 
@@ -176,7 +183,8 @@ class _MiniScreenState extends ConsumerState<MiniScreen> with TickerProviderStat
     if (_userId == null) return;
     final post      = _posts[index];
     final prev      = post['isLiked'] == true;
-    final prevCount = (post['likes'] ?? 0) as int;
+    final likesVal  = post['likes'];
+    final prevCount = likesVal is int ? likesVal : (likesVal is num ? likesVal.toInt() : 0);
     setState(() {
       _posts[index] = {
         ...post,
@@ -245,7 +253,8 @@ class _MiniScreenState extends ConsumerState<MiniScreen> with TickerProviderStat
       post: post,
       currentUserId: _userId,
       onCommentAdded: () {
-        final count = (post['comments'] ?? 0) as int;
+        final commentsVal = post['comments'];
+        final count = commentsVal is int ? commentsVal : (commentsVal is num ? commentsVal.toInt() : 0);
         if (mounted) {
           setState(() {
             _posts[index] = {...post, 'comments': count + 1};
@@ -877,22 +886,25 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
 
   // ── Video ─────────────────────────────────────────────────────────────────
 
-  String? get _videoUrl {
+  Map? get _videoMediaEntry {
     final media = widget.post['media'] as List?;
-    final vid   = media?.firstWhere(
-      (m) => (m as Map)['type'] == 'video',
-      orElse: () => null,
-    );
-    return (vid as Map?)?['url'] as String? ?? widget.post['videoUrl'] as String?;
+    if (media == null) return null;
+    for (final m in media) {
+      if ((m as Map)['type'] == 'video') return m;
+    }
+    return null;
+  }
+
+  String? get _videoUrl {
+    return _videoMediaEntry?['url'] as String?
+        ?? widget.post['videoUrl'] as String?
+        ?? widget.post['video_url'] as String?;
   }
 
   String? get _thumbnail {
-    final media = widget.post['media'] as List?;
-    final vid   = media?.firstWhere(
-      (m) => (m as Map)['type'] == 'video',
-      orElse: () => null,
-    );
-    return (vid as Map?)?['thumbnail'] as String? ?? widget.post['thumbnail'] as String?;
+    return _videoMediaEntry?['thumbnail'] as String?
+        ?? widget.post['thumbnail'] as String?
+        ?? widget.post['thumbnail_url'] as String?;
   }
 
   bool _coverMode = true;
@@ -1057,9 +1069,13 @@ class _MiniItemState extends State<_MiniItem> with TickerProviderStateMixin {
     final isVerified = _user?['is_verified'] == true;
     final badgeData  = _user?['verification_badge'] as Map<String, dynamic>?;
     final content    = (widget.post['content'] ?? '') as String;
-    final likes      = (widget.post['likes'] ?? 0) as int;
-    final comments   = (widget.post['comments'] ?? 0) as int;
-    final shares     = (widget.post['shares'] ?? 0) as int;
+    final likesRaw   = widget.post['likes'];
+    final commentsRaw = widget.post['comments'];
+    final sharesRaw  = widget.post['shares'];
+    debugPrint('[MiniVideoItem] id=${widget.post['id']} likesRaw=$likesRaw(${likesRaw.runtimeType}) commentsRaw=$commentsRaw(${commentsRaw.runtimeType}) isLiked=${widget.post['isLiked']}');
+    final likes      = (likesRaw is int ? likesRaw : (likesRaw is num ? likesRaw.toInt() : 0));
+    final comments   = (commentsRaw is int ? commentsRaw : (commentsRaw is num ? commentsRaw.toInt() : 0));
+    final shares     = (sharesRaw is int ? sharesRaw : (sharesRaw is num ? sharesRaw.toInt() : 0));
     final userId     = ((_user?['id'] ?? widget.post['user_id']) ?? '').toString();
     final isOwnPost  = widget.currentUserId != null && widget.currentUserId == userId;
     final isLoadingFollow = widget.followingUserId == userId;
