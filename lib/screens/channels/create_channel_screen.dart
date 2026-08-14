@@ -1,12 +1,13 @@
 import 'dart:async';
-import 'package:dio/dio.dart';
+import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../api/channel_api.dart';
 import '../../api/dio_client.dart';
+import '../../api/upload_service.dart';
 import '../../theme/theme_colors.dart';
+import '../../utils/storage.dart';
 
 class CreateChannelScreen extends StatefulWidget {
   const CreateChannelScreen({super.key});
@@ -16,10 +17,6 @@ class CreateChannelScreen extends StatefulWidget {
 }
 
 class _CreateChannelScreenState extends State<CreateChannelScreen> {
-  final _storage = const FlutterSecureStorage(
-    aOptions: AndroidOptions(encryptedSharedPreferences: true),
-  );
-
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _descController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
@@ -55,7 +52,7 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
 
   Future<void> _checkVerified() async {
     try {
-      final uid = await _storage.read(key: 'uid');
+      final uid = await AppStorage.get('uid');
       if (uid == null) {
         setState(() => _isVerified = false);
         return;
@@ -108,9 +105,9 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
         source: source,
-        maxWidth: 1000,
-        maxHeight: 1000,
-        imageQuality: 85,
+        maxWidth: 500,
+        maxHeight: 500,
+        imageQuality: 80,
       );
       if (picked != null) {
         setState(() => _channelPic = picked);
@@ -169,22 +166,11 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
   }
 
   Future<String?> _uploadImage(XFile file, String userId) async {
-    try {
-      final bytes = await file.readAsBytes();
-      final formData = FormData.fromMap({
-        'file': MultipartFile.fromBytes(
-          bytes,
-          filename: 'channel_${DateTime.now().millisecondsSinceEpoch}.jpg',
-        ),
-        'user_id': userId,
-      });
-
-      final res = await dioClient.post('/v1/files/upload', data: formData);
-      if (res.statusCode == 200 && res.data?['success'] == true && res.data?['file']?['url'] != null) {
-        return res.data['file']['url'] as String;
-      }
-    } catch (_) {}
-    return null;
+    return UploadService.uploadFile(
+      File(file.path),
+      filename: 'channel_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      userId: userId,
+    );
   }
 
   Future<void> _handleCreate() async {
@@ -207,7 +193,7 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
 
     setState(() => _loading = true);
     try {
-      final userId = await _storage.read(key: 'uid');
+      final userId = await AppStorage.get('uid');
       if (userId == null) throw Exception('Not authenticated');
 
       final iconUrl = await _uploadImage(_channelPic!, userId);
@@ -374,7 +360,7 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
                           child: CircleAvatar(
                             backgroundColor: colors.background,
                             backgroundImage: _channelPic != null
-                                ? NetworkImage(_channelPic!.path)
+                                ? FileImage(File(_channelPic!.path))
                                 : null,
                             child: _channelPic == null
                                 ? Icon(Icons.add_a_photo, size: 36, color: colors.textSecondary)
