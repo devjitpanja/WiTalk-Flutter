@@ -14,6 +14,14 @@ extension _CtxX on BuildContext {
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
 }
 
+// Telegram-style bubble radius: all corners 16 except bottom-left = 6
+const _kBubbleRadius = BorderRadius.only(
+  topLeft: Radius.circular(16),
+  topRight: Radius.circular(16),
+  bottomRight: Radius.circular(16),
+  bottomLeft: Radius.circular(6),
+);
+
 String _fmtViewCount(int n) {
   if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}M';
   if (n >= 1000) return '${(n / 1000).toStringAsFixed(1).replaceAll(RegExp(r'\.0$'), '')}K';
@@ -50,83 +58,284 @@ Map<String, dynamic>? _parseJson(dynamic raw) {
   try { return json.decode(raw as String) as Map<String, dynamic>; } catch (_) { return null; }
 }
 
-// Resolves poll data from either 'poll' key (Map) or 'poll_data' key (JSON string).
-// Uses Map.from() to handle Map<dynamic,dynamic> returned by JSON decoder.
 Map<String, dynamic>? _resolvePoll(Map<String, dynamic> item) {
-  var v = item['poll'];
-  v ??= item['poll_data'];
+  var v = item['poll'] ?? item['poll_data'];
   if (v == null) return null;
   if (v is Map<String, dynamic>) return v;
   if (v is Map) return Map<String, dynamic>.from(v);
   final decoded = _parseJson(v);
-  if (decoded == null) return null;
   return decoded;
 }
 
-// ─── ReplySnippet ─────────────────────────────────────────────────────────────
-class _ReplySnippet extends StatelessWidget {
-  final Map<String, dynamic> replyTo;
-  final VoidCallback onTap;
-  const _ReplySnippet({required this.replyTo, required this.onTap});
+// ─── Date Divider ─────────────────────────────────────────────────────────────
+class _DateDivider extends StatelessWidget {
+  final String label;
+  const _DateDivider({required this.label});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final t = replyTo['message_type'] ?? 'text';
-    final preview = t == 'voice' ? '🎵 Voice message'
-        : t == 'image' ? '📷 Photo'
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Row(children: [
+        Expanded(child: Container(height: 0.5, color: c.border.withValues(alpha: 0.5))),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+          decoration: BoxDecoration(
+            color: c.cardBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
+          ),
+          child: Text(label, style: TextStyle(fontSize: 12, color: c.textTertiary, fontWeight: FontWeight.w500)),
+        ),
+        Expanded(child: Container(height: 0.5, color: c.border.withValues(alpha: 0.5))),
+      ]),
+    );
+  }
+}
+
+// ─── Unread Divider ───────────────────────────────────────────────────────────
+class _UnreadDivider extends StatelessWidget {
+  const _UnreadDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(children: [
+        Expanded(child: Container(height: 1, color: c.primary.withValues(alpha: 0.35))),
+        Container(
+          margin: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          decoration: BoxDecoration(
+            color: c.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text('New messages', style: TextStyle(fontSize: 12, color: c.primary, fontWeight: FontWeight.w600)),
+        ),
+        Expanded(child: Container(height: 1, color: c.primary.withValues(alpha: 0.35))),
+      ]),
+    );
+  }
+}
+
+// ─── Pinned Banner ────────────────────────────────────────────────────────────
+class _PinnedBanner extends StatelessWidget {
+  final List<Map<String, dynamic>> pins;
+  final int idx;
+  final VoidCallback onTap;
+  final VoidCallback onClose;
+  const _PinnedBanner({required this.pins, required this.idx, required this.onTap, required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final pm = pins[idx];
+    final t = pm['message_type'] as String? ?? 'text';
+    final preview = t == 'image' ? '📷 Photo'
         : t == 'image_album' ? '📷 Photos'
+        : (t == 'voice' || t == 'audio') ? '🎵 Voice message'
         : t == 'giphy_sticker' ? '😄 Sticker'
         : t == 'giphy_gif' ? '🎞️ GIF'
-        : t == 'poll' ? '📊 Poll'
-        : (replyTo['content'] ?? '') as String;
+        : t == 'poll' ? '📊 ${_resolvePoll(pm)?['question'] ?? 'Poll'}'
+        : (pm['content'] ?? '') as String;
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
-          color: c.primary.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
-          border: Border(left: BorderSide(color: c.primary, width: 3)),
+          color: c.surface,
+          border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-          child: Text(preview, style: TextStyle(fontSize: 12, color: c.textSecondary),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        ),
+        child: Row(children: [
+          if (pins.length > 1)
+            Container(width: 3, height: 30, margin: const EdgeInsets.only(right: 6),
+              child: Column(children: List.generate(pins.length, (i) => Expanded(
+                child: Container(margin: const EdgeInsets.symmetric(vertical: 1),
+                  decoration: BoxDecoration(
+                    color: i == idx ? c.primary : c.border,
+                    borderRadius: BorderRadius.circular(2),
+                  )),
+              )))),
+          Container(
+            width: 3, height: 30, margin: const EdgeInsets.only(right: 10),
+            decoration: BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(2)),
+          ),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(pins.length > 1 ? 'Pinned Message ${idx + 1} of ${pins.length}' : 'Pinned Message',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary)),
+            const SizedBox(height: 1),
+            Text(preview.toString(), style: TextStyle(fontSize: 13, color: c.textSecondary),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          ])),
+          GestureDetector(
+            onTap: onClose,
+            child: Padding(
+              padding: const EdgeInsets.all(4),
+              child: Icon(Icons.close, size: 18, color: c.textTertiary),
+            ),
+          ),
+        ]),
       ),
     );
   }
 }
 
-// ─── ReactionPill ─────────────────────────────────────────────────────────────
-class _ReactionPill extends StatelessWidget {
-  final String emoji;
-  final int count;
-  final bool mine;
-  final VoidCallback onTap;
-  const _ReactionPill({required this.emoji, required this.count, required this.mine, required this.onTap});
+// ─── Compose Context Banner (reply / edit) ────────────────────────────────────
+class _ComposeBanner extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String preview;
+  final VoidCallback onDismiss;
+  const _ComposeBanner({required this.icon, required this.label, required this.preview, required this.onDismiss});
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: mine ? c.primary.withValues(alpha: 0.15) : c.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: mine ? c.primary : c.border),
-        ),
-        child: Text('$emoji $count', style: TextStyle(fontSize: 13,
-          color: mine ? c.primary : c.text)),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 7, 14, 7),
+      decoration: BoxDecoration(
+        color: c.surface,
+        border: Border(top: BorderSide(color: c.border, width: 0.5)),
+      ),
+      child: Row(children: [
+        Container(width: 3, height: 28, margin: const EdgeInsets.only(right: 10),
+          decoration: BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(2))),
+        Icon(icon, size: 16, color: c.primary),
+        const SizedBox(width: 8),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+          Text(preview, style: TextStyle(fontSize: 13, color: c.textSecondary),
+            maxLines: 1, overflow: TextOverflow.ellipsis),
+        ])),
+        GestureDetector(onTap: onDismiss,
+          child: Padding(padding: const EdgeInsets.all(4),
+            child: Icon(Icons.close, size: 18, color: c.textTertiary))),
+      ]),
+    );
+  }
+}
+
+// ─── Banned View ──────────────────────────────────────────────────────────────
+class _BannedView extends StatelessWidget {
+  final bool channelBanned;
+  final String? reason;
+  final bool isAdmin;
+  final VoidCallback? onAction;
+  const _BannedView({required this.channelBanned, this.reason, required this.isAdmin, this.onAction});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Container(width: 90, height: 90,
+            decoration: BoxDecoration(color: c.danger.withValues(alpha: 0.1), shape: BoxShape.circle),
+            child: Icon(channelBanned ? Icons.gavel_rounded : Icons.block_rounded, size: 44, color: c.danger)),
+          const SizedBox(height: 18),
+          Text(channelBanned ? 'Channel Banned' : "You've Been Banned",
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: c.text),
+            textAlign: TextAlign.center),
+          const SizedBox(height: 8),
+          Text(channelBanned
+              ? 'This channel has been banned by the platform.'
+              : 'You no longer have access to this channel.',
+            style: TextStyle(fontSize: 14, color: c.textSecondary, height: 1.6), textAlign: TextAlign.center),
+          if (reason != null && reason!.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: c.danger.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: c.danger.withValues(alpha: 0.25)),
+              ),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Icon(Icons.info_outline, size: 14, color: c.danger),
+                const SizedBox(width: 6),
+                Expanded(child: Text(reason!, style: TextStyle(fontSize: 13, color: c.danger, height: 1.5))),
+              ]),
+            ),
+          ],
+          if (onAction != null) ...[
+            const SizedBox(height: 18),
+            GestureDetector(
+              onTap: onAction,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isAdmin ? c.surface : c.danger.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: isAdmin ? c.border : c.danger.withValues(alpha: 0.3)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(isAdmin ? Icons.mail_outline : Icons.exit_to_app,
+                    size: 18, color: isAdmin ? c.text : c.danger),
+                  const SizedBox(width: 8),
+                  Text(isAdmin ? 'Contact Support' : 'Leave Channel',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                      color: isAdmin ? c.text : c.danger)),
+                ]),
+              ),
+            ),
+          ],
+        ]),
       ),
     );
   }
 }
 
-// ─── Bubble ───────────────────────────────────────────────────────────────────
+// ─── Image Full-Screen Viewer ─────────────────────────────────────────────────
+class _ImageViewer extends StatelessWidget {
+  final List<String> urls;
+  final int initial;
+  const _ImageViewer({required this.urls, required this.initial});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF000000),
+      body: Stack(children: [
+        PageView.builder(
+          controller: PageController(initialPage: initial),
+          itemCount: urls.length,
+          itemBuilder: (ctx, i) => InteractiveViewer(
+            child: Center(
+              child: CachedNetworkImage(
+                cacheManager: WiTalkImageCache(),
+                imageUrl: urls[i],
+                fit: BoxFit.contain,
+                placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Color(0xFFFFFFFF))),
+                errorWidget: (_, __, ___) => const Icon(Icons.broken_image, color: Color(0xFFAAAAAA), size: 48),
+              ),
+            ),
+          ),
+        ),
+        SafeArea(child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: GestureDetector(
+            onTap: () => Navigator.of(context).pop(),
+            child: Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0x99000000),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.close, color: Color(0xFFFFFFFF), size: 20),
+            ),
+          ),
+        )),
+      ]),
+    );
+  }
+}
+
+// ─── Message Bubble ───────────────────────────────────────────────────────────
 class _Bubble extends StatefulWidget {
   final Map<String, dynamic> item;
   final String channelName;
@@ -193,180 +402,302 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     return m;
   }
 
-  Widget _reactionsRow(ThemeColors c) {
-    final counts = _reactions;
-    if (counts.isEmpty) return const SizedBox.shrink();
-    final my = widget.item['my_reaction'] as String?;
-    return Padding(
-      padding: const EdgeInsets.only(top: 8, bottom: 2),
-      child: Wrap(spacing: 5, runSpacing: 4, children: [
-        for (final e in counts.entries)
-          _ReactionPill(emoji: e.key, count: e.value, mine: my == e.key,
-            onTap: () => widget.onReact(e.key)),
-      ]),
-    );
-  }
+  // ── Sub-builders ─────────────────────────────────────────────────────────────
 
-  Widget _footer(ThemeColors c) {
-    final vc = _fmtViewCount((widget.item['view_count'] as num?)?.toInt() ?? 0);
-    final t = _fmtTime(widget.item['created_at'] as String?);
-    return Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-      if (widget.pinned) ...[
-        Icon(Icons.push_pin, size: 11, color: c.textSecondary),
-        const SizedBox(width: 2),
-      ],
-      Icon(Icons.visibility_outlined, size: 11, color: c.textSecondary),
-      const SizedBox(width: 3),
-      Text(vc, style: TextStyle(fontSize: 11, color: c.textSecondary)),
-      const SizedBox(width: 6),
-      Text(t, style: TextStyle(fontSize: 11, color: c.textSecondary)),
-    ]);
-  }
-
-  Widget _channelHeader(ThemeColors c) {
+  Widget _header(ThemeColors c) {
     final icon = widget.channelIcon;
     final init = widget.channelName.isNotEmpty ? widget.channelName[0].toUpperCase() : 'C';
-    return Row(children: [
-      Container(width: 22, height: 22, decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary),
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 18, height: 18,
+        decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary),
         clipBehavior: Clip.antiAlias,
         child: icon != null
-          ? CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),imageUrl: icon, fit: BoxFit.cover,
+          ? CachedNetworkImage(cacheManager: WiTalkImageCache(), imageUrl: icon, fit: BoxFit.cover,
               errorWidget: (_, __, ___) => Center(child: Text(init,
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white))))
+                style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFFFFFFF)))))
           : Center(child: Text(init,
-              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)))),
-      const SizedBox(width: 6),
-      Text(widget.channelName, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.primary)),
+              style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Color(0xFFFFFFFF)))),
+      ),
+      const SizedBox(width: 5),
+      Text(widget.channelName,
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.primary)),
     ]);
+  }
+
+  Widget _footer(ThemeColors c, {bool onDark = false}) {
+    final vc = _fmtViewCount((widget.item['view_count'] as num?)?.toInt() ?? 0);
+    final t = _fmtTime(widget.item['created_at'] as String?);
+    final color = onDark ? const Color(0xCCFFFFFF) : c.textTertiary;
+    return Row(mainAxisAlignment: MainAxisAlignment.end, mainAxisSize: MainAxisSize.min, children: [
+      if (widget.pinned) ...[
+        Icon(Icons.push_pin_rounded, size: 11, color: color),
+        const SizedBox(width: 3),
+      ],
+      Icon(Icons.visibility_outlined, size: 11, color: color),
+      const SizedBox(width: 3),
+      Text(vc, style: TextStyle(fontSize: 11, color: color)),
+      const SizedBox(width: 5),
+      Text(t, style: TextStyle(fontSize: 11, color: color)),
+    ]);
+  }
+
+  Widget _timeOverlay(ThemeColors c) {
+    final vc = _fmtViewCount((widget.item['view_count'] as num?)?.toInt() ?? 0);
+    final t = _fmtTime(widget.item['created_at'] as String?);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: const Color(0x88000000),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (widget.pinned) ...[
+          const Icon(Icons.push_pin_rounded, size: 11, color: Color(0xFFFFFFFF)),
+          const SizedBox(width: 3),
+        ],
+        const Icon(Icons.visibility_outlined, size: 11, color: Color(0xFFFFFFFF)),
+        const SizedBox(width: 3),
+        Text(vc, style: const TextStyle(fontSize: 11, color: Color(0xFFFFFFFF))),
+        const SizedBox(width: 5),
+        Text(t, style: const TextStyle(fontSize: 11, color: Color(0xFFFFFFFF))),
+      ]),
+    );
   }
 
   Widget _replySnippet(ThemeColors c) {
     final raw = widget.item['reply_to'];
     if (raw == null) return const SizedBox.shrink();
     final rt = raw is Map<String, dynamic> ? raw : Map<String, dynamic>.from(raw as Map);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: _ReplySnippet(
-        replyTo: rt,
-        onTap: () => widget.onScrollTo(rt['id'].toString()),
+    final msgType = rt['message_type'] as String? ?? 'text';
+    final preview = msgType == 'voice' ? '🎵 Voice message'
+        : msgType == 'image' ? '📷 Photo'
+        : msgType == 'image_album' ? '📷 Photos'
+        : msgType == 'giphy_sticker' ? '😄 Sticker'
+        : msgType == 'giphy_gif' ? '🎞️ GIF'
+        : msgType == 'poll' ? '📊 Poll'
+        : (rt['content'] ?? '') as String;
+    return GestureDetector(
+      onTap: () => widget.onScrollTo(rt['id'].toString()),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        decoration: BoxDecoration(
+          color: c.primary.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(6),
+          border: Border(left: BorderSide(color: c.primary, width: 3)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Text(preview, style: TextStyle(fontSize: 12, color: c.textSecondary),
+          maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
     );
   }
 
-  // ── Message type renderers ─────────────────────────────────────────────────
-
-  Widget _text(ThemeColors c) {
-    final content = widget.item['content'] as String? ?? '';
-    final msgType = widget.item['message_type'] as String? ?? 'text';
+  Widget _reactionsRow(ThemeColors c) {
+    final counts = _reactions;
+    if (counts.isEmpty) return const SizedBox.shrink();
+    final my = widget.item['my_reaction'] as String?;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        _channelHeader(c),
-        _replySnippet(c),
-        if (msgType == 'video') ...[
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
+      padding: const EdgeInsets.only(top: 6),
+      child: Wrap(spacing: 5, runSpacing: 4, children: [
+        for (final e in counts.entries)
+          GestureDetector(
+            onTap: () => widget.onReact(e.key),
             child: Container(
-              width: double.infinity, height: 200,
-              color: Colors.black,
-              child: const Center(child: Icon(Icons.play_circle_filled, size: 56, color: Colors.white70)),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: my == e.key ? c.primary.withValues(alpha: 0.15) : c.primary.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: my == e.key ? c.primary : c.border,
+                  width: my == e.key ? 1.5 : 1,
+                ),
+              ),
+              child: Text('${e.key} ${e.value}',
+                style: TextStyle(fontSize: 13, color: my == e.key ? c.primary : c.text)),
             ),
           ),
-        ],
-        if (content.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(content, style: TextStyle(fontSize: 15, color: c.text, height: 1.4)),
-        ],
-        _reactionsRow(c),
-        const SizedBox(height: 4),
-        _footer(c),
       ]),
     );
   }
 
-  Widget _image(ThemeColors c) {
+  // ── Text / Video ─────────────────────────────────────────────────────────────
+  Widget _buildText(ThemeColors c, bool dark) {
+    final content = widget.item['content'] as String? ?? '';
+    final msgType = widget.item['message_type'] as String? ?? 'text';
+    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bubbleColor,
+        borderRadius: _kBubbleRadius,
+        border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          _header(c),
+          const SizedBox(height: 6),
+          _replySnippet(c),
+          if (msgType == 'video') ...[
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: double.infinity, height: 180,
+                color: const Color(0xFF111111),
+                child: const Center(child: Icon(Icons.play_circle_filled_rounded, size: 52, color: Color(0xCCFFFFFF))),
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+          if (content.isNotEmpty)
+            Text(content, style: TextStyle(fontSize: 15, color: c.text, height: 1.45)),
+          _reactionsRow(c),
+          const SizedBox(height: 4),
+          Align(alignment: Alignment.centerRight, child: _footer(c)),
+        ]),
+      ),
+    );
+  }
+
+  // ── Single Image ──────────────────────────────────────────────────────────────
+  Widget _buildImage(ThemeColors c, bool dark) {
     final url = widget.item['media_url'] as String?;
     final md = _parseJson(widget.item['media_data']);
-    final w = (md?['width'] as num?)?.toDouble() ?? 1.0;
-    final h = (md?['height'] as num?)?.toDouble() ?? 1.0;
-    final ar = w > 0 && h > 0 ? w / h : 1.0;
-    final screenW = MediaQueryData.fromView(WidgetsBinding.instance.platformDispatcher.implicitView!).size.width - 32;
-    final clampedH = (screenW / ar).clamp(120.0, 360.0);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: _channelHeader(c)),
-      _replySnippet(c),
-      if (url != null)
-        SizedBox(
-          width: double.infinity,
-          height: clampedH,
-          child: CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),
-            imageUrl: url,
-            width: screenW,
-            height: clampedH,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(
-              color: c.border.withValues(alpha: 0.4),
-              child: Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))),
-            errorWidget: (_, __, ___) => Container(
-              color: c.border.withValues(alpha: 0.4),
-              child: Icon(Icons.broken_image, color: c.textSecondary, size: 36)))),
-      Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if ((widget.item['content'] as String? ?? '').isNotEmpty)
-          Padding(padding: const EdgeInsets.only(bottom: 4),
-            child: Text(widget.item['content'] as String, style: TextStyle(fontSize: 15, color: c.text, height: 1.4))),
-        _reactionsRow(c),
-        const SizedBox(height: 2),
-        _footer(c),
-      ])),
-    ]);
+    final rawW = (md?['width'] as num?)?.toDouble() ?? 1.0;
+    final rawH = (md?['height'] as num?)?.toDouble() ?? 1.0;
+    final ar = rawW > 0 && rawH > 0 ? rawW / rawH : 1.0;
+    final screenW = MediaQuery.of(context).size.width - 24;
+    final imgH = (screenW / ar).clamp(120.0, 380.0);
+    final caption = widget.item['content'] as String? ?? '';
+    final hasCaption = caption.isNotEmpty;
+    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bubbleColor,
+        borderRadius: _kBubbleRadius,
+        border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
+      ),
+      clipBehavior: Clip.hardEdge,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: _header(c)),
+        if (widget.item['reply_to'] != null)
+          Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 6), child: _replySnippet(c)),
+        if (url != null)
+          GestureDetector(
+            onTap: () => Navigator.of(context).push(MaterialPageRoute(
+              builder: (_) => _ImageViewer(urls: [url], initial: 0), fullscreenDialog: true)),
+            child: Stack(children: [
+              CachedNetworkImage(
+                cacheManager: WiTalkImageCache(),
+                imageUrl: url,
+                width: double.infinity, height: imgH,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(
+                  width: double.infinity, height: imgH,
+                  color: c.border.withValues(alpha: 0.3),
+                  child: Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2))),
+                errorWidget: (_, __, ___) => Container(
+                  width: double.infinity, height: imgH,
+                  color: c.border.withValues(alpha: 0.3),
+                  child: Icon(Icons.broken_image, color: c.textSecondary, size: 36)),
+              ),
+              if (!hasCaption)
+                Positioned(bottom: 8, right: 10, child: _timeOverlay(c)),
+            ]),
+          ),
+        if (hasCaption || _reactions.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+              if (hasCaption)
+                Text(caption, style: TextStyle(fontSize: 15, color: c.text, height: 1.45)),
+              _reactionsRow(c),
+              const SizedBox(height: 4),
+              Align(alignment: Alignment.centerRight, child: _footer(c)),
+            ]),
+          )
+        else if (url == null)
+          const SizedBox(height: 6),
+      ]),
+    );
   }
 
-  Widget _album(ThemeColors c) {
+  // ── Album ─────────────────────────────────────────────────────────────────────
+  Widget _buildAlbum(ThemeColors c, bool dark) {
     final md = _parseJson(widget.item['media_data']);
     final images = (md?['images'] as List?) ?? [];
-    const tile = 180.0;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: _channelHeader(c)),
-      _replySnippet(c),
-      SizedBox(
-        height: tile,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          itemCount: images.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 4),
-          itemBuilder: (_, i) {
-            final url = images[i]['url'] as String?;
-            return ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: url != null
-                ? CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),imageUrl: url, width: tile, height: tile, fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(width: tile, height: tile, color: c.border.withValues(alpha: 0.3)),
-                    errorWidget: (_, __, ___) => Container(width: tile, height: tile,
-                      color: c.border.withValues(alpha: 0.3),
-                      child: Icon(Icons.broken_image, color: c.textSecondary)))
-                : Container(width: tile, height: tile, color: c.border));
-          },
-        ),
+    if (images.isEmpty) return _buildText(c, dark);
+    final caption = widget.item['content'] as String? ?? '';
+    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    const tileSize = 200.0;
+    final urls = images.map((img) => img['url'] as String? ?? '').where((u) => u.isNotEmpty).toList();
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bubbleColor,
+        borderRadius: _kBubbleRadius,
+        border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
       ),
-      Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if ((widget.item['content'] as String? ?? '').isNotEmpty)
-          Padding(padding: const EdgeInsets.only(bottom: 4),
-            child: Text(widget.item['content'] as String, style: TextStyle(fontSize: 15, color: c.text, height: 1.4))),
-        _reactionsRow(c),
-        const SizedBox(height: 2),
-        _footer(c),
-      ])),
-    ]);
+      clipBehavior: Clip.hardEdge,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: _header(c)),
+        if (widget.item['reply_to'] != null)
+          Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 6), child: _replySnippet(c)),
+        SizedBox(
+          height: tileSize,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: images.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 4),
+            itemBuilder: (_, i) {
+              final url = images[i]['url'] as String?;
+              return GestureDetector(
+                onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => _ImageViewer(urls: urls, initial: i), fullscreenDialog: true)),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: url != null
+                    ? CachedNetworkImage(
+                        cacheManager: WiTalkImageCache(),
+                        imageUrl: url, width: tileSize, height: tileSize, fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(
+                          width: tileSize, height: tileSize,
+                          color: c.border.withValues(alpha: 0.3)),
+                        errorWidget: (_, __, ___) => Container(
+                          width: tileSize, height: tileSize,
+                          color: c.border.withValues(alpha: 0.3),
+                          child: Icon(Icons.broken_image, color: c.textSecondary)))
+                    : Container(width: tileSize, height: tileSize, color: c.border),
+                ),
+              );
+            },
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            if (caption.isNotEmpty) ...[
+              Text(caption, style: TextStyle(fontSize: 15, color: c.text, height: 1.45)),
+            ],
+            _reactionsRow(c),
+            const SizedBox(height: 4),
+            Align(alignment: Alignment.centerRight, child: _footer(c)),
+          ]),
+        ),
+      ]),
+    );
   }
 
-  Widget _poll(ThemeColors c) {
+  // ── Poll ──────────────────────────────────────────────────────────────────────
+  Widget _buildPoll(ThemeColors c, bool dark) {
     final poll = _resolvePoll(widget.item);
-    if (poll == null) return _text(c);
+    if (poll == null) return _buildText(c, dark);
 
     final question = poll['question'] as String? ?? '';
     final options = (poll['options'] as List?) ?? [];
@@ -374,192 +705,264 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final total = (poll['total_votes'] as num?)?.toInt() ?? 0;
     final isQuiz = poll['settings'] is Map && (poll['settings'] as Map)['quiz'] == true;
     final isClosed = poll['is_closed'] == true;
+    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        _channelHeader(c),
-        const SizedBox(height: 8),
-        Row(children: [
-          Icon(Icons.poll_outlined, size: 15, color: c.textSecondary),
-          const SizedBox(width: 4),
-          Text(isQuiz ? 'Quiz' : isClosed ? 'Closed Poll' : 'Anonymous Poll',
-            style: TextStyle(fontSize: 12, color: c.textSecondary)),
-        ]),
-        const SizedBox(height: 6),
-        Text(question, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text, height: 1.3)),
-        const SizedBox(height: 10),
-        ...List.generate(options.length, (idx) {
-          final o = Map<String, dynamic>.from(options[idx] as Map);
-          final label = o['text'] as String? ?? '';
-          final votes = (o['vote_count'] as num?)?.toInt() ?? 0;
-          final pct = total > 0 ? votes / total : 0.0;
-          final sel = o['is_selected'] == true;
-          final canTap = !_voting && widget.canVote && !hasVoted && !isClosed;
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bubbleColor,
+        borderRadius: _kBubbleRadius,
+        border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          _header(c),
+          const SizedBox(height: 10),
+          Row(children: [
+            Icon(isQuiz ? Icons.quiz_outlined : Icons.poll_outlined, size: 13, color: c.textTertiary),
+            const SizedBox(width: 4),
+            Text(
+              isQuiz ? 'Quiz' : isClosed ? 'Closed Poll' : 'Anonymous Poll',
+              style: TextStyle(fontSize: 12, color: c.textTertiary, fontWeight: FontWeight.w500),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Text(question,
+            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text, height: 1.35)),
+          const SizedBox(height: 12),
+          ...List.generate(options.length, (idx) {
+            final o = Map<String, dynamic>.from(options[idx] as Map);
+            final label = o['text'] as String? ?? '';
+            final votes = (o['vote_count'] as num?)?.toInt() ?? 0;
+            final pct = total > 0 ? votes / total : 0.0;
+            final sel = o['is_selected'] == true;
+            final canTap = !_voting && widget.canVote && !hasVoted && !isClosed;
 
-          return GestureDetector(
-            onTap: canTap ? () async {
-              if (_voting) return;
-              setState(() => _voting = true);
-              try {
-                await widget.onVotePoll(widget.item, idx);
-              } finally {
-                if (mounted) setState(() => _voting = false);
-              }
-            } : null,
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: sel ? c.primary : (hasVoted ? c.border : c.primary.withValues(alpha: 0.4)),
-                  width: sel ? 1.5 : 1,
+            return GestureDetector(
+              onTap: canTap ? () async {
+                if (_voting) return;
+                setState(() => _voting = true);
+                try { await widget.onVotePoll(widget.item, idx); }
+                finally { if (mounted) setState(() => _voting = false); }
+              } : null,
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: sel ? c.primary : c.primary.withValues(alpha: canTap ? 0.45 : 0.25),
+                    width: sel ? 1.5 : 1,
+                  ),
+                  color: sel ? c.primary.withValues(alpha: 0.1) : c.primary.withValues(alpha: 0.03),
                 ),
-                color: sel
-                  ? c.primary.withValues(alpha: 0.12)
-                  : (canTap ? c.surface : c.background),
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: Stack(children: [
-                if (hasVoted && pct > 0)
-                  Positioned.fill(
-                    child: FractionallySizedBox(
-                      alignment: Alignment.centerLeft,
-                      widthFactor: pct,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: sel
-                            ? c.primary.withValues(alpha: 0.18)
-                            : c.primary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(10),
+                clipBehavior: Clip.hardEdge,
+                child: Stack(children: [
+                  if (hasVoted && pct > 0)
+                    Positioned.fill(
+                      child: FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: pct,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: sel
+                              ? c.primary.withValues(alpha: 0.2)
+                              : c.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-                  child: Row(children: [
-                    if (!hasVoted) Container(
-                      width: 18, height: 18, margin: const EdgeInsets.only(right: 8),
-                      decoration: BoxDecoration(
-                        shape: isQuiz ? BoxShape.rectangle : BoxShape.circle,
-                        borderRadius: isQuiz ? BorderRadius.circular(4) : null,
-                        border: Border.all(color: c.primary.withValues(alpha: 0.6), width: 1.5),
-                      ),
-                    ),
-                    Expanded(child: Text(label,
-                      style: TextStyle(fontSize: 14, color: c.text, fontWeight: sel ? FontWeight.w600 : FontWeight.normal))),
-                    if (hasVoted) ...[
-                      Text('${(pct * 100).round()}%',
-                        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                          color: sel ? c.primary : c.textSecondary)),
-                      if (sel) ...[
-                        const SizedBox(width: 4),
-                        Icon(Icons.check_circle, size: 15, color: c.primary),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                    child: Row(children: [
+                      if (!hasVoted)
+                        Container(
+                          width: 18, height: 18, margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            shape: isQuiz ? BoxShape.rectangle : BoxShape.circle,
+                            borderRadius: isQuiz ? BorderRadius.circular(4) : null,
+                            border: Border.all(color: c.primary.withValues(alpha: 0.6), width: 1.5),
+                          ),
+                        ),
+                      Expanded(child: Text(label,
+                        style: TextStyle(fontSize: 14, color: c.text,
+                          fontWeight: sel ? FontWeight.w600 : FontWeight.normal))),
+                      if (hasVoted) ...[
+                        Text('${(pct * 100).round()}%',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                            color: sel ? c.primary : c.textSecondary)),
+                        if (sel) ...[
+                          const SizedBox(width: 4),
+                          Icon(Icons.check_circle_rounded, size: 15, color: c.primary),
+                        ],
                       ],
-                    ],
-                  ]),
-                ),
-              ]),
+                    ]),
+                  ),
+                ]),
+              ),
+            );
+          }),
+          if (_voting)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Center(child: SizedBox(width: 18, height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2, color: c.primary))),
             ),
-          );
-        }),
-        if (_voting)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 6),
-            child: Center(child: SizedBox(width: 18, height: 18,
-              child: CircularProgressIndicator(strokeWidth: 2, color: c.primary))),
-          ),
-        Row(children: [
-          Text(
-            total > 0 ? '$total vote${total == 1 ? '' : 's'}' : 'No votes yet',
-            style: TextStyle(fontSize: 12, color: c.textSecondary),
-          ),
-          if (isClosed) ...[
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(6)),
-              child: Text('Closed', style: TextStyle(fontSize: 11, color: c.textSecondary)),
-            ),
-          ],
+          Row(children: [
+            Text(
+              total > 0 ? '$total vote${total == 1 ? '' : 's'}' : 'No votes yet',
+              style: TextStyle(fontSize: 12, color: c.textTertiary)),
+            if (isClosed) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: c.border.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(6)),
+                child: Text('Closed', style: TextStyle(fontSize: 11, color: c.textTertiary))),
+            ],
+          ]),
+          _reactionsRow(c),
+          const SizedBox(height: 4),
+          Align(alignment: Alignment.centerRight, child: _footer(c)),
         ]),
-        _reactionsRow(c),
-        const SizedBox(height: 4),
-        _footer(c),
-      ]),
+      ),
     );
   }
 
-  Widget _voice(ThemeColors c) {
+  // ── Voice ─────────────────────────────────────────────────────────────────────
+  Widget _buildVoice(ThemeColors c, bool dark) {
     final md = _parseJson(widget.item['media_data']);
     final dur = (md?['duration'] as num?)?.toInt() ?? 0;
     final m = dur ~/ 60;
     final s = (dur % 60).toString().padLeft(2, '0');
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        _channelHeader(c),
-        const SizedBox(height: 8),
-        Row(children: [
-          Container(
-            width: 44, height: 44,
-            decoration: BoxDecoration(color: c.primary.withValues(alpha: 0.12), shape: BoxShape.circle),
-            child: Icon(Icons.play_arrow_rounded, size: 28, color: c.primary)),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Container(height: 3,
+    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: bubbleColor,
+        borderRadius: _kBubbleRadius,
+        border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          _header(c),
+          const SizedBox(height: 10),
+          Row(children: [
+            Container(
+              width: 46, height: 46,
               decoration: BoxDecoration(
-                color: c.primary.withValues(alpha: 0.25),
-                borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 5),
-            Text('$m:$s', style: TextStyle(fontSize: 12, color: c.textSecondary)),
-          ])),
+                color: c.primary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.play_arrow_rounded, size: 28, color: c.primary)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: Container(
+                  height: 3,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(colors: [
+                      c.primary,
+                      c.primary.withValues(alpha: 0.2),
+                    ]),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 5),
+              Text('$m:$s', style: TextStyle(fontSize: 12, color: c.textTertiary)),
+            ])),
+          ]),
+          _reactionsRow(c),
+          const SizedBox(height: 4),
+          Align(alignment: Alignment.centerRight, child: _footer(c)),
         ]),
-        _reactionsRow(c),
-        const SizedBox(height: 4),
-        _footer(c),
-      ]),
+      ),
     );
   }
 
-  Widget _gif(ThemeColors c) {
+  // ── GIF ───────────────────────────────────────────────────────────────────────
+  Widget _buildGif(ThemeColors c, bool dark) {
     final url = widget.item['media_url'] as String?;
     final md = _parseJson(widget.item['media_data']);
     final ar = (md?['aspectRatio'] as num?)?.toDouble() ?? 1.0;
     final safeAr = ar > 0 ? ar : 1.0;
-    final w = double.infinity;
-    final displayW = MediaQueryData.fromView(WidgetsBinding.instance.platformDispatcher.implicitView!).size.width - 32;
-    final h = (displayW / safeAr).clamp(80.0, 300.0);
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Padding(padding: const EdgeInsets.fromLTRB(12, 10, 12, 6), child: _channelHeader(c)),
-      if (url != null)
-        Stack(children: [
+    final screenW = MediaQuery.of(context).size.width - 24;
+    final displayW = screenW * 0.72;
+    final h = (displayW / safeAr).clamp(80.0, 280.0);
+    final isSticker = widget.item['message_type'] == 'giphy_sticker';
+
+    if (isSticker) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        if (url != null)
           ClipRRect(
-            borderRadius: const BorderRadius.only(),
+            borderRadius: BorderRadius.circular(12),
             child: CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),
-              imageUrl: url, width: w, height: h, fit: BoxFit.cover,
-              placeholder: (_, __) => Container(width: w, height: h, color: c.border.withValues(alpha: 0.3)),
-              errorWidget: (_, __, ___) => Container(width: w, height: h, color: c.border)),
+              cacheManager: WiTalkImageCache(),
+              imageUrl: url,
+              width: 140, height: 140, fit: BoxFit.contain,
+              placeholder: (_, __) => Container(width: 140, height: 140,
+                decoration: BoxDecoration(color: c.border.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12))),
+              errorWidget: (_, __, ___) => Container(width: 140, height: 140, color: c.border.withValues(alpha: 0.2))),
           ),
-          Positioned(bottom: 6, right: 10, child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.55),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Text('GIF', style: TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
-          )),
+        const SizedBox(height: 4),
+        Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+          _footer(c),
         ]),
-      Padding(padding: const EdgeInsets.fromLTRB(12, 6, 12, 8), child: Column(children: [
         _reactionsRow(c),
-        const SizedBox(height: 2),
-        _footer(c),
-      ])),
+      ]);
+    }
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      if (url != null)
+        ClipRRect(
+          borderRadius: _kBubbleRadius,
+          child: Stack(children: [
+            CachedNetworkImage(
+              cacheManager: WiTalkImageCache(),
+              imageUrl: url,
+              width: displayW, height: h, fit: BoxFit.cover,
+              placeholder: (_, __) => Container(
+                width: displayW, height: h,
+                color: c.border.withValues(alpha: 0.3)),
+              errorWidget: (_, __, ___) => Container(
+                width: displayW, height: h,
+                color: c.border.withValues(alpha: 0.3))),
+            Positioned.fill(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0x44000000),
+                  borderRadius: _kBubbleRadius,
+                ),
+              ),
+            ),
+            Center(
+              child: Container(
+                width: 56, height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xBB000000),
+                  borderRadius: BorderRadius.circular(28),
+                ),
+                child: const Center(
+                  child: Text('GIF',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800,
+                      color: Color(0xFFFFFFFF), letterSpacing: 0.5)),
+                ),
+              ),
+            ),
+            Positioned(bottom: 8, right: 8, child: _timeOverlay(c)),
+          ]),
+        ),
+      if (_reactions.isNotEmpty)
+        Padding(padding: const EdgeInsets.only(top: 4), child: _reactionsRow(c)),
     ]);
   }
 
+  // ── Build ─────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -567,235 +970,26 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final type = widget.item['message_type'] as String? ?? 'text';
 
     Widget inner;
-    if (type == 'image') inner = _image(c);
-    else if (type == 'image_album') inner = _album(c);
-    else if (type == 'poll') inner = _poll(c);
-    else if (type == 'voice' || type == 'audio') inner = _voice(c);
-    else if (type == 'giphy_gif' || type == 'giphy_sticker') inner = _gif(c);
-    else inner = _text(c);
+    if (type == 'image') inner = _buildImage(c, dark);
+    else if (type == 'image_album') inner = _buildAlbum(c, dark);
+    else if (type == 'poll') inner = _buildPoll(c, dark);
+    else if (type == 'voice' || type == 'audio') inner = _buildVoice(c, dark);
+    else if (type == 'giphy_gif' || type == 'giphy_sticker') inner = _buildGif(c, dark);
+    else inner = _buildText(c, dark);
 
     return AnimatedBuilder(
       animation: _alpha,
       builder: (_, child) => Container(
-        color: c.primary.withValues(alpha: _alpha.value * 0.18),
+        color: c.primary.withValues(alpha: _alpha.value * 0.15),
         child: child,
       ),
       child: GestureDetector(
         onLongPress: widget.onLongPress,
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 8, left: 8, right: 8),
-          child: Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: dark ? c.cardBackground : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: dark ? 0.18 : 0.06),
-                  blurRadius: 6, offset: const Offset(0, 2)),
-              ],
-            ),
-            clipBehavior: Clip.hardEdge,
-            child: inner,
-          ),
+          padding: const EdgeInsets.only(bottom: 4, left: 12, right: 12),
+          child: inner,
         ),
       ),
-    );
-  }
-}
-
-// ─── Pinned Banner ────────────────────────────────────────────────────────────
-class _PinnedBanner extends StatelessWidget {
-  final List<Map<String, dynamic>> pins;
-  final int idx;
-  final VoidCallback onTap;
-  final VoidCallback onClose;
-  const _PinnedBanner({required this.pins, required this.idx, required this.onTap, required this.onClose});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final pm = pins[idx];
-    final t = pm['message_type'] as String? ?? 'text';
-    final preview = t == 'text' ? (pm['content'] ?? '')
-        : t == 'image' ? '📷 Photo'
-        : t == 'image_album' ? '📷 Photos'
-        : (t == 'voice' || t == 'audio') ? '🎵 Voice message'
-        : t == 'giphy_sticker' ? '😄 Sticker'
-        : t == 'giphy_gif' ? '🎞️ GIF'
-        : t == 'poll' ? '📊 ${pm['poll']?['question'] ?? _resolvePoll(pm)?['question'] ?? 'Poll'}'
-        : (pm['content'] ?? pm['message_type'] ?? '');
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(color: c.surface, border: Border(bottom: BorderSide(color: c.border))),
-        child: Row(children: [
-          if (pins.length > 1)
-            Container(width: 3, height: 28, margin: const EdgeInsets.only(right: 4),
-              child: Column(children: List.generate(pins.length, (i) => Expanded(child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 1),
-                decoration: BoxDecoration(
-                  color: i == idx ? c.primary : c.border,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ))))),
-          Transform.rotate(angle: 0.785, child: Icon(Icons.push_pin, size: 16, color: c.primary)),
-          const SizedBox(width: 8),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(pins.length > 1 ? 'Pinned Message ${idx + 1} of ${pins.length}' : 'Pinned Message',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.primary)),
-            Text(preview.toString(), style: TextStyle(fontSize: 13, color: c.textSecondary),
-              maxLines: 1, overflow: TextOverflow.ellipsis),
-          ])),
-          GestureDetector(onTap: onClose, child: Icon(Icons.close, size: 18, color: c.textSecondary)),
-        ]),
-      ),
-    );
-  }
-}
-
-// ─── Compose Banner ───────────────────────────────────────────────────────────
-class _ComposeBanner extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String preview;
-  final VoidCallback onDismiss;
-  const _ComposeBanner({required this.icon, required this.label, required this.preview, required this.onDismiss});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(color: c.surface, border: Border(top: BorderSide(color: c.border, width: 0.5))),
-      child: Row(children: [
-        Icon(icon, size: 16, color: c.primary),
-        const SizedBox(width: 8),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: c.primary),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-          Text(preview, style: TextStyle(fontSize: 13, color: c.textSecondary),
-            maxLines: 1, overflow: TextOverflow.ellipsis),
-        ])),
-        GestureDetector(onTap: onDismiss, child: Icon(Icons.close, size: 18, color: c.textSecondary)),
-      ]),
-    );
-  }
-}
-
-// ─── Banned View ──────────────────────────────────────────────────────────────
-class _BannedView extends StatelessWidget {
-  final bool channelBanned;
-  final String? reason;
-  final bool isAdmin;
-  final VoidCallback? onAction;
-  const _BannedView({required this.channelBanned, this.reason, required this.isAdmin, this.onAction});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 40),
-        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Container(width: 100, height: 100,
-            decoration: BoxDecoration(color: c.danger.withValues(alpha: 0.15), shape: BoxShape.circle),
-            child: Icon(channelBanned ? Icons.gavel : Icons.block, size: 56, color: c.danger)),
-          const SizedBox(height: 16),
-          Text(channelBanned ? 'Channel Banned' : "You've been banned",
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: c.text),
-            textAlign: TextAlign.center),
-          const SizedBox(height: 8),
-          Text(channelBanned
-              ? 'This channel has been banned by the platform.'
-              : 'You no longer have access to this channel.',
-            style: TextStyle(fontSize: 14, color: c.textSecondary, height: 1.6),
-            textAlign: TextAlign.center),
-          if (reason != null && reason!.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: c.danger.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: c.danger.withValues(alpha: 0.3)),
-              ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(Icons.info_outline, size: 14, color: c.danger),
-                const SizedBox(width: 6),
-                Expanded(child: Text(reason!, style: TextStyle(fontSize: 13, color: c.danger, height: 1.5))),
-              ]),
-            ),
-          ],
-          if (onAction != null) ...[
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: onAction,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                decoration: BoxDecoration(
-                  color: isAdmin ? c.surface : c.danger.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(color: isAdmin ? c.border : c.danger.withValues(alpha: 0.4)),
-                ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(isAdmin ? Icons.mail_outline : Icons.exit_to_app,
-                    size: 18, color: isAdmin ? c.text : c.danger),
-                  const SizedBox(width: 8),
-                  Text(isAdmin ? 'Contact Support' : 'Leave Channel',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                      color: isAdmin ? c.text : c.danger)),
-                ]),
-              ),
-            ),
-          ],
-        ]),
-      ),
-    );
-  }
-}
-
-// ─── Date Divider ─────────────────────────────────────────────────────────────
-class _DateDivider extends StatelessWidget {
-  final String label;
-  const _DateDivider({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: c.cardBackground,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(label, style: TextStyle(fontSize: 12, color: c.textSecondary, fontWeight: FontWeight.w500)),
-        ),
-      ),
-    );
-  }
-}
-
-class _UnreadDivider extends StatelessWidget {
-  const _UnreadDivider();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(children: [
-        Expanded(child: Divider(color: c.primary.withValues(alpha: 0.5))),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text('New messages', style: TextStyle(fontSize: 12, color: c.primary, fontWeight: FontWeight.w500)),
-        ),
-        Expanded(child: Divider(color: c.primary.withValues(alpha: 0.5))),
-      ]),
     );
   }
 }
@@ -1040,9 +1234,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
     }
   }
 
-  // ── Actions ────────────────────────────────────────────────────────────────
+  // ── Actions ───────────────────────────────────────────────────────────────────
   void _onLongPress(Map<String, dynamic> msg) {
-    if (!_isSubscribed) { _snack('Join the channel to interact with messages'); return; }
+    if (!_isSubscribed) { _snack('Join the channel to interact'); return; }
     final type = msg['message_type'] as String? ?? 'text';
     final poll = _resolvePoll(msg);
     final hasVoted = poll?['has_voted'] == true;
@@ -1075,9 +1269,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
               : m).toList();
         });
       }
-    } catch (e) {
-      _snack('Failed to vote', error: true);
-    }
+    } catch (_) { _snack('Failed to vote', error: true); }
   }
 
   Future<void> _react(String msgId, String emoji) async {
@@ -1104,7 +1296,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     final c = msg['content'] as String?;
     if (c != null && c.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: c));
-      _snack('Copied to clipboard', success: true);
+      _snack('Copied', success: true);
     }
   }
 
@@ -1150,11 +1342,14 @@ class _ChannelScreenState extends State<ChannelScreen> {
       final c = context.colors;
       return AlertDialog(
         backgroundColor: c.surface,
-        title: Text('Delete Message', style: TextStyle(color: c.text)),
-        content: Text('Delete this message?', style: TextStyle(color: c.textSecondary)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text('Delete Message', style: TextStyle(color: c.text, fontSize: 17, fontWeight: FontWeight.w600)),
+        content: Text('This message will be permanently deleted.', style: TextStyle(color: c.textSecondary)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Cancel', style: TextStyle(color: c.textSecondary))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Delete', style: TextStyle(color: c.danger))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: c.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Delete', style: TextStyle(color: c.danger, fontWeight: FontWeight.w600))),
         ],
       );
     });
@@ -1166,7 +1361,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
         _messages = _messages.where((m) => m['id'].toString() != msg['id'].toString()).toList();
         _pins = _pins.where((p) => p['id'].toString() != msg['id'].toString()).toList();
       });
-    } catch (_) { _snack('Could not delete message', error: true); }
+    } catch (_) { _snack('Could not delete', error: true); }
   }
 
   Future<void> _retractVote(Map<String, dynamic> msg) async {
@@ -1184,7 +1379,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     } catch (_) {}
   }
 
-  // ── Send ───────────────────────────────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────────────────────
   Future<void> _send() async {
     final trimmed = _textCtrl.text.trim();
     if ((trimmed.isEmpty && _pendingImages.isEmpty) || _sending) return;
@@ -1194,8 +1389,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
       final imgs = List<Map<String, dynamic>>.from(_pendingImages);
       final cap = trimmed;
       final rid = _replyingTo?['id']?.toString();
-      setState(() { _pendingImages.clear(); _textCtrl.clear(); _replyingTo = null;
-        _uploadingImage = true; _uploadProgress = 0; });
+      setState(() {
+        _pendingImages.clear(); _textCtrl.clear(); _replyingTo = null;
+        _uploadingImage = true; _uploadProgress = 0;
+      });
       try {
         final uploaded = imgs.map((i) => {'url': i['uri'] as String, 'width': i['width'] ?? 1080, 'height': i['height'] ?? 1080}).toList();
         final single = uploaded.length == 1;
@@ -1203,12 +1400,18 @@ class _ChannelScreenState extends State<ChannelScreen> {
           'content': cap.isEmpty ? null : cap,
           'message_type': single ? 'image' : 'image_album',
           'media_url': uploaded.first['url'],
-          'media_data': single ? {'width': uploaded.first['width'], 'height': uploaded.first['height']} : {'images': uploaded},
+          'media_data': single
+            ? {'width': uploaded.first['width'], 'height': uploaded.first['height']}
+            : {'images': uploaded},
           if (rid != null) 'reply_to_id': rid,
         });
         final m = res.data?['message'] as Map<String, dynamic>?;
         if (m != null && mounted) {
-          setState(() { if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) _messages = [..._messages, m]; });
+          setState(() {
+            if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) {
+              _messages = [..._messages, m];
+            }
+          });
           _scrollToBottom();
         }
       } catch (_) { _snack('Failed to send image', error: true); }
@@ -1226,8 +1429,17 @@ class _ChannelScreenState extends State<ChannelScreen> {
       try {
         await ChannelApi.editMessage(widget.channelId, editing['id'].toString(), trimmed);
         if (!mounted) return;
-        setState(() { _messages = _messages.map((m) => m['id'].toString() == editing['id'].toString() ? {...m, 'content': trimmed, 'is_edited': 1} : m).toList(); });
-      } catch (_) { _snack('Failed to edit', error: true); _textCtrl.text = trimmed; if (mounted) setState(() => _editingMsg = editing); }
+        setState(() {
+          _messages = _messages.map((m) =>
+            m['id'].toString() == editing['id'].toString()
+              ? {...m, 'content': trimmed, 'is_edited': 1}
+              : m).toList();
+        });
+      } catch (_) {
+        _snack('Failed to edit', error: true);
+        _textCtrl.text = trimmed;
+        if (mounted) setState(() => _editingMsg = editing);
+      }
       finally { if (mounted) setState(() => _sending = false); }
       return;
     }
@@ -1241,11 +1453,18 @@ class _ChannelScreenState extends State<ChannelScreen> {
       });
       final m = res.data?['message'] as Map<String, dynamic>?;
       if (m != null && mounted) {
-        setState(() { if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) _messages = [..._messages, m]; });
+        setState(() {
+          if (!_messages.any((x) => x['id'].toString() == m['id'].toString())) {
+            _messages = [..._messages, m];
+          }
+        });
         _scrollToBottom();
         unawaited(ChannelApi.markRead(widget.channelId, m['id'].toString()).then((_) {}).catchError((_) {}));
       }
-    } catch (_) { _snack('Failed to send', error: true); _textCtrl.text = trimmed; }
+    } catch (_) {
+      _snack('Failed to send', error: true);
+      _textCtrl.text = trimmed;
+    }
     finally { if (mounted) setState(() => _sending = false); }
   }
 
@@ -1275,7 +1494,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     if (!mounted) return;
     final c = context.colors;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(t, style: const TextStyle(color: Colors.white)),
+      content: Text(t, style: const TextStyle(color: Color(0xFFFFFFFF))),
       backgroundColor: error ? c.danger : success ? c.success : c.primary,
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1298,46 +1517,51 @@ class _ChannelScreenState extends State<ChannelScreen> {
       context: context,
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => SafeArea(child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: emojis.map((e) => GestureDetector(
-                onTap: () { Navigator.pop(ctx); onReact(e); },
-                child: Text(e, style: const TextStyle(fontSize: 26)),
-              )).toList())),
-          const Divider(height: 1),
-          const SizedBox(height: 4),
-          if (onReply != null) ListTile(leading: Icon(Icons.reply, color: c.text, size: 22),
-            title: Text('Reply', style: TextStyle(color: c.text, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onReply(); }, dense: true),
-          ListTile(leading: Icon(Icons.copy, color: c.text, size: 22),
-            title: Text('Copy', style: TextStyle(color: c.text, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onCopy(); }, dense: true),
-          if (onEdit != null) ListTile(leading: Icon(Icons.edit, color: c.text, size: 22),
-            title: Text('Edit', style: TextStyle(color: c.text, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onEdit(); }, dense: true),
-          if (onPin != null) ListTile(
-            leading: Icon(msg['is_pinned'] == 1 ? Icons.push_pin : Icons.push_pin_outlined, color: c.text, size: 22),
-            title: Text(msg['is_pinned'] == 1 ? 'Unpin' : 'Pin', style: TextStyle(color: c.text, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onPin(); }, dense: true),
-          if (onRetractVote != null) ListTile(leading: Icon(Icons.undo, color: c.text, size: 22),
-            title: Text('Retract Vote', style: TextStyle(color: c.text, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onRetractVote(); }, dense: true),
-          if (onTranslate != null) ListTile(leading: Icon(Icons.translate, color: c.text, size: 22),
-            title: Text('Translate', style: TextStyle(color: c.text, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onTranslate(); }, dense: true),
-          if (onReport != null) ListTile(leading: Icon(Icons.flag_outlined, color: c.danger, size: 22),
-            title: Text('Report', style: TextStyle(color: c.danger, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onReport(); }, dense: true),
-          if (onDelete != null) ListTile(leading: Icon(Icons.delete_outline, color: c.danger, size: 22),
-            title: Text('Delete', style: TextStyle(color: c.danger, fontSize: 15)),
-            onTap: () { Navigator.pop(ctx); onDelete(); }, dense: true),
-        ]),
-      )),
+      builder: (ctx) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(width: 40, height: 4, margin: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
+        // Emoji reaction bar
+        Container(
+          height: 56,
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: c.cardBackground,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: emojis.map((e) => GestureDetector(
+              onTap: () { Navigator.pop(ctx); onReact(e); },
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(e, style: const TextStyle(fontSize: 24)),
+              ),
+            )).toList(),
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (onReply != null) _actionTile(ctx, Icons.reply_rounded, 'Reply', c.text, onReply),
+        _actionTile(ctx, Icons.copy_rounded, 'Copy', c.text, onCopy),
+        if (onEdit != null) _actionTile(ctx, Icons.edit_outlined, 'Edit', c.text, onEdit),
+        if (onPin != null) _actionTile(ctx,
+          msg['is_pinned'] == 1 ? Icons.push_pin : Icons.push_pin_outlined,
+          msg['is_pinned'] == 1 ? 'Unpin' : 'Pin', c.text, onPin),
+        if (onRetractVote != null) _actionTile(ctx, Icons.undo_rounded, 'Retract Vote', c.text, onRetractVote),
+        if (onTranslate != null) _actionTile(ctx, Icons.translate_rounded, 'Translate', c.text, onTranslate),
+        if (onReport != null) _actionTile(ctx, Icons.flag_outlined, 'Report', c.danger, onReport),
+        if (onDelete != null) _actionTile(ctx, Icons.delete_outline_rounded, 'Delete', c.danger, onDelete),
+        const SizedBox(height: 4),
+      ])),
+    );
+  }
+
+  Widget _actionTile(BuildContext ctx, IconData icon, String label, Color color, VoidCallback onTap) {
+    return ListTile(
+      leading: Icon(icon, color: color, size: 22),
+      title: Text(label, style: TextStyle(color: color, fontSize: 15)),
+      onTap: () { Navigator.pop(ctx); onTap(); },
+      dense: true,
+      horizontalTitleGap: 8,
     );
   }
 
@@ -1356,7 +1580,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
         try {
           final d = DateTime.parse(iso).toLocal();
           final ds = '${d.year}-${d.month.toString().padLeft(2,'0')}-${d.day.toString().padLeft(2,'0')}';
-          if (ds != lastDate) { out.add({'type': 'date', 'id': 'date_$ds', 'iso': iso}); lastDate = ds; }
+          if (ds != lastDate) {
+            out.add({'type': 'date', 'id': 'date_$ds', 'iso': iso});
+            lastDate = ds;
+          }
         } catch (_) {}
       }
       out.add(m);
@@ -1369,11 +1596,12 @@ class _ChannelScreenState extends State<ChannelScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final dark = context.isDark;
+    final bgColor = dark ? const Color(0xFF0E1621) : const Color(0xFFE4EDF5);
 
     return Scaffold(
-      backgroundColor: dark ? const Color(0xFF0F1117) : const Color(0xFFEEF0F3),
+      backgroundColor: bgColor,
       body: SafeArea(child: Column(children: [
-        _header(c, dark),
+        _buildHeader(c, dark),
         if (_isChannelAdminBanned)
           Expanded(child: _BannedView(channelBanned: true, reason: _banReason, isAdmin: _isAdmin,
             onAction: _isAdmin ? () {} : null))
@@ -1390,50 +1618,54 @@ class _ChannelScreenState extends State<ChannelScreen> {
               ),
             Expanded(child: _loading
               ? Center(child: CircularProgressIndicator(color: c.primary))
-              : _list(c, dark)),
+              : _buildList(c, dark)),
             if (_isBannedFromChannel)
-              Container(padding: const EdgeInsets.all(14), color: c.danger.withValues(alpha: 0.08),
+              Container(
+                padding: const EdgeInsets.all(14),
+                color: c.danger.withValues(alpha: 0.08),
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.block, size: 16, color: c.danger),
+                  Icon(Icons.block_rounded, size: 16, color: c.danger),
                   const SizedBox(width: 8),
                   Text('You have been banned from this channel',
                     style: TextStyle(color: c.danger, fontSize: 13, fontWeight: FontWeight.w500)),
                 ])),
-            if (_isNotMember && !_isBannedFromChannel) _joinBar(c),
-            if (_isAdmin && !_isChannelAdminBanned) _inputArea(c, dark),
+            if (_isNotMember && !_isBannedFromChannel) _buildJoinBar(c),
+            if (_isAdmin && !_isChannelAdminBanned) _buildInputArea(c, dark),
           ])),
       ])),
     );
   }
 
-  Widget _header(ThemeColors c, bool dark) {
+  Widget _buildHeader(ThemeColors c, bool dark) {
     final sub = (_channel?['subscriber_count'] as num?)?.toInt() ?? 0;
     final verified = _channel?['is_verified'] == 1;
     final icon = _chIcon;
     final init = _chName.isNotEmpty ? _chName[0].toUpperCase() : 'C';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(4, 6, 12, 6),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF0F1117) : Colors.white,
+        color: dark ? const Color(0xFF17212B) : const Color(0xFFFFFFFF),
         border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
       ),
       child: Row(children: [
         IconButton(
-          icon: Icon(Icons.arrow_back, color: c.text),
+          icon: Icon(Icons.arrow_back_ios_new_rounded, color: c.primary, size: 20),
           onPressed: () => context.pop()),
         GestureDetector(
           onTap: _isSubscribed && !_isChannelAdminBanned
             ? () => context.push('/channel-info/${widget.channelId}') : null,
-          child: Container(width: 38, height: 38,
+          child: Container(
+            width: 40, height: 40,
             decoration: BoxDecoration(shape: BoxShape.circle, color: c.primary),
             clipBehavior: Clip.antiAlias,
             child: icon != null
               ? CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),imageUrl: icon, width: 38, height: 38, fit: BoxFit.cover,
+                  cacheManager: WiTalkImageCache(),
+                  imageUrl: icon, width: 40, height: 40, fit: BoxFit.cover,
                   errorWidget: (_, __, ___) => Center(child: Text(init,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white))))
+                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFFFFFFF)))))
               : Center(child: Text(init,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)))),
+                  style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xFFFFFFFF))))),
         ),
         const SizedBox(width: 10),
         Expanded(child: GestureDetector(
@@ -1442,29 +1674,34 @@ class _ChannelScreenState extends State<ChannelScreen> {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               Flexible(child: Text(_chName,
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: c.text),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text),
                 maxLines: 1, overflow: TextOverflow.ellipsis)),
-              if (verified) ...[const SizedBox(width: 3), const Icon(Icons.verified, size: 15, color: Color(0xFF0751df))],
+              if (verified) ...[
+                const SizedBox(width: 4),
+                const Icon(Icons.verified_rounded, size: 15, color: Color(0xFF0751df)),
+              ],
             ]),
-            Text('$sub subscribers', style: TextStyle(fontSize: 12, color: c.textSecondary)),
+            Text(
+              sub > 0 ? '$sub subscriber${sub == 1 ? '' : 's'}' : 'Channel',
+              style: TextStyle(fontSize: 12, color: c.textSecondary)),
           ]),
         )),
-        const SizedBox(width: 8),
       ]),
     );
   }
 
-  Widget _list(ThemeColors c, bool dark) {
+  Widget _buildList(ThemeColors c, bool dark) {
     final data = _listData;
+    final hasMessages = data.any((d) => d['type'] == null);
     return Stack(children: [
       ListView.builder(
         controller: _scrollCtrl,
-        padding: const EdgeInsets.only(top: 8, bottom: 16),
+        padding: const EdgeInsets.symmetric(vertical: 10),
         itemCount: data.length + (_loadingOlder ? 1 : 0),
         itemBuilder: (ctx, i) {
           if (_loadingOlder && i == 0) {
-            return Center(child: Padding(padding: const EdgeInsets.all(10),
-              child: CircularProgressIndicator(color: c.primary, strokeWidth: 2)));
+            return Padding(padding: const EdgeInsets.all(12),
+              child: Center(child: CircularProgressIndicator(color: c.primary, strokeWidth: 2)));
           }
           final item = data[_loadingOlder ? i - 1 : i];
           final t = item['type'] as String?;
@@ -1473,59 +1710,82 @@ class _ChannelScreenState extends State<ChannelScreen> {
           final id = item['id']?.toString() ?? '';
           _trackView(id);
           final pinned = _pins.any((p) => p['id'].toString() == id);
-          return _Bubble(
-            item: item,
-            channelName: _chName,
-            channelIcon: _chIcon,
-            highlighted: _highlightId == id,
-            pinned: pinned,
-            canVote: _isSubscribed,
-            isAdmin: _isAdmin,
-            onLongPress: () => _onLongPress(item),
-            onReact: (e) => _react(id, e),
-            onScrollTo: _scrollToMsg,
-            onVotePoll: _votePoll,
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: _Bubble(
+              item: item,
+              channelName: _chName,
+              channelIcon: _chIcon,
+              highlighted: _highlightId == id,
+              pinned: pinned,
+              canVote: _isSubscribed,
+              isAdmin: _isAdmin,
+              onLongPress: () => _onLongPress(item),
+              onReact: (e) => _react(id, e),
+              onScrollTo: _scrollToMsg,
+              onVotePoll: _votePoll,
+            ),
           );
         },
       ),
-      if (data.where((d) => d['type'] == null).isEmpty && !_loading)
+
+      // Empty state
+      if (!hasMessages && !_loading)
         Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.campaign_outlined, size: 52, color: c.textTertiary),
-          const SizedBox(height: 12),
-          Text('No updates yet', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, color: c.textSecondary)),
+          Container(
+            width: 72, height: 72,
+            decoration: BoxDecoration(
+              color: c.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(Icons.campaign_outlined, size: 36, color: c.primary.withValues(alpha: 0.7)),
+          ),
+          const SizedBox(height: 14),
+          Text('No posts yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.textSecondary)),
           const SizedBox(height: 4),
-          Text('Check back later!', style: TextStyle(fontSize: 13, color: c.textTertiary)),
+          Text('Check back later', style: TextStyle(fontSize: 13, color: c.textTertiary)),
         ])),
+
+      // Back to latest button (context load)
       if (_hasNewerMessages)
         Positioned(bottom: 12, left: 0, right: 0, child: Center(child: GestureDetector(
           onTap: _scrollToLatest,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: c.primary, borderRadius: BorderRadius.circular(20),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.25), blurRadius: 4, offset: const Offset(0, 2))]),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: c.primary,
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [BoxShadow(color: c.primary.withValues(alpha: 0.35), blurRadius: 8, offset: const Offset(0, 3))],
+            ),
             child: const Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.keyboard_arrow_down, size: 16, color: Colors.white),
+              Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: Color(0xFFFFFFFF)),
               SizedBox(width: 4),
-              Text('Back to Latest', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.white)),
+              Text('Back to Latest', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFFFFFFFF))),
             ]),
           ),
         ))),
+
+      // Scroll to bottom FAB
       if (!_hasNewerMessages && _showScrollToBottom)
-        Positioned(bottom: 12, right: 12, child: GestureDetector(
+        Positioned(bottom: 14, right: 14, child: GestureDetector(
           onTap: _scrollToLatest,
-          child: Container(width: 38, height: 38,
+          child: Container(
+            width: 40, height: 40,
             decoration: BoxDecoration(
-              color: dark ? const Color(0xFF2C2C2E) : Colors.white,
+              color: dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF),
               shape: BoxShape.circle,
+              border: Border.all(color: c.border.withValues(alpha: 0.5), width: 0.5),
               boxShadow: [BoxShadow(
-                color: Colors.black.withValues(alpha: dark ? 0.4 : 0.2),
-                blurRadius: 4, offset: const Offset(0, 2))]),
-            child: Icon(Icons.keyboard_arrow_down, size: 22, color: dark ? Colors.white : const Color(0xFF333333))),
+                color: const Color(0xFF000000).withValues(alpha: dark ? 0.35 : 0.15),
+                blurRadius: 6, offset: const Offset(0, 2))],
+            ),
+            child: Icon(Icons.keyboard_arrow_down_rounded, size: 24,
+              color: dark ? const Color(0xFFCCCCCC) : const Color(0xFF333333))),
         )),
     ]);
   }
 
-  Widget _joinBar(ThemeColors c) {
+  Widget _buildJoinBar(ThemeColors c) {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
       decoration: BoxDecoration(
@@ -1533,135 +1793,186 @@ class _ChannelScreenState extends State<ChannelScreen> {
         border: Border(top: BorderSide(color: c.border, width: 0.5)),
       ),
       child: SizedBox(width: double.infinity,
-        child: ElevatedButton(
-          onPressed: _subscribe,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: c.primary, foregroundColor: Colors.white,
+        child: GestureDetector(
+          onTap: _subscribe,
+          child: Container(
             padding: const EdgeInsets.symmetric(vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(60)),
-            elevation: 0,
+            decoration: BoxDecoration(
+              color: c.primary,
+              borderRadius: BorderRadius.circular(60),
+            ),
+            child: const Center(
+              child: Text('Join Channel',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFFFFFFFF))),
+            ),
           ),
-          child: const Text('Join Channel', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
         )),
     );
   }
 
-  Widget _inputArea(ThemeColors c, bool dark) {
+  Widget _buildInputArea(ThemeColors c, bool dark) {
     final hasContent = _textCtrl.text.trim().isNotEmpty || _pendingImages.isNotEmpty;
+    final inputBg = dark ? const Color(0xFF17212B) : const Color(0xFFFFFFFF);
+    final fieldBg = dark ? const Color(0xFF0E1621) : const Color(0xFFF0F2F5);
+
     return Column(mainAxisSize: MainAxisSize.min, children: [
       if (_replyingTo != null)
-        _ComposeBanner(icon: Icons.reply,
+        _ComposeBanner(
+          icon: Icons.reply_rounded,
           label: _replyingTo?['sender_name'] as String? ?? 'Unknown',
           preview: _previewType(_replyingTo!),
           onDismiss: () => setState(() => _replyingTo = null)),
       if (_editingMsg != null)
-        _ComposeBanner(icon: Icons.edit, label: 'Editing',
+        _ComposeBanner(
+          icon: Icons.edit_outlined,
+          label: 'Editing message',
           preview: _editingMsg?['content'] as String? ?? '',
-          onDismiss: () { setState(() { _editingMsg = null; _textCtrl.clear(); }); }),
+          onDismiss: () => setState(() { _editingMsg = null; _textCtrl.clear(); })),
+
+      // Pending images strip
       if (_pendingImages.isNotEmpty)
-        Container(height: 84, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          color: c.surface,
+        Container(
+          height: 88,
+          color: inputBg,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: _pendingImages.length + (_pendingImages.length < 10 ? 1 : 0),
             separatorBuilder: (_, __) => const SizedBox(width: 6),
             itemBuilder: (ctx, i) {
               if (i == _pendingImages.length) {
-                return GestureDetector(onTap: _pickImages,
-                  child: Container(width: 68, height: 68,
-                    decoration: BoxDecoration(borderRadius: BorderRadius.circular(10),
+                return GestureDetector(
+                  onTap: _pickImages,
+                  child: Container(
+                    width: 72, height: 72,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: c.border, width: 1.5)),
                     child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(Icons.add_photo_alternate, size: 22, color: c.textSecondary),
+                      Icon(Icons.add_photo_alternate_outlined, size: 22, color: c.textSecondary),
+                      const SizedBox(height: 2),
                       Text('${10 - _pendingImages.length} left',
-                        style: TextStyle(fontSize: 10, color: c.textSecondary)),
+                        style: TextStyle(fontSize: 10, color: c.textTertiary)),
                     ])));
               }
               return Stack(children: [
-                Container(width: 68, height: 68,
-                  decoration: BoxDecoration(borderRadius: BorderRadius.circular(10), color: c.border)),
-                Positioned(top: -4, right: -4, child: GestureDetector(
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Container(width: 72, height: 72, color: c.border),
+                ),
+                Positioned(top: 2, right: 2, child: GestureDetector(
                   onTap: () {
                     final list = [..._pendingImages]; list.removeAt(i);
                     setState(() => _pendingImages = list);
                   },
-                  child: Container(padding: const EdgeInsets.all(2),
-                    decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.65),
-                      borderRadius: BorderRadius.circular(10)),
-                    child: const Icon(Icons.close, size: 13, color: Colors.white)))),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xBB000000),
+                      borderRadius: BorderRadius.circular(8)),
+                    child: const Icon(Icons.close, size: 13, color: Color(0xFFFFFFFF))))),
               ]);
             },
           )),
+
+      // Upload progress
       if (_uploadingImage)
-        Container(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), color: c.surface,
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
+          color: inputBg,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ClipRRect(borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(value: _uploadProgress,
-                backgroundColor: c.border, valueColor: AlwaysStoppedAnimation(c.primary), minHeight: 4)),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(2),
+              child: LinearProgressIndicator(
+                value: _uploadProgress,
+                backgroundColor: c.border,
+                valueColor: AlwaysStoppedAnimation<Color>(c.primary),
+                minHeight: 3)),
             const SizedBox(height: 4),
-            Text('Uploading ${(_uploadProgress * 100).round()}%',
-              style: TextStyle(fontSize: 12, color: c.textSecondary)),
+            Text('Uploading…', style: TextStyle(fontSize: 11, color: c.textTertiary)),
           ])),
+
+      // Input row
       Container(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
         decoration: BoxDecoration(
-          color: dark ? const Color(0xFF0F1117) : Colors.white,
+          color: inputBg,
           border: Border(top: BorderSide(color: c.border, width: 0.5)),
         ),
         child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          // Attach button
+          GestureDetector(
+            onTap: () => _attachSheet(c),
+            child: Container(
+              width: 38, height: 38,
+              margin: const EdgeInsets.only(right: 8, bottom: 3),
+              decoration: BoxDecoration(
+                color: c.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.attach_file_rounded, size: 20, color: c.primary)),
+          ),
+          // Text field
           Expanded(child: Container(
             decoration: BoxDecoration(
-              color: dark ? c.cardBackground : const Color(0xFFF2F2F7),
+              color: fieldBg,
               borderRadius: BorderRadius.circular(22),
             ),
             constraints: const BoxConstraints(minHeight: 44, maxHeight: 120),
             child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-              IconButton(
-                onPressed: () {},
-                icon: Icon(Icons.emoji_emotions_outlined, size: 22, color: c.textSecondary),
-                padding: const EdgeInsets.all(8)),
-              Expanded(child: TextField(
-                controller: _textCtrl,
-                focusNode: _focusNode,
-                style: TextStyle(fontSize: 15, color: c.text),
-                maxLines: null,
-                maxLength: 2000,
-                buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                decoration: InputDecoration(
-                  hintText: _editingMsg != null ? 'Edit message...'
-                    : _pendingImages.isNotEmpty ? 'Add a caption...' : 'Broadcast a message',
-                  hintStyle: TextStyle(color: c.textTertiary),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-                  isDense: true,
+              Expanded(child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                child: TextField(
+                  controller: _textCtrl,
+                  focusNode: _focusNode,
+                  style: TextStyle(fontSize: 15, color: c.text),
+                  maxLines: null,
+                  maxLength: 2000,
+                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                  decoration: InputDecoration(
+                    hintText: _editingMsg != null ? 'Edit message…'
+                      : _pendingImages.isNotEmpty ? 'Add a caption…'
+                      : 'Broadcast a message…',
+                    hintStyle: TextStyle(color: c.textTertiary, fontSize: 15),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                onChanged: (_) => setState(() {}),
               )),
-              IconButton(
-                onPressed: _pendingImages.isNotEmpty ? _pickImages : () => _attachSheet(c),
-                icon: _pendingImages.isNotEmpty
-                  ? Container(width: 22, height: 22,
-                      decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
-                      child: Center(child: Text('${_pendingImages.length}',
-                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))))
-                  : Icon(Icons.attach_file, size: 20, color: c.textSecondary),
-                padding: const EdgeInsets.all(8)),
+              if (_pendingImages.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8, bottom: 10),
+                  child: Container(
+                    width: 22, height: 22,
+                    decoration: BoxDecoration(color: c.primary, shape: BoxShape.circle),
+                    child: Center(child: Text('${_pendingImages.length}',
+                      style: const TextStyle(color: Color(0xFFFFFFFF), fontSize: 11, fontWeight: FontWeight.bold)))),
+                ),
             ])),
           ),
           const SizedBox(width: 8),
+          // Send button
           GestureDetector(
             onTap: hasContent ? _send : null,
-            child: Container(width: 44, height: 44,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 44, height: 44,
               decoration: BoxDecoration(
-                color: hasContent ? c.primary : c.primary.withValues(alpha: 0.5),
-                shape: BoxShape.circle),
+                color: hasContent ? c.primary : c.primary.withValues(alpha: 0.4),
+                shape: BoxShape.circle,
+              ),
               child: _sending
-                ? Center(child: SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)))
-                : Center(child: Icon(hasContent ? Icons.send_rounded : Icons.mic_none_rounded,
-                    size: 20, color: Colors.white))),
+                ? const Center(child: SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(color: Color(0xFFFFFFFF), strokeWidth: 2)))
+                : Icon(
+                    hasContent ? Icons.send_rounded : Icons.mic_none_rounded,
+                    size: 20, color: const Color(0xFFFFFFFF)),
+            ),
           ),
-        ])),
+        ]),
+      ),
     ]);
   }
 
@@ -1683,15 +1994,17 @@ class _ChannelScreenState extends State<ChannelScreen> {
       backgroundColor: c.bottomSheetBg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => SafeArea(child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 20),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 16),
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(bottom: 20),
             decoration: BoxDecoration(color: c.border, borderRadius: BorderRadius.circular(2))),
           Row(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
             _AttachOpt(icon: Icons.photo_library_outlined, label: 'Photos', color: c.primary,
               onTap: () { Navigator.pop(ctx); _pickImages(); }),
             _AttachOpt(icon: Icons.poll_outlined, label: 'Poll', color: c.primary,
               onTap: () { Navigator.pop(ctx); _snack('Poll creation coming soon'); }),
+            _AttachOpt(icon: Icons.gif_box_outlined, label: 'GIF', color: c.primary,
+              onTap: () { Navigator.pop(ctx); _snack('GIF picker coming soon'); }),
           ]),
         ]),
       )),
@@ -1710,12 +2023,16 @@ class _AttachOpt extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return GestureDetector(onTap: onTap, child: Column(children: [
-      Container(width: 60, height: 60,
-        decoration: BoxDecoration(color: color.withValues(alpha: 0.12), shape: BoxShape.circle),
-        child: Icon(icon, size: 28, color: color)),
-      const SizedBox(height: 8),
-      Text(label, style: TextStyle(fontSize: 13, color: c.text)),
-    ]));
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(children: [
+        Container(
+          width: 64, height: 64,
+          decoration: BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
+          child: Icon(icon, size: 28, color: color)),
+        const SizedBox(height: 8),
+        Text(label, style: TextStyle(fontSize: 13, color: c.text, fontWeight: FontWeight.w500)),
+      ]),
+    );
   }
 }

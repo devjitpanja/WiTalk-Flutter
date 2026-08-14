@@ -519,7 +519,10 @@ class _RichText extends StatelessWidget {
           alignment: PlaceholderAlignment.baseline,
           baseline: TextBaseline.alphabetic,
           child: GestureDetector(
-            onTap: () => context.push('/user/$username'),
+            onTap: () {
+              debugPrint('[MentionTap] tapped mention: "$matched" → navigating /user/$username');
+              context.push('/user/$username');
+            },
             child: Text(
               matched,
               style: TextStyle(

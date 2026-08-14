@@ -9,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:photo_view/photo_view.dart';
+import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
@@ -41,17 +42,47 @@ final _ownUidProvider = FutureProvider.autoDispose<String?>((ref) async {
 
 final _profileProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, uid) async {
   // /find/:identifier accepts both user IDs and usernames (from @mention taps)
-  final res = await dioClient.get('/v1/user/find/$uid');
-  final data = res.data;
-  if (data['success'] == true && data['data'] != null) return Map<String, dynamic>.from(data['data']);
-  if (data['id'] != null) return Map<String, dynamic>.from(data);
-  throw Exception('Invalid profile data');
+  const base = 'https://api.witalk.in';
+  final url = '$base/v1/user/find/$uid';
+  debugPrint('[ProfileProvider] ▶ GET $url');
+  try {
+    final res = await dioClient.get('/v1/user/find/$uid');
+    debugPrint('[ProfileProvider] ◀ status=${res.statusCode}');
+    debugPrint('[ProfileProvider] ◀ body=${res.data}');
+    final data = res.data;
+    if (data['success'] == true && data['data'] != null) {
+      debugPrint('[ProfileProvider] ✅ parsed via success+data path, id=${data['data']['id']}');
+      return Map<String, dynamic>.from(data['data']);
+    }
+    if (data['id'] != null) {
+      debugPrint('[ProfileProvider] ✅ parsed via flat id path, id=${data['id']}');
+      return Map<String, dynamic>.from(data);
+    }
+    debugPrint('[ProfileProvider] ❌ unexpected response shape: $data');
+    throw Exception('Invalid profile data');
+  } on DioException catch (e) {
+    debugPrint('[ProfileProvider] ❌ DioException: status=${e.response?.statusCode} body=${e.response?.data}');
+    rethrow;
+  } catch (e, st) {
+    debugPrint('[ProfileProvider] ❌ ERROR: $e');
+    debugPrint('[ProfileProvider] ❌ STACKTRACE: $st');
+    rethrow;
+  }
 });
 
 // Resolves a username or user ID to the canonical user ID from the profile data
 final _resolvedUidProvider = FutureProvider.autoDispose.family<String, String>((ref, uid) async {
-  final profile = await ref.watch(_profileProvider(uid).future);
-  return profile['id']?.toString() ?? uid;
+  debugPrint('[ResolvedUid] ▶ resolving "$uid"');
+  try {
+    // use ref.read so the future doesn't re-fire on unrelated provider changes
+    final profile = await ref.read(_profileProvider(uid).future);
+    final resolved = profile['id']?.toString() ?? uid;
+    debugPrint('[ResolvedUid] ✅ "$uid" → "$resolved"');
+    return resolved;
+  } catch (e) {
+    debugPrint('[ResolvedUid] ❌ failed for "$uid": $e');
+    rethrow;
+  }
 });
 
 final _levelProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, uid) async {
@@ -118,12 +149,14 @@ class UserProfileScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    debugPrint('[UserProfileScreen] userId param = "$userId"');
     final uidAsync = ref.watch(_ownUidProvider);
     final resolvedAsync = ref.watch(_resolvedUidProvider(userId));
     if (uidAsync.isLoading || resolvedAsync.isLoading) {
       return Scaffold(backgroundColor: context.colors.background, body: const _ProfileSkeleton());
     }
     if (resolvedAsync.hasError) {
+      debugPrint('[UserProfileScreen] ❌ resolvedAsync.error = ${resolvedAsync.error}');
       return Scaffold(
         backgroundColor: context.colors.background,
         body: Center(
@@ -530,10 +563,10 @@ class _ProfileShellState extends ConsumerState<_ProfileShell> with SingleTickerP
     // Seed follower count into global provider once (no-op if already tracked)
     final profileFollowerCount = (profile['followers_count'] as num?)?.toInt() ?? 0;
     if (!_followerCountSeeded) {
+      _followerCountSeeded = true; // set synchronously to prevent re-scheduling on Riverpod-triggered rebuilds
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ref.read(followProvider.notifier).seedFollowerCount(widget.profileUid, profileFollowerCount);
-          setState(() => _followerCountSeeded = true);
         }
       });
     }
