@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../api/dio_client.dart';
+import '../../theme/app_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/missions_provider.dart';
 import '../../providers/theme_provider.dart';
@@ -112,7 +113,7 @@ class _BlinkingDotState extends State<_BlinkingDot>
           width: widget.size,
           height: widget.size,
           decoration: const BoxDecoration(
-            color: Color(0xFF5e6ad2),
+            color: AppColors.accent,
             shape: BoxShape.circle,
           ),
         ),
@@ -142,8 +143,8 @@ class _T {
   Color get textTertiary => dark ? const Color(0xFF62666D) : const Color(0xFFAEAEB2);
 
   // Accent — used sparingly
-  Color get primary => const Color(0xFF5E6AD2);
-  Color get primarySoft => dark ? const Color(0x1A5E6AD2) : const Color(0x145E6AD2);
+  Color get primary => AppColors.accent;
+  Color get primarySoft => AppColors.accent.withAlpha(dark ? 0x1A : 0x14);
 
   // Semantic
   Color get success => const Color(0xFF27A644);
@@ -1136,7 +1137,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
       _QuickItem(
         icon: Icons.confirmation_number_outlined,
         label: 'Pass',
-        color: const Color(0xFF5E6AD2),
+        color: AppColors.accent,
         onTap: () => context.push('/pass'),
       ),
       _QuickItem(
@@ -1158,7 +1159,7 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
       _QuickItem(
         icon: Icons.bookmark_outline,
         label: 'Saved',
-        color: const Color(0xFF5E6AD2),
+        color: AppColors.accent,
         onTap: () => context.push('/saved'),
       ),
     ];

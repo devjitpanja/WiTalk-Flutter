@@ -24,7 +24,7 @@ class DiscoverPeopleScreen extends ConsumerWidget {
         leading: IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white), onPressed: () => context.pop()),
       ),
       body: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: Color(0xFF5B51F4))),
+        loading: () => const Center(child: CircularProgressIndicator(color: AppColors.accent)),
         error: (_, __) => const Center(child: Text('Failed', style: TextStyle(color: Colors.white70))),
         data: (users) => ListView.builder(
           itemCount: users.length,
@@ -42,7 +42,7 @@ class DiscoverPeopleScreen extends ConsumerWidget {
               subtitle: username != null ? Text('@$username', style: const TextStyle(color: Color(0xFF8E8E93), fontFamily: 'Outfit', fontSize: 12)) : null,
               trailing: ElevatedButton(
                 onPressed: () {},
-                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF5B51F4), minimumSize: const Size(80, 32), padding: const EdgeInsets.symmetric(horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                style: ElevatedButton.styleFrom(backgroundColor: AppColors.accent, minimumSize: const Size(80, 32), padding: const EdgeInsets.symmetric(horizontal: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
                 child: const Text('Follow', style: TextStyle(fontFamily: 'Outfit', fontSize: 13)),
               ),
               onTap: () => context.push('/user/$id'),

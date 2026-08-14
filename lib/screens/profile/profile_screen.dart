@@ -40,11 +40,18 @@ final _ownUidProvider = FutureProvider.autoDispose<String?>((ref) async {
 });
 
 final _profileProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, uid) async {
-  final res = await dioClient.get('/v1/user/$uid');
+  // /find/:identifier accepts both user IDs and usernames (from @mention taps)
+  final res = await dioClient.get('/v1/user/find/$uid');
   final data = res.data;
   if (data['success'] == true && data['data'] != null) return Map<String, dynamic>.from(data['data']);
   if (data['id'] != null) return Map<String, dynamic>.from(data);
   throw Exception('Invalid profile data');
+});
+
+// Resolves a username or user ID to the canonical user ID from the profile data
+final _resolvedUidProvider = FutureProvider.autoDispose.family<String, String>((ref, uid) async {
+  final profile = await ref.watch(_profileProvider(uid).future);
+  return profile['id']?.toString() ?? uid;
 });
 
 final _levelProvider = FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, uid) async {
@@ -112,14 +119,38 @@ class UserProfileScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final uidAsync = ref.watch(_ownUidProvider);
-    return uidAsync.when(
-      loading: () => Scaffold(backgroundColor: context.colors.background, body: const _ProfileSkeleton()),
-      error: (e, _) => Scaffold(backgroundColor: context.colors.background, body: Center(child: Text('$e', style: TextStyle(color: context.colors.text)))),
-      data: (myUid) => _ProfileShell(
-        profileUid: userId,
-        viewerUid: myUid ?? '',
-        isOwnProfile: myUid == userId,
-      ),
+    final resolvedAsync = ref.watch(_resolvedUidProvider(userId));
+    if (uidAsync.isLoading || resolvedAsync.isLoading) {
+      return Scaffold(backgroundColor: context.colors.background, body: const _ProfileSkeleton());
+    }
+    if (resolvedAsync.hasError) {
+      return Scaffold(
+        backgroundColor: context.colors.background,
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: context.colors.error),
+              const SizedBox(height: 16),
+              Text('Unable to Load Profile', style: TextStyle(color: context.colors.text, fontSize: 18, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text('${resolvedAsync.error}', style: TextStyle(color: context.colors.textSecondary, fontSize: 14), textAlign: TextAlign.center),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => ref.invalidate(_resolvedUidProvider(userId)),
+                child: const Text('Try Again'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    final resolvedUid = resolvedAsync.value ?? userId;
+    final myUid = uidAsync.value;
+    return _ProfileShell(
+      profileUid: resolvedUid,
+      viewerUid: myUid ?? '',
+      isOwnProfile: myUid == resolvedUid,
     );
   }
 }

@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import '../../theme/theme_colors.dart';
+import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
 import '../../services/post_view_tracking_service.dart';
 import '../../services/post_feedback_service.dart';
@@ -669,7 +670,7 @@ class _PostCardState extends State<PostCard> with TickerProviderStateMixin {
                 child: Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(_expanded ? 'Show less' : 'Read more',
-                      style: TextStyle(color: c.primaryButton, fontSize: 13,
+                      style: TextStyle(color: AppColors.accent, fontSize: 13,
                           fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
                 ),
               ),
