@@ -474,6 +474,10 @@ class _EditChannelScreenState extends State<EditChannelScreen> {
                                   fontSize: 15, fontFamily: 'Outfit', color: colors.text),
                               decoration: const InputDecoration(
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: true,
+                                fillColor: Colors.transparent,
                                 isDense: true,
                                 contentPadding: EdgeInsets.only(top: 4),
                               ),
@@ -511,6 +515,10 @@ class _EditChannelScreenState extends State<EditChannelScreen> {
                                   fontSize: 14, fontFamily: 'Outfit', color: colors.text),
                               decoration: const InputDecoration(
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: true,
+                                fillColor: Colors.transparent,
                                 isDense: true,
                                 contentPadding: EdgeInsets.only(top: 4),
                               ),

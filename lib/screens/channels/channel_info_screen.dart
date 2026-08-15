@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../api/channel_api.dart';
 import '../../cache/witalk_image_cache.dart';
 import '../../theme/theme_colors.dart';
+import '../../widgets/channels/channel_report_bottom_sheet.dart';
 
 extension _CtxX on BuildContext {
   bool get isDark => Theme.of(this).brightness == Brightness.dark;
@@ -169,59 +170,99 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
 
   Future<void> _confirmLeave() async {
     final c = context.colors;
-    final ok = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text('Leave Channel', style: TextStyle(color: c.text, fontSize: 17, fontWeight: FontWeight.w600)),
-        content: Text('You will no longer receive messages from this channel.',
-            style: TextStyle(color: c.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: TextStyle(color: c.textSecondary))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Leave', style: TextStyle(color: c.danger, fontWeight: FontWeight.w600))),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (ctx) {
+        var loading = false;
+        return StatefulBuilder(
+          builder: (ctx, setDs) => AlertDialog(
+            backgroundColor: c.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Text('Leave Channel', style: TextStyle(color: c.text, fontSize: 17, fontWeight: FontWeight.w600)),
+            content: Text('You will no longer receive messages from this channel.',
+                style: TextStyle(color: c.textSecondary)),
+            actions: [
+              TextButton(
+                onPressed: loading ? null : () => Navigator.pop(ctx),
+                child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+              ),
+              TextButton(
+                onPressed: loading ? null : () async {
+                  setDs(() => loading = true);
+                  try {
+                    await ChannelApi.unsubscribe(widget.channelId);
+                    if (mounted) {
+                      Navigator.pop(ctx);
+                      context.go('/channels');
+                    }
+                  } catch (_) {
+                    if (mounted) {
+                      Navigator.pop(ctx);
+                      _snack('Could not leave channel', error: true);
+                    }
+                  }
+                },
+                child: loading
+                    ? SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: c.danger))
+                    : Text('Leave', style: TextStyle(color: c.danger, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (ok != true) return;
-    try {
-      await ChannelApi.unsubscribe(widget.channelId);
-      if (mounted) context.go('/channels');
-    } catch (_) {
-      _snack('Could not leave channel', error: true);
-    }
   }
 
   Future<void> _confirmRevokeLink() async {
     final c = context.colors;
-    final ok = await showDialog<bool>(
+    await showDialog<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        title: Text('Revoke Invite Link', style: TextStyle(color: c.text, fontSize: 17, fontWeight: FontWeight.w600)),
-        content: Text('The current link will stop working immediately. A new link will be generated.',
-            style: TextStyle(color: c.textSecondary)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Cancel', style: TextStyle(color: c.textSecondary))),
-          TextButton(onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Revoke & Regenerate', style: TextStyle(color: c.danger, fontWeight: FontWeight.w600))),
-        ],
-      ),
+      barrierDismissible: false,
+      builder: (ctx) {
+        var loading = false;
+        return StatefulBuilder(
+          builder: (ctx, setDs) => AlertDialog(
+            backgroundColor: c.surface,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            title: Text('Revoke Invite Link', style: TextStyle(color: c.text, fontSize: 17, fontWeight: FontWeight.w600)),
+            content: Text('The current link will stop working immediately. A new link will be generated.',
+                style: TextStyle(color: c.textSecondary)),
+            actions: [
+              TextButton(
+                onPressed: loading ? null : () => Navigator.pop(ctx),
+                child: Text('Cancel', style: TextStyle(color: c.textSecondary)),
+              ),
+              TextButton(
+                onPressed: loading ? null : () async {
+                  setDs(() => loading = true);
+                  try {
+                    final res = await ChannelApi.revokeLink(widget.channelId);
+                    final newCode = res.data?['invite_code'] as String?;
+                    if (mounted) {
+                      if (newCode != null) {
+                        setState(() => _channel = {..._channel!, 'invite_code': newCode});
+                      }
+                      Navigator.pop(ctx);
+                    }
+                  } catch (_) {
+                    if (mounted) {
+                      Navigator.pop(ctx);
+                      _snack('Could not revoke link', error: true);
+                    }
+                  }
+                },
+                child: loading
+                    ? SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: c.danger))
+                    : Text('Revoke & Regenerate', style: TextStyle(color: c.danger, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        );
+      },
     );
-    if (ok != true) return;
-    try {
-      final res = await ChannelApi.revokeLink(widget.channelId);
-      final newCode = res.data?['invite_code'] as String?;
-      if (newCode != null && mounted) {
-        setState(() => _channel = {..._channel!, 'invite_code': newCode});
-      }
-    } catch (_) {
-      _snack('Could not revoke link', error: true);
-    }
   }
 
   void _snack(String t, {bool error = false, bool success = false}) {
@@ -293,7 +334,7 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
                 if (!_isAdmin) _buildReportSection(c),
                 _buildTabBar(c),
                 _buildTabContent(c),
-                const SizedBox(height: 48),
+                SizedBox(height: 48 + MediaQuery.of(context).padding.bottom),
               ],
             ]),
           ),
@@ -301,14 +342,14 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
           // ── Floating header ──
           Positioned(
             top: 0, left: 0, right: 0,
-            child: SafeArea(
-              bottom: false,
-              child: Stack(children: [
-                // Header bg fades in
+            child: Builder(builder: (ctx) {
+              final topPad = MediaQuery.of(ctx).padding.top;
+              return Stack(children: [
+                // Full-bleed bg (status bar + header) fades in on scroll
                 Opacity(
                   opacity: headerOpacity,
                   child: Container(
-                    height: _kHeaderH,
+                    height: topPad + _kHeaderH,
                     color: c.background,
                   ),
                 ),
@@ -320,33 +361,37 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
                     child: Container(height: 0.5, color: c.border),
                   ),
                 ),
-                SizedBox(
-                  height: _kHeaderH,
-                  child: Row(children: [
-                    GestureDetector(
-                      onTap: () => context.pop(),
-                      child: Container(
-                        width: 40, height: 40,
-                        margin: const EdgeInsets.only(left: 8),
-                        alignment: Alignment.center,
-                        child: Icon(Icons.arrow_back, size: 24, color: c.text),
+                // Header content sits below status bar
+                Padding(
+                  padding: EdgeInsets.only(top: topPad),
+                  child: SizedBox(
+                    height: _kHeaderH,
+                    child: Row(children: [
+                      GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Container(
+                          width: 40, height: 40,
+                          margin: const EdgeInsets.only(left: 8),
+                          alignment: Alignment.center,
+                          child: Icon(Icons.arrow_back, size: 24, color: c.text),
+                        ),
                       ),
-                    ),
-                    Expanded(
-                      child: Opacity(
-                        opacity: titleOpacity,
-                        child: Text(name,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
+                      Expanded(
+                        child: Opacity(
+                          opacity: titleOpacity,
+                          child: Text(name,
+                            textAlign: TextAlign.center,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: c.text)),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 48),
-                  ]),
+                      const SizedBox(width: 48),
+                    ]),
+                  ),
                 ),
-              ]),
-            ),
+              ]);
+            }),
           ),
         ]),
       ),
@@ -359,9 +404,10 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
     final init = name.isNotEmpty ? name[0].toUpperCase() : 'C';
     final subLabel = '${subCount.toString()} members${username != null && username.isNotEmpty ? ' · @$username' : ''}';
     final roleStr = _isOwner ? 'Owner' : _isAdmin ? 'Admin' : null;
+    final topPad = MediaQuery.of(context).padding.top;
 
     return SizedBox(
-      height: _kHeroHeight,
+      height: _kHeroHeight + topPad,
       child: Stack(fit: StackFit.expand, children: [
         // Base bg
         Container(color: c.cardBackground),
@@ -458,10 +504,11 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
       child: Row(children: [
-        // Message button
+        // Message button — icon: primary, label: text (matches RN)
         Expanded(child: _actionBtn(
           c, Icons.chat_bubble_outline_rounded, 'Message', c.primary,
           () => context.push('/channel/${widget.channelId}', extra: {'channel': _channel}),
+          labelColor: c.text,
         )),
         const SizedBox(width: 10),
         // Mute/Unmute
@@ -474,7 +521,8 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
         if (_isAdmin)
           Expanded(child: _actionBtn(
             c, Icons.tune_rounded, 'Edit', c.primary,
-            () => context.push('/edit-channel/${widget.channelId}', extra: {'channel': _channel}),
+            () => context.push('/edit-channel/${widget.channelId}', extra: {'channel': _channel})
+                .then((_) => _fetchChannelInfo()),
           ))
         else
           Expanded(child: _actionBtn(
@@ -484,7 +532,7 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
     );
   }
 
-  Widget _actionBtn(ThemeColors c, IconData icon, String label, Color color, VoidCallback onTap) {
+  Widget _actionBtn(ThemeColors c, IconData icon, String label, Color iconColor, VoidCallback onTap, {Color? labelColor}) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -494,9 +542,9 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
           borderRadius: BorderRadius.circular(14),
         ),
         child: Column(children: [
-          Icon(icon, size: 20, color: color),
+          Icon(icon, size: 20, color: iconColor),
           const SizedBox(height: 6),
-          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+          Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: labelColor ?? iconColor)),
         ]),
       ),
     );
@@ -606,7 +654,7 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
           label: 'Administrators',
           count: '${_admins.length}',
           onTap: () => context.push('/channel-admins/${widget.channelId}',
-              extra: {'isOwner': _isOwner}),
+              extra: {'isOwner': _isOwner}).then((_) => _fetchChannelInfo()),
         ),
         Container(height: 0.5, margin: const EdgeInsets.only(left: 58), color: c.border),
         _mgmtRow(c,
@@ -616,7 +664,8 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
           label: 'Subscribers',
           count: subCount.toString(),
           onTap: () => context.push('/channel-subscribers/${widget.channelId}',
-              extra: {'subscriberCount': subCount, 'isOwner': _isOwner, 'isAdmin': _isAdmin}),
+              extra: {'subscriberCount': subCount, 'isOwner': _isOwner, 'isAdmin': _isAdmin})
+              .then((_) => _fetchChannelInfo()),
         ),
         Container(height: 0.5, margin: const EdgeInsets.only(left: 58), color: c.border),
         _mgmtRow(c,
@@ -624,7 +673,8 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
           icon: Icons.block_rounded,
           iconColor: c.danger,
           label: 'Banned Users',
-          onTap: () => context.push('/channel-banned-users/${widget.channelId}'),
+          onTap: () => context.push('/channel-banned-users/${widget.channelId}')
+              .then((_) => _fetchChannelInfo()),
         ),
       ]),
     );
@@ -690,7 +740,12 @@ class _ChannelInfoScreenState extends State<ChannelInfoScreen> {
       decoration: BoxDecoration(color: c.cardBackground, borderRadius: BorderRadius.circular(14)),
       clipBehavior: Clip.hardEdge,
       child: GestureDetector(
-        onTap: () => _snack('Report submitted'),
+        onTap: () => showChannelReportSheet(
+          context,
+          channelId: widget.channelId,
+          channelName: _channel?['name']?.toString() ?? '',
+          onSuccess: () => _snack('Your report has been submitted. We will review it shortly.', success: true),
+        ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
           child: Row(children: [
