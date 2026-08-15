@@ -120,40 +120,40 @@ class _BlinkingDotState extends State<_BlinkingDot>
       );
 }
 
-// ─── Linear design tokens ─────────────────────────────────────────────────────
+// ─── Theme tokens — mirrors ThemeColors values ────────────────────────────────
 class _T {
   final bool dark;
   const _T(this.dark);
 
   // Surfaces
-  Color get bg => dark ? const Color(0xFF010102) : const Color(0xFFF5F6F6);
-  Color get surface => dark ? const Color(0xFF0F1011) : Colors.white;
-  Color get surface2 => dark ? const Color(0xFF141516) : const Color(0xFFF6F7F7);
-  Color get surface3 => dark ? const Color(0xFF18191A) : const Color(0xFFEEEEEE);
-  Color get card => dark ? const Color(0xFF0F1011) : Colors.white;
+  Color get bg => dark ? const Color(0xFF0D1017) : Colors.white;
+  Color get surface => dark ? const Color(0xFF0D1017) : Colors.white;
+  Color get surface2 => dark ? const Color(0xFF1C1C1E) : const Color(0xFFF9F9F9);
+  Color get surface3 => dark ? const Color(0xFF1C1C1E) : const Color(0xFFF0F0F0);
+  Color get card => dark ? const Color(0xFF0D1017) : Colors.white;
 
   // Borders
-  Color get border => dark ? const Color(0xFF23252A) : const Color(0xFFE5E5EA);
-  Color get borderStrong => dark ? const Color(0xFF34343A) : const Color(0xFFD1D1D6);
+  Color get border => dark ? const Color(0xFF38383A) : const Color(0xFFE0E0E0);
+  Color get borderStrong => dark ? const Color(0xFF38383A) : const Color(0xFFDFDFDF);
 
   // Text hierarchy
-  Color get text => dark ? const Color(0xFFF7F8F8) : const Color(0xFF000000);
-  Color get textMuted => dark ? const Color(0xFFD0D6E0) : const Color(0xFF3C3C43);
-  Color get textSubtle => dark ? const Color(0xFF8A8F98) : const Color(0xFF8E8E93);
-  Color get textTertiary => dark ? const Color(0xFF62666D) : const Color(0xFFAEAEB2);
+  Color get text => dark ? Colors.white : Colors.black;
+  Color get textMuted => dark ? const Color(0xFFEBEBF5) : const Color(0xFF666666);
+  Color get textSubtle => dark ? const Color(0xFF8E8E93) : const Color(0xFF999999);
+  Color get textTertiary => dark ? const Color(0xFF8E8E93) : const Color(0xFF999999);
 
   // Accent — used sparingly
   Color get primary => AppColors.accent;
   Color get primarySoft => AppColors.accent.withAlpha(dark ? 0x1A : 0x14);
 
   // Semantic
-  Color get success => const Color(0xFF27A644);
-  Color get danger => const Color(0xFFFF453A);
+  Color get success => dark ? const Color(0xFF30D158) : const Color(0xFF4CAF50);
+  Color get danger => dark ? const Color(0xFFFF453A) : const Color(0xFFFF3A30);
   Color get dangerSoft => dark ? const Color(0x14FF453A) : const Color(0x0DFF453A);
-  Color get warning => const Color(0xFFF59E0B);
+  Color get warning => dark ? const Color(0xFFFF9F0A) : const Color(0xFFFF9800);
 
   // Switch
-  Color get switchTrackFalse => dark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
+  Color get switchTrackFalse => dark ? const Color(0xFF38383A) : const Color(0xFFE0E0E0);
   Color get switchThumbFalse => dark ? const Color(0xFF8E8E93) : Colors.white;
 }
 
