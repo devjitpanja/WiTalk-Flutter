@@ -79,6 +79,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   String _alertType = 'info';
   List<DialogButtonConfig> _alertButtons = [];
 
+  int? _previewImageIndex;
+  bool _showImagePreview = false;
+
   static const int _maxImages = 20;
   static const int _maxCharacterCount = 1000;
 
@@ -389,6 +392,22 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     _contentCtrl.selection = TextSelection.collapsed(offset: newPos);
     _cursorPosition = newPos;
     _contentFocusNode.requestFocus();
+  }
+
+  void _insertTrendingHashtag(String tag) {
+    final text = _contentCtrl.text;
+    final pos = _cursorPosition.clamp(0, text.length);
+    final before = text.substring(0, pos);
+    final after = text.substring(pos);
+    final needsSpace = before.isNotEmpty && !before.endsWith(' ');
+    final insertion = needsSpace ? ' #$tag ' : '#$tag ';
+    final newText = before + insertion + after;
+    _contentCtrl.text = newText;
+    final newPos = pos + insertion.length;
+    _contentCtrl.selection = TextSelection.collapsed(offset: newPos);
+    _cursorPosition = newPos;
+    _contentFocusNode.requestFocus();
+    setState(() {});
   }
 
   // ── Media ─────────────────────────────────────────────────────────────────────
@@ -766,6 +785,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             _buildScrollBody(theme, name, username, pic, isVerified, badgeColor),
             if (_showVideoPreviewModal && _selectedVideo != null)
               _buildVideoPreviewModal(),
+            if (_showImagePreview && _previewImageIndex != null)
+              _buildImagePreviewModal(),
             CustomAlertDialog(
               visible: _alertVisible,
               title: _alertTitle,
@@ -820,17 +841,18 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       centerTitle: true,
       actions: [
         Padding(
-          padding: const EdgeInsets.only(right: 16, top: 10, bottom: 10),
+          padding: const EdgeInsets.only(right: 16, top: 6, bottom: 6),
           child: GestureDetector(
             onTap: _uploading ? null : _handleShare,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
+              height: 35,
               padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
+                  const EdgeInsets.symmetric(horizontal: 20),
               decoration: BoxDecoration(
                 color: _uploading
-                    ? primaryColor.withValues(alpha: 0.45)
-                    : primaryColor,
+                    ? AppColors.accent.withValues(alpha: 0.45)
+                    : AppColors.accent,
                 borderRadius: BorderRadius.circular(24),
               ),
               child: Row(
@@ -929,9 +951,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
     final textColor = theme.textTheme.bodyLarge?.color ?? AppColors.text;
     final textTerColor =
         theme.textTheme.bodySmall?.color ?? AppColors.textTertiary;
-    final surfaceColor =
-        theme.inputDecorationTheme.fillColor ?? AppColors.cardBackground;
-    final borderColor = theme.dividerTheme.color ?? AppColors.border;
     final primaryColor = theme.colorScheme.primary;
 
     return Padding(
@@ -972,13 +991,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                 ],
               ],
             ),
-          ),
-          const SizedBox(width: 8),
-          _VisibilityChip(
-            surfaceColor: surfaceColor,
-            borderColor: borderColor,
-            textColor: textColor,
-            textTerColor: textTerColor,
           ),
         ],
       ),
@@ -1120,7 +1132,8 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Widget _buildActionButtons(ThemeData theme) {
-    final primaryColor = theme.colorScheme.primary;
+    const tagPeopleColor = Color(0xFF6366F1);
+    const hashtagColor = Color(0xFFEC4899);
     final borderColor = theme.dividerTheme.color ?? AppColors.border;
 
     return Padding(
@@ -1129,9 +1142,9 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
         children: [
           Expanded(
             child: _PostActionButton(
-              icon: Icons.person_add_alt_1_rounded,
+              icon: Icons.alternate_email_rounded,
               label: 'Tag People',
-              color: primaryColor,
+              color: tagPeopleColor,
               borderColor: borderColor,
               onTap: () => _insertAtCursor('@'),
             ),
@@ -1141,7 +1154,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
             child: _PostActionButton(
               icon: Icons.tag_rounded,
               label: 'Add Hashtag',
-              color: primaryColor,
+              color: hashtagColor,
               borderColor: borderColor,
               onTap: () => _insertAtCursor('#'),
             ),
@@ -1152,21 +1165,19 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
   }
 
   Widget _buildTrendingHashtags(ThemeData theme) {
-    final textColor = theme.textTheme.bodyLarge?.color ?? AppColors.text;
     final surfaceColor =
         theme.inputDecorationTheme.fillColor ?? AppColors.cardBackground;
     final borderColor = theme.dividerTheme.color ?? AppColors.border;
     final textTerColor =
         theme.textTheme.bodySmall?.color ?? AppColors.textTertiary;
-    final primaryColor = theme.colorScheme.primary;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+          padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
           child: Text(
-            'Trending',
+            'POPULAR',
             style: theme.textTheme.bodySmall?.copyWith(
               color: textTerColor,
               fontWeight: FontWeight.w600,
@@ -1192,9 +1203,7 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                   tag: tag,
                   surfaceColor: surfaceColor,
                   borderColor: borderColor,
-                  textColor: textColor,
-                  primaryColor: primaryColor,
-                  onTap: () => _insertHashtag(tag),
+                  onTap: () => _insertTrendingHashtag(tag),
                 ),
               );
             },
@@ -1434,6 +1443,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
                     file: file,
                     index: index,
                     primaryColor: primaryColor,
+                    onTap: () => setState(() {
+                      _previewImageIndex = index;
+                      _showImagePreview = true;
+                    }),
                     onRemove: () {
                       setState(() {
                         _selectedImages.removeAt(index);
@@ -1449,6 +1462,96 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildImagePreviewModal() {
+    final idx = _previewImageIndex!;
+    final file = _selectedImages[idx];
+    return GestureDetector(
+      onTap: () => setState(() {
+        _showImagePreview = false;
+        _previewImageIndex = null;
+      }),
+      child: Container(
+        color: const Color(0xFF000000),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                child: Row(
+                  children: [
+                    Text(
+                      '${idx + 1} / ${_selectedImages.length}',
+                      style: const TextStyle(
+                        color: Color(0xFFFFFFFF),
+                        fontFamily: 'Outfit',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 17,
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded,
+                          color: Color(0xFFFFFFFF), size: 22),
+                      onPressed: () => setState(() {
+                        _showImagePreview = false;
+                        _previewImageIndex = null;
+                      }),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Center(
+                  child: InteractiveViewer(
+                    child: Image.file(file, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+              if (_selectedImages.length > 1)
+                SizedBox(
+                  height: 80,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    itemCount: _selectedImages.length,
+                    itemBuilder: (_, i) {
+                      return GestureDetector(
+                        onTap: () =>
+                            setState(() => _previewImageIndex = i),
+                        child: Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: i == idx
+                                  ? AppColors.accent
+                                  : const Color(0x00000000),
+                              width: 2,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.file(
+                              _selectedImages[i],
+                              width: 56,
+                              height: 56,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1557,55 +1660,6 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
 
 // ── Private helper widgets ────────────────────────────────────────────────────
 
-class _VisibilityChip extends StatelessWidget {
-  final Color surfaceColor;
-  final Color borderColor;
-  final Color textColor;
-  final Color textTerColor;
-
-  const _VisibilityChip({
-    required this.surfaceColor,
-    required this.borderColor,
-    required this.textColor,
-    required this.textTerColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {},
-      child: Container(
-        padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-        decoration: BoxDecoration(
-          color: surfaceColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: borderColor, width: 0.5),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.public_rounded, size: 13, color: textColor),
-            const SizedBox(width: 5),
-            Text(
-              'Everyone',
-              style: TextStyle(
-                color: textColor,
-                fontFamily: 'Outfit',
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down_rounded,
-                size: 16, color: textTerColor),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _PostActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1658,16 +1712,12 @@ class _TrendingHashtagChip extends StatelessWidget {
   final String tag;
   final Color surfaceColor;
   final Color borderColor;
-  final Color textColor;
-  final Color primaryColor;
   final VoidCallback onTap;
 
   const _TrendingHashtagChip({
     required this.tag,
     required this.surfaceColor,
     required this.borderColor,
-    required this.textColor,
-    required this.primaryColor,
     required this.onTap,
   });
 
@@ -1677,21 +1727,19 @@ class _TrendingHashtagChip extends StatelessWidget {
       onTap: onTap,
       child: Container(
         padding:
-            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
           color: surfaceColor,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: borderColor, width: 0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: borderColor, width: 1),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.tag_rounded, size: 12, color: primaryColor),
-            const SizedBox(width: 3),
             Text(
-              tag,
-              style: TextStyle(
-                color: textColor,
+              '#$tag',
+              style: const TextStyle(
+                color: AppColors.primary,
                 fontFamily: 'Outfit',
                 fontWeight: FontWeight.w500,
                 fontSize: 13,
@@ -1795,18 +1843,22 @@ class _ImageTile extends StatelessWidget {
   final File file;
   final int index;
   final Color primaryColor;
+  final VoidCallback onTap;
   final VoidCallback onRemove;
 
   const _ImageTile({
     required this.file,
     required this.index,
     required this.primaryColor,
+    required this.onTap,
     required this.onRemove,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    return GestureDetector(
+      onTap: onTap,
+      child: Stack(
       children: [
         ClipRRect(
           borderRadius: BorderRadius.circular(14),
@@ -1881,6 +1933,7 @@ class _ImageTile extends StatelessWidget {
           ),
         ),
       ],
+      ),
     );
   }
 }
