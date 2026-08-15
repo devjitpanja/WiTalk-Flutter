@@ -216,7 +216,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: isActive ? const Color(0xFF4A90E2) : Colors.transparent,
+                color: isActive ? const Color(0xFF0751DF) : Colors.transparent,
                 width: 2,
               ),
             ),
@@ -229,7 +229,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
                 style: TextStyle(
                   fontSize: 14,
                   fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
-                  color: isActive ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.5),
+                  color: isActive ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.5),
                 ),
               ),
               if (count != null && count > 0) ...[
@@ -237,7 +237,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    color: isDanger ? const Color(0xFFEF4444) : const Color(0xFF4A90E2),
+                    color: isDanger ? const Color(0xFFEF4444) : const Color(0xFF0751DF),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   constraints: const BoxConstraints(minWidth: 18),
@@ -425,10 +425,10 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
                         width: 48,
                         height: 48,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF4A90E2).withOpacity(0.15),
+                          color: const Color(0xFF0751DF).withOpacity(0.15),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.edit, color: Color(0xFF4A90E2)),
+                        child: const Icon(Icons.edit, color: Color(0xFF0751DF)),
                       ),
                       const SizedBox(width: 12),
                       const Text(
@@ -454,15 +454,15 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
                       hintStyle: TextStyle(color: Colors.white.withOpacity(0.4)),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: const BorderSide(color: Color(0xFF4A90E2), width: 1),
+                        borderSide: const BorderSide(color: Color(0xFF0751DF), width: 1),
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: const Color(0xFF4A90E2).withOpacity(0.4), width: 1),
+                        borderSide: BorderSide(color: const Color(0xFF0751DF).withOpacity(0.4), width: 1),
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide(color: const Color(0xFF4A90E2).withOpacity(0.4), width: 1),
+                        borderSide: BorderSide(color: const Color(0xFF0751DF).withOpacity(0.4), width: 1),
                       ),
                       counterStyle: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 12),
                     ),
@@ -490,7 +490,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
                         style: TextButton.styleFrom(
                           backgroundColor: _nameController.text.trim().isEmpty || _nameController.text.trim() == widget.roomName || widget.saving 
                             ? Colors.white.withOpacity(0.14) 
-                            : const Color(0xFF4A90E2),
+                            : const Color(0xFF0751DF),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
                             side: BorderSide(
@@ -515,7 +515,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
           else
             _buildSettingOption(
               icon: Icons.edit,
-              iconColor: const Color(0xFF4A90E2),
+              iconColor: const Color(0xFF0751DF),
               title: 'Edit Room Name',
               description: widget.roomName,
               onTap: () => setState(() => _isEditingName = true),
@@ -648,7 +648,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
               actionIcon: Icons.close,
               actionColor: const Color(0xFFEF4444),
               onAction: () => widget.onRemoveAdmin?.call(admin['uid'] ?? ''),
-              avatarBg: const Color(0xFF4A90E2).withOpacity(0.3),
+              avatarBg: const Color(0xFF0751DF).withOpacity(0.3),
             )),
       ],
     );
@@ -659,7 +659,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: CircularProgressIndicator(color: Color(0xFF4A90E2)),
+          child: CircularProgressIndicator(color: Color(0xFF0751DF)),
         ),
       );
     }
@@ -832,7 +832,7 @@ class _RoomSettingsBottomSheetState extends State<RoomSettingsBottomSheet> {
 
   Widget _buildReviewsTab() {
     if (_reviewsLoading) {
-      return const Center(child: CircularProgressIndicator(color: Color(0xFF4A90E2)));
+      return const Center(child: CircularProgressIndicator(color: Color(0xFF0751DF)));
     }
 
     if (_reviews.isEmpty) {

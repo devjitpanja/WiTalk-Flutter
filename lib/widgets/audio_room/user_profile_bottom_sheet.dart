@@ -343,10 +343,10 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                     width: kAvatarSize,
                                     height: kAvatarSize,
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF4A90E2).withOpacity(0.12),
+                                      color: const Color(0xFF0751DF).withOpacity(0.12),
                                       shape: BoxShape.circle,
                                       border: !hasFrame
-                                          ? Border.all(color: const Color(0xFF4A90E2), width: 2.5)
+                                          ? Border.all(color: const Color(0xFF0751DF), width: 2.5)
                                           : null,
                                     ),
                                     clipBehavior: Clip.antiAlias,
@@ -455,7 +455,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                       if (participant['isHost'] == true)
                                         _rolePill(Icons.star, 'Host', const Color(0xFFFFD700)),
                                       if (participant['isAdmin'] == true && participant['isHost'] != true)
-                                        _rolePill(Icons.shield, 'Admin', const Color(0xFF4A90E2)),
+                                        _rolePill(Icons.shield, 'Admin', const Color(0xFF0751DF)),
                                       if (widget.isCommunityAdda && isParticipantCommunityOwner)
                                         _rolePill(Icons.star, 'Community Owner', const Color(0xFFF87171)),
                                       if (widget.isCommunityAdda && isParticipantCommunityAdmin)
@@ -482,11 +482,11 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                       children: purposes.map((p) => Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF4A90E2).withOpacity(0.1),
+                                          color: const Color(0xFF0751DF).withOpacity(0.1),
                                           borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFF4A90E2).withOpacity(0.25)),
+                                          border: Border.all(color: const Color(0xFF0751DF).withOpacity(0.25)),
                                         ),
-                                        child: Text(p, style: const TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: Color(0xFF4A90E2))),
+                                        child: Text(p, style: const TextStyle(fontSize: 10, fontFamily: 'Outfit', fontWeight: FontWeight.w500, color: Color(0xFF0751DF))),
                                       )).toList(),
                                     ),
                                   ],
@@ -585,7 +585,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                 Icon(
                                   _localVolume == 0 ? Icons.volume_off : _localVolume < 0.5 ? Icons.volume_down : Icons.volume_up,
                                   size: 18,
-                                  color: widget.actionsFrozen ? Colors.white.withOpacity(0.2) : (_localVolume == 0 ? Colors.white.withOpacity(0.25) : const Color(0xFF4A90E2)),
+                                  color: widget.actionsFrozen ? Colors.white.withOpacity(0.2) : (_localVolume == 0 ? Colors.white.withOpacity(0.25) : const Color(0xFF0751DF)),
                                 ),
                                 const SizedBox(width: 8),
                                 _buildVolBtn(
@@ -617,7 +617,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                             height: 8.0 + (i * 2.0),
                                             decoration: BoxDecoration(
                                               color: isFilled
-                                                  ? (widget.actionsFrozen ? const Color(0xFF4A90E2).withOpacity(0.25) : const Color(0xFF4A90E2))
+                                                  ? (widget.actionsFrozen ? const Color(0xFF0751DF).withOpacity(0.25) : const Color(0xFF0751DF))
                                                   : Colors.white.withOpacity(0.1),
                                               borderRadius: BorderRadius.circular(2),
                                             ),
@@ -735,7 +735,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                     _buildManageCell(
                                       icon: Icons.person_remove,
                                       label: 'Off Stage',
-                                      color: const Color(0xFF4A90E2),
+                                      color: const Color(0xFF0751DF),
                                       onTap: widget.actionsFrozen ? null : () {
                                         widget.onOffStage?.call(participant);
                                         Navigator.pop(context);
@@ -774,7 +774,7 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                                     _buildManageCell(
                                       icon: participant['isAdmin'] == true ? Icons.remove_moderator : Icons.add_moderator,
                                       label: participant['isAdmin'] == true ? 'Rm Admin' : 'Mk Admin',
-                                      color: participant['isAdmin'] == true ? const Color(0xFFFFA500) : const Color(0xFF4A90E2),
+                                      color: participant['isAdmin'] == true ? const Color(0xFFFFA500) : const Color(0xFF0751DF),
                                       onTap: () {
                                         if (participant['isAdmin'] == true) {
                                           widget.onDemoteAdmin?.call(participant);
@@ -895,9 +895,9 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
           child: Container(
             padding: const EdgeInsets.symmetric(vertical: 12),
             decoration: BoxDecoration(
-              color: isActive ? const Color(0xFF4A90E2).withOpacity(0.12) : Colors.white.withOpacity(0.06),
+              color: isActive ? const Color(0xFF0751DF).withOpacity(0.12) : Colors.white.withOpacity(0.06),
               border: Border.all(
-                color: isActive ? const Color(0xFF4A90E2).withOpacity(0.3) : Colors.white.withOpacity(0.08),
+                color: isActive ? const Color(0xFF0751DF).withOpacity(0.3) : Colors.white.withOpacity(0.08),
               ),
               borderRadius: BorderRadius.circular(16),
             ),
@@ -906,20 +906,20 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
                     child: SizedBox(
                       height: 20,
                       width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A90E2)),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0751DF)),
                     ),
                   )
                 : Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(icon, size: 20, color: iconColor ?? (isActive ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.85))),
+                      Icon(icon, size: 20, color: iconColor ?? (isActive ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.85))),
                       const SizedBox(width: 5),
                       Text(
                         label,
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: iconColor ?? (isActive ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.7)),
+                          color: iconColor ?? (isActive ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.7)),
                         ),
                       ),
                     ],
@@ -940,10 +940,10 @@ class _UserProfileBottomSheetState extends State<UserProfileBottomSheet> {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: const Color(0xFF4A90E2).withOpacity(0.12),
+            color: const Color(0xFF0751DF).withOpacity(0.12),
             shape: BoxShape.circle,
           ),
-          child: Icon(icon, size: 16, color: widget.actionsFrozen ? const Color(0xFF4A90E2).withOpacity(0.25) : const Color(0xFF4A90E2)),
+          child: Icon(icon, size: 16, color: widget.actionsFrozen ? const Color(0xFF0751DF).withOpacity(0.25) : const Color(0xFF0751DF)),
         ),
       ),
     );

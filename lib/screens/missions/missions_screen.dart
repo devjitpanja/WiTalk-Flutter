@@ -34,7 +34,7 @@ num? _n(dynamic v) => v == null ? null : (v is num ? v : num.tryParse(v.toString
 List<Color> _categoryColors(String? cat) {
   switch (cat) {
     case 'engagement': return [const Color(0xFFFF6B9D), const Color(0xFFC44569)];
-    case 'posts': return [const Color(0xFF4A90E2), const Color(0xFF357ABD)];
+    case 'posts': return [const Color(0xFF0751DF), const Color(0xFF0741A8)];
     case 'social': return [const Color(0xFF00B894), const Color(0xFF00916E)];
     case 'calls': return [const Color(0xFFA29BFE), const Color(0xFF6C5CE7)];
     default: return [const Color(0xFFFFD700), const Color(0xFFFFA500)];

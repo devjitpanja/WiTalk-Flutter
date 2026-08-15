@@ -1963,7 +1963,7 @@ class _AddaChatBubbleState extends State<_AddaChatBubble>
     final isChecking = _liveStatus == 'checking';
     final isEnded = _liveStatus == 'ended';
 
-    final accent = widget.c.primaryButton; // #5B51F4
+    final accent = widget.c.primaryButton; // #0751DF
     final cardBg = isEnded ? widget.c.surface : accent;
     final topStripBg = isEnded
         ? _endedAccent.withValues(alpha: 0.12)
@@ -2550,7 +2550,7 @@ class _WiTalkLinkBubbleState extends State<_WiTalkLinkBubble> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = widget.c.primaryButton; // #5B51F4
+    final accent = widget.c.primaryButton; // #0751DF
 
     if (_loading) {
       return _buildCard(

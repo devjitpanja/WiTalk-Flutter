@@ -147,10 +147,10 @@ const _dark = ThemeColors(
   modalBg:              Color(0xCC000000),
   overlay:              Color(0x80000000),
 
-  primaryButton:        Color(0xFF5B51F4),
-  primaryButtonDisabled:Color(0xFF3D3A8C),
+  primaryButton:        Color(0xFF0751DF),
+  primaryButtonDisabled:Color(0xFF0741A8),
   secondaryButton:      Color(0xFF11151F),
-  secondaryButtonBorder:Color(0xFF5B51F4),
+  secondaryButtonBorder:Color(0xFF0751DF),
 
   // RN darkTheme: interactionButtonBg transparent, interactedButtonBg red
   interactionButtonBg:     Colors.transparent,
@@ -202,10 +202,10 @@ const _light = ThemeColors(
   modalBg:              Color(0x80000000),
   overlay:              Color(0x4D000000),
 
-  primaryButton:        Color(0xFF5B51F4),
-  primaryButtonDisabled:Color(0xFF9A93E8),
+  primaryButton:        Color(0xFF0751DF),
+  primaryButtonDisabled:Color(0xFF6B9BE8),
   secondaryButton:      Color(0xFFF0F0F0),
-  secondaryButtonBorder:Color(0xFF5B51F4),
+  secondaryButtonBorder:Color(0xFF0751DF),
 
   // RN lightTheme: interactionButtonBg transparent
   interactionButtonBg:     Colors.transparent,

@@ -10,7 +10,7 @@ class AppTheme {
         primaryColor: const Color(0xFF0A84FF),
         colorScheme: const ColorScheme.dark(
           primary: Color(0xFF0A84FF),
-          secondary: Color(0xFF5B51F4),
+          secondary: Color(0xFF0751DF),
           surface: Color(0xFF0D1017),
           error: Color(0xFFFF453A),
         ),
@@ -74,7 +74,7 @@ class AppTheme {
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF5B51F4),
+            backgroundColor: const Color(0xFF0751DF),
             foregroundColor: Colors.white,
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -89,7 +89,7 @@ class AppTheme {
         primaryColor: const Color(0xFF007AFF),
         colorScheme: const ColorScheme.light(
           primary: Color(0xFF007AFF),
-          secondary: Color(0xFF5B51F4),
+          secondary: Color(0xFF0751DF),
           surface: Color(0xFFFFFFFF),
           error: Color(0xFFF44336),
         ),
@@ -153,9 +153,9 @@ class AppTheme {
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF5B51F4),
+            backgroundColor: const Color(0xFF0751DF),
             foregroundColor: Colors.white,
-            disabledBackgroundColor: const Color(0xFF9A93E8),
+            disabledBackgroundColor: const Color(0xFF6B9BE8),
             minimumSize: const Size(double.infinity, 52),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             textStyle: const TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 16),

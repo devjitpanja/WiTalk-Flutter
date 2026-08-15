@@ -204,10 +204,10 @@ class _RatingBottomSheetState extends State<RatingBottomSheet> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                                         decoration: BoxDecoration(
-                                          color: isSelected ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.06),
+                                          color: isSelected ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.06),
                                           borderRadius: BorderRadius.circular(20),
                                           border: Border.all(
-                                            color: isSelected ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.1),
+                                            color: isSelected ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.1),
                                           ),
                                         ),
                                         child: Row(
@@ -313,7 +313,7 @@ class _RatingBottomSheetState extends State<RatingBottomSheet> {
                               width: double.infinity,
                               padding: const EdgeInsets.symmetric(vertical: 16),
                               decoration: BoxDecoration(
-                                color: const Color(0xFF4A90E2),
+                                color: const Color(0xFF0751DF),
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               alignment: Alignment.center,

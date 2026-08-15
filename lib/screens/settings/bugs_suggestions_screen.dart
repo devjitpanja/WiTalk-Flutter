@@ -291,7 +291,7 @@ class _BugsSuggestionsScreenState extends ConsumerState<BugsSuggestionsScreen>
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
-                      colors: [Color(0xFF4A90E2), Color(0xFF357ABD)],
+                      colors: [Color(0xFF0751DF), Color(0xFF0741A8)],
                     ),
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -1046,10 +1046,10 @@ class _SuggestIdeaSheetState extends State<_SuggestIdeaSheet> {
             Container(
               width: 36, height: 36,
               decoration: BoxDecoration(
-                color: const Color(0xFF4A90E2).withValues(alpha: 0.15),
+                color: const Color(0xFF0751DF).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: const Icon(Icons.lightbulb, size: 20, color: Color(0xFF4A90E2)),
+              child: const Icon(Icons.lightbulb, size: 20, color: Color(0xFF0751DF)),
             ),
             const SizedBox(width: 12),
             Text('Suggest an Idea', style: TextStyle(
@@ -1079,8 +1079,8 @@ class _SuggestIdeaSheetState extends State<_SuggestIdeaSheet> {
               padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(
                 color: _submitting
-                    ? const Color(0xFF4A90E2).withValues(alpha: 0.6)
-                    : const Color(0xFF4A90E2),
+                    ? const Color(0xFF0751DF).withValues(alpha: 0.6)
+                    : const Color(0xFF0751DF),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: _submitting

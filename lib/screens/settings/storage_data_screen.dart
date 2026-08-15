@@ -213,7 +213,7 @@ class _StorageDataScreenState extends ConsumerState<StorageDataScreen> {
     final segments = [
       _Segment('Images',   snap?.imageBytes ?? 0, const Color(0xFFFF9F0A)),
       _Segment('Videos',   snap?.videoBytes ?? 0, const Color(0xFF30D158)),
-      _Segment('Messages', snap?.dbBytes    ?? 0, const Color(0xFF5E6AD2)),
+      _Segment('Messages', snap?.dbBytes    ?? 0, const Color(0xFF0751DF)),
     ].where((s) => s.bytes > 0).toList();
 
     return Scaffold(
@@ -390,7 +390,7 @@ class _StorageDataScreenState extends ConsumerState<StorageDataScreen> {
       _divider(c),
       _categoryRow(
         c: c,
-        color: const Color(0xFF5E6AD2),
+        color: const Color(0xFF0751DF),
         icon: Icons.chat_bubble_outline,
         label: 'Messages & Chats',
         bytes: snap.dbBytes,

@@ -43,10 +43,10 @@ class AppColors {
   static const Color modalBg = Color(0xCC000000);
   static const Color overlay = Color(0x80000000);
 
-  static const Color primaryButton = Color(0xFF5B51F4);
-  static const Color primaryButtonDisabled = Color(0xFF3D3A8C);
+  static const Color primaryButton = Color(0xFF0751DF);
+  static const Color primaryButtonDisabled = Color(0xFF0741A8);
   static const Color secondaryButton = Color(0xFF11151F);
-  static const Color secondaryButtonBorder = Color(0xFF5B51F4);
+  static const Color secondaryButtonBorder = Color(0xFF0751DF);
 
   // Auth screen specific
   static const Color authGradientTop = Color(0xFF1565C0);

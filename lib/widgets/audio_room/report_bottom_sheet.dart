@@ -291,9 +291,9 @@ class _ReportBottomSheetState extends State<ReportBottomSheet> {
                 margin: const EdgeInsets.only(bottom: 6),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: isSelected ? const Color(0xFF4A90E2).withOpacity(0.1) : Colors.white.withOpacity(0.04),
+                  color: isSelected ? const Color(0xFF0751DF).withOpacity(0.1) : Colors.white.withOpacity(0.04),
                   border: Border.all(
-                    color: isSelected ? const Color(0xFF4A90E2).withOpacity(0.35) : Colors.transparent,
+                    color: isSelected ? const Color(0xFF0751DF).withOpacity(0.35) : Colors.transparent,
                   ),
                   borderRadius: BorderRadius.circular(14),
                 ),
@@ -303,14 +303,14 @@ class _ReportBottomSheetState extends State<ReportBottomSheet> {
                       width: 38,
                       height: 38,
                       decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFF4A90E2).withOpacity(0.15) : Colors.white.withOpacity(0.07),
+                        color: isSelected ? const Color(0xFF0751DF).withOpacity(0.15) : Colors.white.withOpacity(0.07),
                         shape: BoxShape.circle,
                       ),
                       alignment: Alignment.center,
                       child: Icon(
                         _getIconForReason(reason['value']!),
                         size: 20,
-                        color: isSelected ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.55),
+                        color: isSelected ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.55),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -343,7 +343,7 @@ class _ReportBottomSheetState extends State<ReportBottomSheet> {
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(
-                          color: isSelected ? const Color(0xFF4A90E2) : Colors.white.withOpacity(0.25),
+                          color: isSelected ? const Color(0xFF0751DF) : Colors.white.withOpacity(0.25),
                           width: 2,
                         ),
                       ),
@@ -353,7 +353,7 @@ class _ReportBottomSheetState extends State<ReportBottomSheet> {
                               width: 10,
                               height: 10,
                               decoration: const BoxDecoration(
-                                color: Color(0xFF4A90E2),
+                                color: Color(0xFF0751DF),
                                 shape: BoxShape.circle,
                               ),
                             )
@@ -429,8 +429,8 @@ class _ReportBottomSheetState extends State<ReportBottomSheet> {
             _buildActionButton(
               icon: Icons.flag,
               label: 'Report',
-              backgroundColor: widget.canBan ? Colors.transparent : const Color(0xFF4A90E2),
-              borderColor: widget.canBan ? const Color(0xFF4A90E2) : Colors.transparent,
+              backgroundColor: widget.canBan ? Colors.transparent : const Color(0xFF0751DF),
+              borderColor: widget.canBan ? const Color(0xFF0751DF) : Colors.transparent,
               onTap: () => _handleSubmit(false),
             ),
           ],

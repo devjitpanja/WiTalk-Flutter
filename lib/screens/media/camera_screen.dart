@@ -66,6 +66,7 @@ class _CameraScreenState extends State<CameraScreen>
   int _galleryPage = 0;
   final ScrollController _galleryScrollCtrl = ScrollController();
   String? _galleryError;
+  bool _showAlbumDropdown = false;
 
   // ── Selection ───────────────────────────────────────────────────────────────
   final List<Map<String, dynamic>> _selected = [];
@@ -407,6 +408,7 @@ class _CameraScreenState extends State<CameraScreen>
       _galleryHasMore = true;
       _galleryAssets = [];
       _galleryLoading = true;
+      _showAlbumDropdown = false;
     });
     await _loadMoreAssets();
     if (mounted) setState(() => _galleryLoading = false);
@@ -445,39 +447,7 @@ class _CameraScreenState extends State<CameraScreen>
 
   void _showAlbumPickerSheet() {
     if (_albums.isEmpty) return;
-    showModalBottomSheet(
-      useRootNavigator: true,
-      context: context,
-      backgroundColor: const Color(0xFF1C1C1E),
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => ListView.builder(
-        shrinkWrap: true,
-        itemCount: _albums.length,
-        itemBuilder: (ctx, i) {
-          final album = _albums[i];
-          final isSel = album.id == _selectedAlbum?.id;
-          return ListTile(
-            title: Text(
-              album.name,
-              style: TextStyle(
-                color: isSel ? AppColors.primaryButton : Colors.white,
-                fontFamily: 'Outfit',
-                fontWeight: isSel ? FontWeight.w600 : FontWeight.w400,
-              ),
-            ),
-            trailing: isSel
-                ? const Icon(Icons.check, color: AppColors.primaryButton)
-                : null,
-            onTap: () {
-              Navigator.pop(ctx);
-              _switchAlbum(album);
-            },
-          );
-        },
-      ),
-    );
+    setState(() => _showAlbumDropdown = !_showAlbumDropdown);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -714,8 +684,13 @@ class _CameraScreenState extends State<CameraScreen>
                           fontSize: 16,
                         ),
                       ),
-                      const Icon(Icons.keyboard_arrow_down,
-                          color: Colors.white, size: 20),
+                      Icon(
+                        _showAlbumDropdown
+                            ? Icons.keyboard_arrow_up
+                            : Icons.keyboard_arrow_down,
+                        color: Colors.white,
+                        size: 20,
+                      ),
                     ],
                   ),
                 ),
@@ -826,7 +801,11 @@ class _CameraScreenState extends State<CameraScreen>
               _ModeTab(
                 label: 'Thoughts',
                 selected: _selectedMode == 'Thoughts',
-                onTap: () => context.pop({'mode': 'thoughts'}),
+                onTap: () => context.pushReplacement('/create-post', extra: {
+                  'capturedMedia': <Map<String, dynamic>>[],
+                  'fromCamera': true,
+                  'thoughtsMode': true,
+                }),
               ),
             ],
           ),
@@ -871,24 +850,39 @@ class _CameraScreenState extends State<CameraScreen>
             height: 80,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(
-                  color: _isRecording ? Colors.red : Colors.white, width: 4),
-              color: _isRecording
-                  ? Colors.red.withValues(alpha: 0.3)
-                  : Colors.white.withValues(alpha: 0.25),
+              border: Border.all(color: Colors.white, width: 4),
+              color: Colors.transparent,
             ),
             child: Center(
-              child: Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: _isRecording ? Colors.red : Colors.white,
-                ),
-                child: _isRecording
-                    ? const Icon(Icons.stop, color: Colors.white, size: 30)
-                    : null,
-              ),
+              child: _selectedMode == 'Mini'
+                  ? (_isRecording
+                      // Recording → red rounded square stop indicator
+                      ? Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        )
+                      // Not recording in Mini → red circle (record)
+                      : Container(
+                          width: 60,
+                          height: 60,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.red,
+                          ),
+                        ))
+                  // Post mode → white circle shutter
+                  : Container(
+                      width: 60,
+                      height: 60,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                      ),
+                    ),
             ),
           ),
         ),
@@ -985,40 +979,116 @@ class _CameraScreenState extends State<CameraScreen>
     return Positioned.fill(
       child: Container(
         color: const Color(0xFF0D1017),
-        child: Column(
+        child: Stack(
           children: [
-            SizedBox(height: topInset),
-            Expanded(
-              child: _galleryLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                          color: AppColors.primaryButton, strokeWidth: 2))
-                  : _galleryError != null
-                      ? _buildGalleryError()
-                      : GridView.builder(
-                          controller: _galleryScrollCtrl,
-                          padding: EdgeInsets.only(
-                              bottom: safeBottom + _kTabBarHeight + 8),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            mainAxisSpacing: 2,
-                            crossAxisSpacing: 2,
-                          ),
-                          itemCount: 2 + _galleryAssets.length,
-                          itemBuilder: (c, i) {
-                            if (i == 0) return _buildCameraShortcutTile();
-                            if (i == 1) return _buildGalleryShortcutTile();
-                            final asset = _galleryAssets[i - 2];
-                            return _GalleryTile(
-                              asset: asset,
-                              selectionIndex: _selectionIndexOf(asset),
-                              totalSelected: _selected.length,
-                              onTap: () => _onGalleryAssetTapped(asset),
-                            );
-                          },
-                        ),
+            Column(
+              children: [
+                SizedBox(height: topInset),
+                Expanded(
+                  child: _galleryLoading
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primaryButton, strokeWidth: 2))
+                      : _galleryError != null
+                          ? _buildGalleryError()
+                          : GridView.builder(
+                              controller: _galleryScrollCtrl,
+                              padding: EdgeInsets.only(
+                                  bottom: safeBottom + _kTabBarHeight + 8),
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 3,
+                                mainAxisSpacing: 2,
+                                crossAxisSpacing: 2,
+                              ),
+                              itemCount: 2 + _galleryAssets.length,
+                              itemBuilder: (c, i) {
+                                if (i == 0) return _buildCameraShortcutTile();
+                                if (i == 1) return _buildGalleryShortcutTile();
+                                final asset = _galleryAssets[i - 2];
+                                return _GalleryTile(
+                                  asset: asset,
+                                  selectionIndex: _selectionIndexOf(asset),
+                                  totalSelected: _selected.length,
+                                  onTap: () => _onGalleryAssetTapped(asset),
+                                );
+                              },
+                            ),
+                ),
+              ],
             ),
+            // Inline album dropdown overlay
+            if (_showAlbumDropdown)
+              Positioned(
+                top: topInset,
+                left: 16,
+                right: 16,
+                child: Material(
+                  color: Colors.transparent,
+                  child: Container(
+                    constraints: const BoxConstraints(maxHeight: 300),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A1A1A),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Colors.black54,
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
+                      itemCount: _albums.length,
+                      itemBuilder: (ctx, i) {
+                        final album = _albums[i];
+                        final isSel = album.id == _selectedAlbum?.id;
+                        return GestureDetector(
+                          onTap: () => _switchAlbum(album),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: isSel
+                                  ? AppColors.primaryButton.withValues(alpha: 0.1)
+                                  : Colors.transparent,
+                              border: const Border(
+                                bottom: BorderSide(
+                                  color: Color(0x1AFFFFFF),
+                                  width: 1,
+                                ),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  album.name,
+                                  style: TextStyle(
+                                    color: isSel
+                                        ? AppColors.primaryButton
+                                        : Colors.white,
+                                    fontFamily: 'Outfit',
+                                    fontWeight: isSel
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                if (isSel)
+                                  const Icon(Icons.check,
+                                      color: AppColors.primaryButton, size: 20),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),

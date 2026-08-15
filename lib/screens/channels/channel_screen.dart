@@ -2548,7 +2548,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
             _AttachOpt(
               icon: Icons.poll_outlined,
               label: 'Poll',
-              color: const Color(0xFF5E6AD2),
+              color: const Color(0xFF0751DF),
               subtitle: 'Create a poll',
               onTap: () { Navigator.pop(ctx); Future.delayed(const Duration(milliseconds: 200), _showPollCreationSheet); }),
             _AttachOpt(
