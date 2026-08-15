@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -11,14 +12,17 @@ import '../../providers/theme_provider.dart';
 class _T {
   final bool dark;
   const _T(this.dark);
-  Color get bg => dark ? const Color(0xFF0D1017) : const Color(0xFFF2F2F7);
-  Color get surface => dark ? const Color(0xFF1C1C1E) : Colors.white;
+  Color get bg => dark ? const Color(0xFF0D1017) : Colors.white;
+  // In RN, surface == background (no elevation); header uses this value
+  Color get surface => dark ? const Color(0xFF0D1017) : Colors.white;
+  // Card surfaces are slightly elevated so missions remain scannable
+  Color get cardSurface => dark ? const Color(0xFF1C1C1E) : Colors.white;
   Color get border => dark ? const Color(0xFF38383A) : const Color(0xFFE5E5EA);
   Color get text => dark ? Colors.white : Colors.black;
   Color get textSecondary => dark ? const Color(0xFFEBEBF5) : const Color(0xFF3C3C43);
   Color get textTertiary => const Color(0xFF8E8E93);
   Color get primary => dark ? const Color(0xFF0A84FF) : const Color(0xFF007AFF);
-  Color get tabBg => dark ? const Color(0xFF1C1C1E) : Colors.white;
+  Color get tabBg => dark ? const Color(0xFF0D1017) : Colors.white;
   Color get progressTrack => dark ? const Color(0xFF2a2f3e) : const Color(0xFFE5E5EA);
   Color get rewardBg => dark ? const Color(0x1FFFD700) : const Color(0x1FCC6600);
   Color get rewardBorder => dark ? const Color(0x40FFD700) : const Color(0x40CC6600);
@@ -216,11 +220,28 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
     final isDark = ref.watch(themeProvider);
     final t = _T(isDark);
 
+    final overlayStyle = isDark
+        ? SystemUiOverlayStyle.light.copyWith(
+            statusBarColor: const Color(0xFF0D1017),
+            systemNavigationBarColor: const Color(0xFF0D1017),
+            systemNavigationBarIconBrightness: Brightness.light,
+          )
+        : SystemUiOverlayStyle.dark.copyWith(
+            statusBarColor: Colors.white,
+            systemNavigationBarColor: Colors.white,
+            systemNavigationBarIconBrightness: Brightness.dark,
+          );
+
     if (_loading) {
-      return Scaffold(backgroundColor: t.bg, body: Center(child: CircularProgressIndicator(color: t.primary)));
+      return AnnotatedRegion<SystemUiOverlayStyle>(
+        value: overlayStyle,
+        child: Scaffold(backgroundColor: t.bg, body: Center(child: CircularProgressIndicator(color: t.primary))),
+      );
     }
 
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: overlayStyle,
+      child: Scaffold(
       backgroundColor: t.bg,
       body: SafeArea(child: Column(children: [
         // Header
@@ -274,6 +295,7 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
           ],
         )),
       ])),
+      ),
     );
   }
 
@@ -352,7 +374,7 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.border)),
+      decoration: BoxDecoration(color: t.cardSurface, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.border)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         // Icon
         Container(
@@ -527,7 +549,7 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: t.surface, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.border)),
+      decoration: BoxDecoration(color: t.cardSurface, borderRadius: BorderRadius.circular(10), border: Border.all(color: t.border)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         // Header row
         Row(children: [
