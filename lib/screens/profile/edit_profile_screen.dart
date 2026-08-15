@@ -18,6 +18,7 @@ import '../../services/location_service.dart';
 import '../../theme/theme_colors.dart';
 import '../../constants/purposes_and_interests.dart';
 import '../../utils/storage.dart';
+import '../../analytics/analytics_service.dart';
 import '../../widgets/common/city_input.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -688,7 +689,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
       final res = await dioClient.put('/v1/user/profile/${_uid!}', data: updateData);
       if (res.data?['statusCode'] == 200 || res.data?['success'] == true) {
-        // profile_completion_percentage returned but not displayed here (handled by _displayCompletion)
+        // Sync gender/age to analytics user properties (mirrors RN EditProfileScreen)
+        final props = <String, String>{'gender': _gender};
+        if (_birthday != null) {
+          final now = DateTime.now();
+          final age = now.year - _birthday!.year -
+              ((now.month < _birthday!.month ||
+                  (now.month == _birthday!.month && now.day < _birthday!.day))
+                  ? 1 : 0);
+          props['age'] = age.toString();
+        }
+        AnalyticsService.setUserProperties(props);
+
         if (mounted) {
           _showSnackBar('Profile updated successfully!');
           context.pop();

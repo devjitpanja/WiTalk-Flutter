@@ -23,6 +23,11 @@ import 'utils/screenshot_prevention.dart';
 import 'utils/security_profile.dart';
 import 'utils/storage.dart';
 import 'utils/logger.dart';
+import 'utils/crashlytics.dart';
+import 'analytics/analytics_service.dart';
+import 'services/engagement_tracking_service.dart';
+import 'services/retention_tracking_service.dart';
+import 'services/churn_tracking_service.dart';
 import 'widgets/common/screenshot_privacy_sheet.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 import 'screens/chat/join_group_screen.dart';
@@ -39,6 +44,9 @@ void main() async {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
     Firebase.initializeApp(),
   ]);
+
+  // Initialize Crashlytics (disables collection in debug)
+  await Crashlytics.initialize();
 
   // Start offline network monitor (connectivity_plus listener)
   initNetworkMonitor();
@@ -88,6 +96,7 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
       _initDeepLinks();
       _initScreenshotListener();
       _runSecurityChecks(reason: 'app_open');
+      _runAnalyticsChecks(trigger: 'cold_start');
     });
   }
 
@@ -101,6 +110,7 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
       _securityProfileSentThisSession = false;
       _runSecurityChecks(reason: 'foreground');
       _runPeriodicBanCheck();
+      _runAnalyticsChecks(trigger: 'foreground');
     }
   }
 
@@ -128,6 +138,27 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
     collectAndSendSecurityProfile(userId: uid, updateReason: reason).then((_) {
       AppLogger.log('[Security] Profile sent (reason=$reason)');
     });
+  }
+
+  Future<void> _runAnalyticsChecks({required String trigger}) async {
+    // Only run for authenticated users
+    final uid = await AppStorage.get('uid') as String?;
+    if (uid == null || uid.isEmpty) return;
+
+    // 1. Daily active user + consecutive streak
+    await EngagementTrackingService.checkAndTrackDailyOpen();
+
+    // 2. D1/D3/D7/D14/D30 retention milestones
+    final consecutiveDays = await EngagementTrackingService.getConsecutiveDays();
+    await RetentionTrackingService.checkRetentionAndStreak(
+      consecutiveDays: consecutiveDays,
+    );
+
+    // 3. Churn risk recompute
+    await ChurnTrackingService.recomputeChurnRisk(trigger);
+
+    // 4. Sync userId to analytics (in case it was set before Firebase was ready)
+    await AnalyticsService.setUserId(uid);
   }
 
   Future<void> _runPeriodicBanCheck() async {
@@ -224,6 +255,7 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
           _chatInitialized = true;
           _initChatSystem(next.uid!);
           notificationService.setExternalUserId(next.uid!);
+          AnalyticsService.setUserId(next.uid!);
           if (!_locationStartupDone) {
             _locationStartupDone = true;
             _runLocationStartup(next.uid!);
@@ -242,6 +274,7 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
         notificationService.logout();
         locationService.stopTracking();
         _locationStartupDone = false;
+        AnalyticsService.clearUserId();
       }
     });
 

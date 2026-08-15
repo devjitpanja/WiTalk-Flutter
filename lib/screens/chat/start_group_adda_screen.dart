@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../theme/theme_colors.dart';
+import '../../analytics/analytics_service.dart';
 
 class StartGroupAddaScreen extends StatefulWidget {
   final String? groupId;
@@ -47,6 +48,7 @@ class _StartGroupAddaScreenState extends State<StartGroupAddaScreen> {
     try {
       await Future.delayed(const Duration(seconds: 1)); // Mock API
       final roomId = 'group_${widget.groupId ?? 'adda'}_${DateTime.now().millisecondsSinceEpoch}';
+      AnalyticsService.logCreateAdda(addaTopic: _roomName.trim());
       if (mounted) context.pushReplacement('/live-audio/$roomId');
     } finally {
       if (mounted) setState(() => _creating = false);

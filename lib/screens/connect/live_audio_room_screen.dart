@@ -23,6 +23,8 @@ import '../../widgets/audio_room/chat_gpt_bottom_sheet.dart';
 import '../../widgets/audio_room/google_ai_bottom_sheet.dart';
 import '../../widgets/audio_room/ask_ai_bottom_sheet.dart';
 import '../../cache/witalk_image_cache.dart';
+import '../../analytics/analytics_service.dart';
+import '../../services/adda_session_tracking_service.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _kBg = Color(0xFF080C17);
@@ -51,6 +53,9 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   final List<_FloatingReaction> _reactions = [];
   late AnimationController _pulseCtrl;
   bool _isRoomEnded = false;
+
+  final _sessionTracking = AddaSessionTrackingService();
+  bool _sessionStarted = false;
 
   // ── ChatGPT / Google AI state (mirrors RN) ──────────────────────────────────
   bool _showChatGPT = false;
@@ -107,6 +112,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
 
   @override
   void dispose() {
+    _sessionTracking.dispose();
     BanCheckService.unregisterPreLogoutHandler();
     WidgetsBinding.instance.removeObserver(this);
     _chatCtrl.dispose();
@@ -262,6 +268,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     }
 
     notifier.takeSeat(seatIndex);
+    _sessionTracking.onSeatTaken(seatIndex);
+    final s2 = ref.read(audioRoomProvider);
+    AnalyticsService.logAddaSeatTaken(
+      addaId: widget.roomId,
+      seatIndex: seatIndex,
+      addaTopic: s2.roomName,
+    );
     _showSnack('Joining stage...');
   }
 
@@ -305,6 +318,8 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         confirmText: isHost ? 'End Room' : 'Leave',
         confirmColor: const Color(0xFFEF4444),
         onConfirm: () async {
+          // Fire session leave analytics before disconnecting
+          await _sessionTracking.onLeave();
           if (isHost) {
             ref.read(audioRoomProvider.notifier).endRoom();
           } else {
@@ -690,6 +705,63 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         final playStateUnchanged = next.youtubeIsPlaying == wasPlaying;
         if (playStateUnchanged && timeDelta > 3) {
           _ytController!.seekTo(Duration(seconds: next.youtubeCurrentTime.toInt()));
+        }
+      }
+
+      // ── Analytics session tracking ─────────────────────────────────────────
+      // Start session when room first becomes connected
+      if (next.isConnected && !(prev?.isConnected ?? false) && !_sessionStarted) {
+        _sessionStarted = true;
+        final participantCount = next.audience.length +
+            next.speakers.where((s) => s['userId'] != null).length;
+        _sessionTracking.startSession(
+          roomId: widget.roomId,
+          roomName: next.roomName,
+          userRole: next.isHost ? 'host' : 'audience',
+          isHost: next.isHost,
+          participantCount: participantCount,
+          isMuted: next.isMuted,
+        );
+      }
+
+      // Track mute/unmute changes for Adda_Speaker_Unmuted + session
+      if (prev != null && next.isMuted != prev.isMuted) {
+        if (!next.isMuted) {
+          // User just unmuted (went live on stage)
+          _sessionTracking.onUnmuted();
+          if (next.isInSeat) {
+            AnalyticsService.logAddaSpeakerUnmuted(
+              addaId: widget.roomId,
+              seatIndex: next.currentSeatIndex >= 0 ? next.currentSeatIndex : null,
+            );
+          }
+        } else {
+          _sessionTracking.onMuted();
+        }
+      }
+
+      // Track seat left
+      if (prev != null && prev.isInSeat && !next.isInSeat) {
+        _sessionTracking.onLeftSeat();
+      }
+
+      // Track participant count changes
+      if (prev != null) {
+        final newCount = next.audience.length +
+            next.speakers.where((s) => s['userId'] != null).length;
+        final oldCount = prev.audience.length +
+            prev.speakers.where((s) => s['userId'] != null).length;
+        if (newCount != oldCount) {
+          _sessionTracking.onParticipantCountChanged(newCount);
+        }
+
+        // Track speaker count changes (for host quality events)
+        final newSpeakers =
+            next.speakers.where((s) => s['userId'] != null && s['isMuted'] != true).length;
+        final oldSpeakers =
+            prev.speakers.where((s) => s['userId'] != null && s['isMuted'] != true).length;
+        if (newSpeakers != oldSpeakers) {
+          _sessionTracking.onSpeakerCountChanged(newSpeakers);
         }
       }
     });

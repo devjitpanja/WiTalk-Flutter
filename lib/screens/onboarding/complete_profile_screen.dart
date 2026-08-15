@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
 import '../../theme/app_colors.dart';
 import '../../api/dio_client.dart';
+import '../../analytics/analytics_service.dart';
+import '../../services/retention_tracking_service.dart';
 
 enum _Step { identity, about, photo }
 
@@ -183,6 +185,22 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen>
         if (uploadedPicUrl != null) 'profile_pic': uploadedPicUrl,
       };
       await dioClient.put('/v1/user/$_uid/profile', data: payload);
+
+      // Analytics: signup complete + user properties + retention seed
+      await AnalyticsService.logSignupComplete(method: 'google');
+      final props = <String, String>{};
+      if (_gender.isNotEmpty) props['gender'] = _gender;
+      if (_birthday != null) {
+        final now = DateTime.now();
+        final age = now.year - _birthday!.year -
+            ((now.month < _birthday!.month ||
+                (now.month == _birthday!.month && now.day < _birthday!.day))
+                ? 1 : 0);
+        props['age'] = age.toString();
+      }
+      if (props.isNotEmpty) await AnalyticsService.setUserProperties(props);
+      await RetentionTrackingService.markSignupDate();
+
       if (mounted) context.go('/purpose-interests');
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed: $e'), backgroundColor: Colors.red.shade700));

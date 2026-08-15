@@ -12,6 +12,9 @@ dependencies:
     sdk: flutter
   cupertino_icons: ^1.0.8
 
+  # --- Analytics ---
+  facebook_app_events: ^0.20.1
+
   # --- Firebase ---
   firebase_core: ^4.12.1
   firebase_auth: ^6.5.6

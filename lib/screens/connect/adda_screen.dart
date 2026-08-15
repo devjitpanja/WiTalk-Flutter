@@ -13,6 +13,7 @@ import '../../widgets/connect/community_adda_card.dart';
 import '../../widgets/connect/personal_adda_card.dart';
 import '../../widgets/connect/upcoming_adda_card.dart';
 import '../../widgets/connect/not_member_bottom_sheet.dart';
+import '../../analytics/analytics_service.dart';
 
 class AddaScreen extends ConsumerStatefulWidget {
   const AddaScreen({super.key});
@@ -122,8 +123,16 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
 
     final roomId = room['room_id']?.toString() ?? room['id']?.toString() ?? '';
     if (roomId.isNotEmpty) {
+      final roomName = room['room_name']?.toString() ?? 'WiTalk Adda';
+      final participantCount = (room['participant_count'] as num?)?.toInt() ??
+          (room['total_users'] as num?)?.toInt() ?? 0;
+      AnalyticsService.logJoinAdda(
+        addaId: roomId,
+        addaTopic: roomName,
+        numberOfUsers: participantCount,
+      );
       context.push('/live-audio/$roomId', extra: {
-        'room_name': room['room_name']?.toString() ?? 'WiTalk Adda',
+        'room_name': roomName,
         'is_host': room['host_uid']?.toString() == ref.read(authProvider).uid,
         'host_uid': room['host_uid']?.toString(),
       });

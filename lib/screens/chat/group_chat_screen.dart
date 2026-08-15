@@ -20,6 +20,7 @@ import '../../widgets/chat/message_reactions.dart';
 import '../../widgets/chat/voice_recorder.dart';
 import '../../widgets/chat/full_screen_image_viewer.dart';
 import '../../widgets/common/live_group_avatar.dart';
+import '../../analytics/analytics_service.dart';
 
 // Module-level group details cache — avoids "Updating..." flash on re-open
 final _groupDetailsCache = <String, Map<String, dynamic>>{};
@@ -448,6 +449,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               : null,
         );
 
+    AnalyticsService.logCommunityMessageSent(
+      communityId: widget.groupId,
+      messageType: 'text',
+    );
     _scrollToBottom();
   }
 
@@ -541,6 +546,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             mediaUrl: url,
             mediaData: {'duration': duration},
           );
+      AnalyticsService.logCommunityMessageSent(
+        communityId: widget.groupId,
+        messageType: 'voice',
+      );
       debugPrint('[VoiceSend] success');
       _scrollToBottom();
     } catch (e, st) {
@@ -597,6 +606,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               'height': decodedImage.height,
             },
           );
+      AnalyticsService.logCommunityMessageSent(
+        communityId: widget.groupId,
+        messageType: 'image',
+      );
       _scrollToBottom();
     } catch (_) {
       if (mounted) {

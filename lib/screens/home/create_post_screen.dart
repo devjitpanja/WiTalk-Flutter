@@ -14,6 +14,7 @@ import '../../providers/user_provider.dart';
 import '../../services/location_service.dart';
 import '../../services/upload_service.dart';
 import '../../utils/analytics.dart';
+import '../../analytics/analytics_service.dart';
 import '../../widgets/common/global_upload_progress.dart';
 import '../../widgets/common/custom_alert_dialog.dart';
 
@@ -674,7 +675,10 @@ class _CreatePostScreenState extends ConsumerState<CreatePostScreen> {
       );
 
       if (response.data != null && response.data['success'] == true) {
-        await Analytics.logPostCreated(video != null ? 'mini' : 'moment');
+        // Dual-fire Meta + Firebase (mirrors RN CreatePostScreen → Feed_Moment_Posted)
+        final postType = video != null ? 'mini' : 'moment';
+        final mediaType = video != null ? 'video' : (widget.capturedMedia?.isNotEmpty == true ? 'image' : 'text');
+        await AnalyticsService.logFeedMomentPosted(postType: postType, mediaType: mediaType);
 
         progressNotifier.update(
           text: video != null

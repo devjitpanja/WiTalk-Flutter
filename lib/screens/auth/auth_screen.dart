@@ -9,6 +9,7 @@ import '../../theme/app_colors.dart';
 import '../../services/auth_service.dart';
 import '../../services/ban_check_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../analytics/analytics_service.dart';
 
 // Pre-computed star positions using golden-angle spread (matches RN implementation)
 class _Star {
@@ -294,12 +295,17 @@ Best regards''';
     if (_loading) return;
     setState(() => _loading = true);
 
+    // Fire SignupStart before the sign-in flow (mirrors RN AuthScreen)
+    AnalyticsService.logSignupStart(method: 'google');
+
     final result = await AuthService.signInWithGoogle();
 
     if (!mounted) return;
     setState(() => _loading = false);
 
     if (result.success && result.uid != null) {
+      await AnalyticsService.logLogin(method: 'google');
+      await AnalyticsService.setUserId(result.uid!);
       await ref.read(authProvider.notifier).signIn(uid: result.uid!);
       if (mounted && result.nextRoute != null && result.nextRoute != '/home') {
         context.go(result.nextRoute!);

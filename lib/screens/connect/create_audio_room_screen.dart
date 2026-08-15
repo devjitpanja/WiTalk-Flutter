@@ -18,6 +18,7 @@ import '../../theme/theme_colors.dart';
 import '../../utils/image_utils.dart';
 import '../../utils/input_shield.dart';
 import '../../utils/time_utils.dart';
+import '../../analytics/analytics_service.dart';
 import '../../widgets/common/custom_alert_dialog.dart';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -564,6 +565,9 @@ class _CreateAudioRoomScreenState extends ConsumerState<CreateAudioRoomScreen> {
         final data = res['data'] as Map<String, dynamic>? ?? {};
         final roomId = data['room_id']?.toString() ?? existingRoomId ?? _username;
         final roomName = data['room_name']?.toString() ?? _roomNameCtrl.text.trim();
+        AnalyticsService.logCreateAdda(
+          addaTopic: _selectedCommunity?['name']?.toString() ?? roomName,
+        );
         context.pushReplacement('/live-audio/$roomId', extra: {'room_name': roomName, 'is_host': true});
       } else {
         _showAlert(title: 'Error', message: res['message']?.toString() ?? 'Failed to create Adda', type: 'danger');

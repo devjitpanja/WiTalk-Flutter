@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import '../providers/auth_provider.dart';
 import '../providers/location_provider.dart';
 import '../main.dart' show rootNavigatorKey;
@@ -111,6 +112,9 @@ final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/splash',
+    observers: [
+      FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
+    ],
     onException: (_, state, router) {
       // witalk:// and https://witalk.in deep links are handled by DeepLinkService
       // via app_links. GoRouter's platform route provider may intercept them on

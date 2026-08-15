@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/theme_provider.dart';
+import '../../analytics/analytics_service.dart';
+import '../../services/churn_tracking_service.dart';
 
 const _deleteReasons = [
   ('not_useful', "App isn't useful for me"),
@@ -70,6 +72,13 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
 
   void _openDeleteSheet() {
     setState(() { _selectedReason = null; _customReason = ''; _ctrl.clear(); _countdown = _countdownSecs; _countdownDone = false; });
+    // Fire account_deletion_started with behavioral payload
+    final uid = _userData?['_id']?.toString() ?? _userData?['uid']?.toString() ?? '';
+    if (uid.isNotEmpty) {
+      ChurnTrackingService.buildDeletionPayload(uid).then((payload) {
+        AnalyticsService.logAccountDeletionStarted(payload);
+      });
+    }
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) { t.cancel(); return; }
@@ -87,7 +96,16 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
       backgroundColor: t.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _DeleteSheet(parent: this, t: t),
-    ).whenComplete(() { _timer?.cancel(); if (mounted) setState(() => _deleting = false); });
+    ).whenComplete(() {
+      _timer?.cancel();
+      // Fire cancelled only if the user did NOT complete deletion
+      if (!_deleting) {
+        AnalyticsService.logAccountDeletionCancelled({
+          'selected_reason_before_cancel': _selectedReason ?? '',
+        });
+      }
+      if (mounted) setState(() => _deleting = false);
+    });
   }
 
   bool get _canDelete => _countdownDone && _selectedReason != null && (_selectedReason != 'other' || _customReason.trim().length >= 5);
@@ -104,6 +122,21 @@ class _AccountScreenState extends ConsumerState<AccountScreen> {
         'reason': _selectedReason,
         if (_selectedReason == 'other') 'customReason': _customReason.trim(),
       });
+
+      // Fire account_deleted with behavioral payload
+      final uid = _userData?['_id']?.toString() ?? _userData?['uid']?.toString() ?? '';
+      if (uid.isNotEmpty) {
+        final payload = await ChurnTrackingService.buildDeletionPayload(uid);
+        final snapshot = await ChurnTrackingService.getChurnSnapshot();
+        await AnalyticsService.logAccountDeleted({
+          ...payload,
+          ...snapshot,
+          'selected_delete_reason': _selectedReason ?? '',
+          'custom_feedback_text_length': _customReason.trim().length,
+          'account_status': 'deleted',
+        });
+      }
+
       if (mounted) {
         Navigator.of(context).pop();
         await Future.delayed(const Duration(milliseconds: 350));
