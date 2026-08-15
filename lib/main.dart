@@ -31,23 +31,28 @@ import 'dart:io';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
-  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-
-  // Firebase — google-services.json is in android/app/
-  await Firebase.initializeApp();
+  // SystemChrome calls and Firebase can all start in parallel.
+  // notificationService and globalVideoSettings are deferred — they don't
+  // need to complete before the first frame renders.
+  await Future.wait([
+    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]),
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge),
+    Firebase.initializeApp(),
+  ]);
 
   // Start offline network monitor (connectivity_plus listener)
   initNetworkMonitor();
 
-  // Push notifications (FCM — WiTalkFCMService.kt handles background/terminated display)
-  await notificationService.initialize();
-
-  // Load persisted video mute preference
-  await globalVideoSettings.init();
-
   // Fire visibility updates quickly so video play/pause reacts without noticeable lag
   VisibilityDetectorController.instance.updateInterval = const Duration(milliseconds: 100);
+
+  // notificationService.initialize() must complete before runApp so that
+  // getInitialMessage() (cold-start tap) is captured before setNavigationHandler fires.
+  // globalVideoSettings.init() can run in parallel with it safely.
+  await Future.wait([
+    notificationService.initialize(),
+    globalVideoSettings.init(),
+  ]);
 
   runApp(const ProviderScope(child: WiTalkApp()));
 }
