@@ -7,6 +7,7 @@ import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../services/chat_api_service.dart';
+import '../../widgets/common/live_group_avatar.dart';
 
 // Standalone group list (also accessible from navigation)
 // Mirrors GroupListScreen.jsx
@@ -218,23 +219,32 @@ class _GroupTile extends StatelessWidget {
             ),
           ),
           child: Row(children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: c.surface,
-              backgroundImage: group.profilePic != null
-                  ? CachedNetworkImageProvider(group.profilePic!)
-                  : null,
-              child: group.profilePic == null
-                  ? Text(
-                      (group.name.isNotEmpty ? group.name[0] : '?')
-                          .toUpperCase(),
-                      style: TextStyle(
-                          color: c.text,
-                          fontFamily: 'Outfit',
-                          fontWeight: FontWeight.w600,
-                          fontSize: 18))
-                  : null,
-            ),
+            if (group.isLive == true)
+              LiveGroupAvatar(
+                picture: group.profilePic,
+                size: 56,
+                primaryColor: c.primary,
+                onPress: () => context.push(
+                    '/community-adda-list?groupId=${group.id}&groupName=${Uri.encodeComponent(group.name)}&groupPicture=${Uri.encodeComponent(group.profilePic ?? '')}'),
+              )
+            else
+              CircleAvatar(
+                radius: 28,
+                backgroundColor: c.surface,
+                backgroundImage: group.profilePic != null
+                    ? CachedNetworkImageProvider(group.profilePic!)
+                    : null,
+                child: group.profilePic == null
+                    ? Text(
+                        (group.name.isNotEmpty ? group.name[0] : '?')
+                            .toUpperCase(),
+                        style: TextStyle(
+                            color: c.text,
+                            fontFamily: 'Outfit',
+                            fontWeight: FontWeight.w600,
+                            fontSize: 18))
+                    : null,
+              ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

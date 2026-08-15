@@ -18,6 +18,7 @@ import '../../services/message_sync_manager.dart';
 import '../../services/chat_api_service.dart';
 import '../../services/socket_service.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../widgets/common/live_group_avatar.dart';
 
 
 // ── ChatScreen ────────────────────────────────────────────────────────────────
@@ -1143,42 +1144,51 @@ class _ChatTile extends StatelessWidget {
           ),
           child: Row(children: [
             // Avatar
-            Stack(children: [
-              CircleAvatar(
-                radius: 28,
-                backgroundColor: isGroup ? c.primary : c.surface,
-                backgroundImage: conv.profilePic != null
-                    ? CachedNetworkImageProvider(conv.profilePic!)
-                    : null,
-                child: conv.profilePic == null
-                    ? isGroup
-                        ? const Icon(Icons.group,
-                            size: 32, color: Colors.white)
-                        : Text(
-                            (conv.name.isNotEmpty ? conv.name[0] : '?')
-                                .toUpperCase(),
-                            style: TextStyle(
-                                color: c.text,
-                                fontFamily: 'Outfit',
-                                fontWeight: FontWeight.w600,
-                                fontSize: 18))
-                    : null,
-              ),
-              if (isOnline)
-                Positioned(
-                  right: 2,
-                  bottom: 2,
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF4CAF50),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: c.background, width: 2),
+            if (isGroup && conv.isLive == true)
+              LiveGroupAvatar(
+                picture: conv.profilePic,
+                size: 56,
+                primaryColor: c.primary,
+                onPress: () => context.push(
+                    '/community-adda-list?groupId=${conv.id}&groupName=${Uri.encodeComponent(conv.name)}&groupPicture=${Uri.encodeComponent(conv.profilePic ?? '')}'),
+              )
+            else
+              Stack(children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: isGroup ? c.primary : c.surface,
+                  backgroundImage: conv.profilePic != null
+                      ? CachedNetworkImageProvider(conv.profilePic!)
+                      : null,
+                  child: conv.profilePic == null
+                      ? isGroup
+                          ? const Icon(Icons.group,
+                              size: 32, color: Colors.white)
+                          : Text(
+                              (conv.name.isNotEmpty ? conv.name[0] : '?')
+                                  .toUpperCase(),
+                              style: TextStyle(
+                                  color: c.text,
+                                  fontFamily: 'Outfit',
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 18))
+                      : null,
+                ),
+                if (isOnline)
+                  Positioned(
+                    right: 2,
+                    bottom: 2,
+                    child: Container(
+                      width: 14,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF4CAF50),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: c.background, width: 2),
+                      ),
                     ),
                   ),
-                ),
-            ]),
+              ]),
             const SizedBox(width: 12),
             // Content
             Expanded(

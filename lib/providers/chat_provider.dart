@@ -408,7 +408,7 @@ class ChatConversation {
       updatedAt: json['updated_at'] != null
           ? DateTime.tryParse(json['updated_at'].toString())
           : null,
-      isLive: json['is_live'] == true,
+      isLive: json['is_live'] == true || json['active_adda_room_id'] != null,
     );
   }
 }

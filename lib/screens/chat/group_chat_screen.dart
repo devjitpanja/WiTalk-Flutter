@@ -19,6 +19,7 @@ import '../../widgets/chat/message_actions_bottom_sheet.dart';
 import '../../widgets/chat/message_reactions.dart';
 import '../../widgets/chat/voice_recorder.dart';
 import '../../widgets/chat/full_screen_image_viewer.dart';
+import '../../widgets/common/live_group_avatar.dart';
 
 // Module-level group details cache — avoids "Updating..." flash on re-open
 final _groupDetailsCache = <String, Map<String, dynamic>>{};
@@ -850,7 +851,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     final pic = _groupInfo?['picture'] ?? _groupInfo?['image'] ?? _groupInfo?['avatar'] ?? _groupInfo?['profile_pic'];
     final memberCount =
         _groupInfo?['member_count'] ?? _members.length;
-    final isLive = _groupInfo?['is_live'] == true;
+    final isLive = _groupInfo?['is_live'] == true || _groupInfo?['active_adda_room_id'] != null;
     final isGroupConnected = ref.watch(chatProvider).isGroupConnected;
 
     final typingNames = typingUsers
@@ -883,7 +884,14 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           onTap: () =>
               context.push('/chat/group-info/${widget.groupId}'),
           child: Row(children: [
-            Stack(children: [
+            if (isLive)
+              LiveGroupAvatar(
+                picture: pic,
+                size: 40,
+                primaryColor: c.primary,
+                onPress: () => context.push('/community-adda-list/${widget.groupId}'),
+              )
+            else
               CircleAvatar(
                 radius: 18,
                 backgroundColor: c.surface,
@@ -899,26 +907,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                             fontWeight: FontWeight.w600))
                     : null,
               ),
-              if (isLive)
-                Positioned(
-                  right: -2,
-                  bottom: -2,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 3, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF3B30),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('LIVE',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 7,
-                            fontFamily: 'Outfit',
-                            fontWeight: FontWeight.w700)),
-                  ),
-                ),
-            ]),
             const SizedBox(width: 10),
             Expanded(
               child: Column(

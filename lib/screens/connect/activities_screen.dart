@@ -8,6 +8,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/verification_badge.dart';
+import '../../widgets/common/live_group_avatar.dart';
 
 final _activitiesProvider =
     FutureProvider.family.autoDispose<List<dynamic>, String>((ref, cityFilter) async {
@@ -230,6 +231,7 @@ class _CommunityCard extends StatelessWidget {
     final passRequired = group['pass_required'] == true || group['pass_required'] == 1;
     final creatorPic = group['creator_pic'] as String?;
     final creatorName = (group['creator_name'] ?? group['creator_username'] ?? 'Unknown') as String;
+    final isLive = group['active_adda_room_id'] != null || group['is_live'] == true;
 
     return GestureDetector(
       onTap: onTap,
@@ -248,15 +250,23 @@ class _CommunityCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 26,
-                      backgroundColor: c.primary,
-                      backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
-                      child: pic == null
-                          ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                              style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600))
-                          : null,
-                    ),
+                    if (isLive)
+                      LiveGroupAvatar(
+                        picture: pic,
+                        size: 52,
+                        primaryColor: c.primary,
+                        onPress: onTap,
+                      )
+                    else
+                      CircleAvatar(
+                        radius: 26,
+                        backgroundColor: c.primary,
+                        backgroundImage: pic != null ? CachedNetworkImageProvider(pic) : null,
+                        child: pic == null
+                            ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600))
+                            : null,
+                      ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(

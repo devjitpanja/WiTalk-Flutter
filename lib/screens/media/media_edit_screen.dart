@@ -1,8 +1,8 @@
 import 'dart:io';
-import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
 import 'package:pro_image_editor/pro_image_editor.dart';
 import '../../theme/app_colors.dart';
@@ -74,16 +74,15 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
     for (final m in widget.media) {
       final w = (m['width'] as int?) ?? 1;
       final h = (m['height'] as int?) ?? 1;
-      if (w > h) landscape++;
-      else if (h > w) portrait++;
+      if (w > h) { landscape++; } else if (h > w) { portrait++; }
     }
-    if (landscape > portrait) return _Ratio.landscape;
-    if (portrait > 0) return _Ratio.portrait;
+    if (landscape > portrait) { return _Ratio.landscape; }
+    if (portrait > 0) { return _Ratio.portrait; }
     return _Ratio.square;
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Editor
+  // Pro image editor
   // ─────────────────────────────────────────────────────────────────────────────
 
   Future<void> _openEditor(int index) async {
@@ -126,15 +125,24 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
 
     if (resultBytes != null && mounted) {
       final dir = await getTemporaryDirectory();
-      final out = File(
-          '${dir.path}/edit_${index}_${DateTime.now().millisecondsSinceEpoch}.jpg');
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final out = File('${dir.path}/edit_${index}_$ts.jpg');
       await out.writeAsBytes(resultBytes!);
-      setState(() => _media[index] = {..._media[index], 'uri': out.path});
+
+      final decoded = img.decodeImage(resultBytes!);
+      setState(() {
+        _media[index] = {
+          ..._media[index],
+          'uri': out.path,
+          if (decoded != null) 'width': decoded.width,
+          if (decoded != null) 'height': decoded.height,
+        };
+      });
     }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Next — crop all images to chosen ratio, then return to caller
+  // Next — auto-crop all images to chosen ratio, then return to caller
   // ─────────────────────────────────────────────────────────────────────────────
 
   Future<void> _onNext() async {
@@ -146,11 +154,21 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
       for (int i = 0; i < edited.length; i++) {
         final item = edited[i];
         if (item['type'] != 'image') continue;
+
         final bytes = await File(item['uri'] as String).readAsBytes();
-        final cropped = await _centerCropToRatio(bytes, _ratio.value);
-        final out = File('${dir.path}/final_${i}_${DateTime.now().millisecondsSinceEpoch}.jpg');
-        await out.writeAsBytes(cropped);
-        edited[i] = {...item, 'uri': out.path};
+        final result = _centerCropToRatio(bytes, _ratio.value);
+        if (result == null) continue; // skip on decode failure, keep original
+
+        final ts = DateTime.now().millisecondsSinceEpoch;
+        final out = File('${dir.path}/final_${i}_$ts.jpg');
+        await out.writeAsBytes(result.bytes);
+
+        edited[i] = {
+          ...item,
+          'uri': out.path,
+          'width': result.width,
+          'height': result.height,
+        };
       }
       if (mounted) _doReturn(edited);
     } catch (e) {
@@ -226,14 +244,12 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
         children: [
-          // Back button
           IconButton(
             icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 22),
             onPressed: () => context.pop(),
             padding: const EdgeInsets.all(8),
             constraints: const BoxConstraints(minWidth: 40, minHeight: 44),
           ),
-          // Center title
           Expanded(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -248,8 +264,7 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
                     fontSize: 17,
                   ),
                 ),
-                if (_media.length > 1)
-                  const SizedBox(height: 4),
+                if (_media.length > 1) const SizedBox(height: 4),
                 if (_media.length > 1)
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -270,14 +285,15 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
               ],
             ),
           ),
-          // Next button (top-right)
           GestureDetector(
             onTap: _isProcessing ? null : _onNext,
             child: Container(
               margin: const EdgeInsets.only(right: 8),
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
               decoration: BoxDecoration(
-                color: _isProcessing ? AppColors.primaryButton.withValues(alpha: 0.5) : AppColors.primaryButton,
+                color: _isProcessing
+                    ? AppColors.primaryButton.withValues(alpha: 0.5)
+                    : AppColors.primaryButton,
                 borderRadius: BorderRadius.circular(22),
               ),
               child: const Row(
@@ -304,7 +320,7 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Carousel
+  // Carousel — preview using ClipRect + FittedBox to mirror exact crop
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildCarousel(Size size) {
@@ -335,9 +351,9 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
                   Image.file(
                     File(item['uri'] as String),
                     fit: BoxFit.cover,
+                    key: ValueKey(item['uri']),
                   ),
                   if (!isActive) Container(color: Colors.black38),
-                  // Remove button
                   if (isActive && _media.length > 1)
                     Positioned(
                       top: 10, right: 10,
@@ -371,7 +387,7 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // Bottom bar — ratio pill (left) + edit button (right)
+  // Bottom bar
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildBottomBar(double safeBottom) {
@@ -380,7 +396,6 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Ratio selector pill
           GestureDetector(
             onTap: () => setState(() => _showRatioPicker = !_showRatioPicker),
             child: Container(
@@ -411,7 +426,6 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
             ),
           ),
           const Spacer(),
-          // Edit button
           GestureDetector(
             onTap: () => _openEditor(_activeIndex),
             child: Container(
@@ -514,14 +528,20 @@ class _MediaEditScreenState extends State<MediaEditScreen> {
   }
 }
 
-// ── Centre-crop helper ────────────────────────────────────────────────────────
+// ── Centre-crop helper using the `image` package ──────────────────────────────
 
-Future<Uint8List> _centerCropToRatio(Uint8List bytes, double ratio) async {
-  final codec = await ui.instantiateImageCodecFromBuffer(
-    await ui.ImmutableBuffer.fromUint8List(bytes),
-  );
-  final frame = await codec.getNextFrame();
-  final src = frame.image;
+class _CropResult {
+  final List<int> bytes;
+  final int width;
+  final int height;
+  const _CropResult(this.bytes, this.width, this.height);
+}
+
+/// Synchronously decodes, center-crops to [ratio] (w/h), and JPEG-encodes.
+/// Returns null if the image cannot be decoded.
+_CropResult? _centerCropToRatio(Uint8List bytes, double ratio) {
+  final src = img.decodeImage(bytes);
+  if (src == null) return null;
 
   final sw = src.width.toDouble();
   final sh = src.height.toDouble();
@@ -536,19 +556,12 @@ Future<Uint8List> _centerCropToRatio(Uint8List bytes, double ratio) async {
     cropH = sw / ratio;
   }
 
-  final left = (sw - cropW) / 2;
-  final top = (sh - cropH) / 2;
+  final left = ((sw - cropW) / 2).round();
+  final top = ((sh - cropH) / 2).round();
+  final w = cropW.round();
+  final h = cropH.round();
 
-  final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder);
-  canvas.drawImageRect(
-    src,
-    Rect.fromLTWH(left, top, cropW, cropH),
-    Rect.fromLTWH(0, 0, cropW, cropH),
-    Paint(),
-  );
-  final picture = recorder.endRecording();
-  final output = await picture.toImage(cropW.round(), cropH.round());
-  final pngData = await output.toByteData(format: ui.ImageByteFormat.png);
-  return pngData!.buffer.asUint8List();
+  final cropped = img.copyCrop(src, x: left, y: top, width: w, height: h);
+  final jpeg = img.encodeJpg(cropped, quality: 90);
+  return _CropResult(jpeg, w, h);
 }
