@@ -370,6 +370,8 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
   late final Animation<double> _alpha;
   bool _voting = false;
   List<int> _selectedPollIndices = [];
+  bool _gifPlaying = false;
+  Timer? _gifAutoStopTimer;
 
   @override
   void initState() {
@@ -377,10 +379,16 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     _ac = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
     _alpha = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _ac, curve: Curves.easeInOut));
+    // Stickers autoplay immediately; GIFs start paused
+    _gifPlaying = widget.item['message_type'] == 'giphy_sticker';
   }
 
   @override
-  void dispose() { _ac.dispose(); super.dispose(); }
+  void dispose() {
+    _gifAutoStopTimer?.cancel();
+    _ac.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(_Bubble old) {
@@ -955,80 +963,92 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
   }
 
   // ── GIF ───────────────────────────────────────────────────────────────────────
+  String _gifStaticUrl(String animatedUrl) {
+    if (animatedUrl.contains('/giphy.gif')) return animatedUrl.replaceFirst('/giphy.gif', '/giphy_s.gif');
+    if (animatedUrl.contains('/200.gif')) return animatedUrl.replaceFirst('/200.gif', '/200_s.gif');
+    return animatedUrl;
+  }
+
+  void _toggleGif() {
+    final isSticker = widget.item['message_type'] == 'giphy_sticker';
+    if (_gifPlaying) {
+      _gifAutoStopTimer?.cancel();
+      setState(() => _gifPlaying = false);
+    } else {
+      setState(() => _gifPlaying = true);
+      if (!isSticker) {
+        _gifAutoStopTimer = Timer(const Duration(seconds: 9), () {
+          if (mounted) setState(() => _gifPlaying = false);
+        });
+      }
+    }
+  }
+
   Widget _buildGif(ThemeColors c, bool dark) {
-    final url = widget.item['media_url'] as String?;
+    final animatedUrl = widget.item['media_url'] as String? ?? '';
+    final staticUrl = _gifStaticUrl(animatedUrl);
     final md = _parseJson(widget.item['media_data']);
     final ar = (md?['aspectRatio'] as num?)?.toDouble() ?? 1.0;
-    final safeAr = ar > 0 ? ar : 1.0;
-    final screenW = MediaQuery.of(context).size.width - 24;
-    final displayW = screenW * 0.72;
-    final h = (displayW / safeAr).clamp(80.0, 280.0);
     final isSticker = widget.item['message_type'] == 'giphy_sticker';
+    const maxSize = 250.0;
+
+    double w = maxSize;
+    double h = maxSize / (ar > 0 ? ar : 1.0);
+    if (h > maxSize) { w = maxSize * ar; h = maxSize; }
 
     if (isSticker) {
-      return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        if (url != null)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: CachedNetworkImage(
-              cacheManager: WiTalkImageCache(),
-              imageUrl: url,
-              width: 140, height: 140, fit: BoxFit.contain,
-              placeholder: (_, __) => Container(width: 140, height: 140,
-                decoration: BoxDecoration(color: c.border.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(12))),
-              errorWidget: (_, __, ___) => Container(width: 140, height: 140, color: c.border.withValues(alpha: 0.2))),
+      return GestureDetector(
+        onTap: _toggleGif,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          CachedNetworkImage(
+            cacheManager: WiTalkImageCache(),
+            imageUrl: _gifPlaying ? animatedUrl : staticUrl,
+            width: w, height: h, fit: BoxFit.contain,
+            fadeInDuration: Duration.zero),
+          const SizedBox(height: 2),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(8)),
+            child: _footer(c),
           ),
-        const SizedBox(height: 4),
-        Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-          _footer(c),
+          if (_reactions.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: _reactionsRow(c)),
         ]),
-        _reactionsRow(c),
-      ]);
+      );
     }
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      if (url != null)
+    return GestureDetector(
+      onTap: _toggleGif,
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         ClipRRect(
-          borderRadius: _kBubbleRadius,
-          child: Stack(children: [
-            CachedNetworkImage(
-              cacheManager: WiTalkImageCache(),
-              imageUrl: url,
-              width: displayW, height: h, fit: BoxFit.cover,
-              placeholder: (_, __) => Container(
-                width: displayW, height: h,
-                color: c.border.withValues(alpha: 0.3)),
-              errorWidget: (_, __, ___) => Container(
-                width: displayW, height: h,
-                color: c.border.withValues(alpha: 0.3))),
-            Positioned.fill(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: const Color(0x44000000),
-                  borderRadius: _kBubbleRadius,
+          borderRadius: BorderRadius.circular(7),
+          child: SizedBox(
+            width: w, height: h,
+            child: Stack(alignment: Alignment.center, children: [
+              CachedNetworkImage(
+                cacheManager: WiTalkImageCache(),
+                imageUrl: _gifPlaying ? animatedUrl : staticUrl,
+                width: w, height: h, fit: BoxFit.cover,
+                fadeInDuration: Duration.zero),
+              if (!_gifPlaying)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                  child: const Text('GIF', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 13)),
+                ),
+              Positioned(
+                bottom: 6, right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.45), borderRadius: BorderRadius.circular(8)),
+                  child: _timeOverlay(c),
                 ),
               ),
-            ),
-            Center(
-              child: Container(
-                width: 56, height: 56,
-                decoration: BoxDecoration(
-                  color: const Color(0xBB000000),
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                child: const Center(
-                  child: Text('GIF',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800,
-                      color: Color(0xFFFFFFFF), letterSpacing: 0.5)),
-                ),
-              ),
-            ),
-            Positioned(bottom: 8, right: 8, child: _timeOverlay(c)),
-          ]),
+            ]),
+          ),
         ),
-      if (_reactions.isNotEmpty)
-        Padding(padding: const EdgeInsets.only(top: 4), child: _reactionsRow(c)),
-    ]);
+        if (_reactions.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: _reactionsRow(c)),
+      ]),
+    );
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────────
