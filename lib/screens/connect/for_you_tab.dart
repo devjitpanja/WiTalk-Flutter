@@ -547,9 +547,9 @@ class _CommunityWideCard extends StatelessWidget {
         width: width,
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: c.cardBackground,
+          color: c.surface,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isNearby ? c.accent.withOpacity(0.18) : c.border),
+          border: Border.all(color: isNearby ? c.accent.withOpacity(0.18) : Colors.grey.withOpacity(0.15)),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -646,7 +646,7 @@ class _FallbackGroupIcon extends StatelessWidget {
     final c = context.colors;
     return Container(
       width: size, height: size,
-      color: c.cardBackground,
+      color: c.surface,
       child: Icon(Icons.group, color: c.textTertiary),
     );
   }

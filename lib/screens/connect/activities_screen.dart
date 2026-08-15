@@ -239,9 +239,9 @@ class _CommunityCard extends StatelessWidget {
         margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: c.cardBackground,
+          color: c.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: c.border.withOpacity(0.5)),
+          border: Border.all(color: Colors.grey.withOpacity(0.15)),
         ),
         child: Stack(
           children: [
@@ -332,7 +332,7 @@ class _CommunityCard extends StatelessWidget {
                 const SizedBox(height: 14),
                 Container(
                   decoration: BoxDecoration(
-                    border: Border(top: BorderSide(color: c.border.withOpacity(0.4))),
+                    border: Border(top: BorderSide(color: Colors.grey.withOpacity(0.1))),
                   ),
                   padding: const EdgeInsets.only(top: 12),
                   child: Row(

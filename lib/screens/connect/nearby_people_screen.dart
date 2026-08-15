@@ -957,14 +957,15 @@ class NearbyUserCard extends StatelessWidget {
     final isActiveToday = user['_isActiveToday'] == true;
 
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return GestureDetector(
       onTap: () => onTap(user),
       child: Container(
         decoration: BoxDecoration(
-          color: c.cardBackground,
+          color: isDark ? const Color(0xFF111827) : Colors.white,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isBirthday ? bdColor : c.border,
+            color: isBirthday ? bdColor : (isDark ? const Color(0xFF1F2937) : const Color(0xFFE8E8E8)),
             width: isBirthday ? 1.5 : 1,
           ),
         ),
@@ -1037,7 +1038,7 @@ class NearbyUserCard extends StatelessWidget {
                                       decoration: BoxDecoration(
                                           color: const Color(0xFF22C55E),
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: c.cardBackground, width: 2))))
+                                          border: Border.all(color: isDark ? const Color(0xFF111827) : Colors.white, width: 2))))
                             else if (isActiveToday)
                               Positioned(
                                   bottom: 2,
@@ -1048,7 +1049,7 @@ class NearbyUserCard extends StatelessWidget {
                                       decoration: BoxDecoration(
                                           color: const Color(0xFFF59E0B),
                                           shape: BoxShape.circle,
-                                          border: Border.all(color: c.cardBackground, width: 2)))),
+                                          border: Border.all(color: isDark ? const Color(0xFF111827) : Colors.white, width: 2)))),
                           ],
                         ),
                       ),
@@ -1288,7 +1289,7 @@ class _WideCardBody extends StatelessWidget {
                           decoration: BoxDecoration(
                               color: const Color(0xFF22C55E),
                               shape: BoxShape.circle,
-                              border: Border.all(color: c.cardBackground, width: 2)))),
+                              border: Border.all(color: isDark ? const Color(0xFF111827) : Colors.white, width: 2)))),
               ]),
               const SizedBox(width: 12),
               Expanded(
