@@ -161,7 +161,6 @@ class _ExploreChannelsScreenState extends State<ExploreChannelsScreen> {
                     child: Container(
                       height: 42,
                       decoration: BoxDecoration(
-                        color: colors.card,
                         borderRadius: BorderRadius.circular(21),
                         border: Border.all(color: colors.border),
                       ),
@@ -186,6 +185,10 @@ class _ExploreChannelsScreenState extends State<ExploreChannelsScreen> {
                                   color: colors.textSecondary,
                                 ),
                                 border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                filled: true,
+                                fillColor: Colors.transparent,
                                 isDense: true,
                                 contentPadding: EdgeInsets.zero,
                               ),

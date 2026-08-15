@@ -723,16 +723,17 @@ class _LinkPreviewCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (image != null)
+          if (image != null && Uri.tryParse(image)?.hasAuthority == true)
             ClipRRect(
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(8)),
               child: CachedNetworkImage(
-        cacheManager: WiTalkImageCache(),
+                  cacheManager: WiTalkImageCache(),
                   imageUrl: image,
                   height: 120,
                   width: double.infinity,
-                  fit: BoxFit.cover),
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => const SizedBox.shrink()),
             ),
           Padding(
             padding: const EdgeInsets.all(8),

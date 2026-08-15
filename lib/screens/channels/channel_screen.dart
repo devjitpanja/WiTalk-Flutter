@@ -82,18 +82,18 @@ class _DateDivider extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Row(children: [
-        Expanded(child: Container(height: 0.5, color: c.border.withValues(alpha: 0.5))),
+        Expanded(child: Container(height: 1, color: c.border.withValues(alpha: 0.3))),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 10),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
           decoration: BoxDecoration(
-            color: c.cardBackground,
+            color: c.surface,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: c.border.withValues(alpha: 0.4), width: 0.5),
+            border: Border.all(color: c.border, width: 0.5),
           ),
-          child: Text(label, style: TextStyle(fontSize: 12, color: c.textTertiary, fontWeight: FontWeight.w500)),
+          child: Text(label, style: TextStyle(fontSize: 12, color: c.textSecondary, fontWeight: FontWeight.w500)),
         ),
-        Expanded(child: Container(height: 0.5, color: c.border.withValues(alpha: 0.5))),
+        Expanded(child: Container(height: 1, color: c.border.withValues(alpha: 0.3))),
       ]),
     );
   }
@@ -530,7 +530,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
   Widget _buildText(ThemeColors c, bool dark) {
     final content = widget.item['content'] as String? ?? '';
     final msgType = widget.item['message_type'] as String? ?? 'text';
-    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    final bubbleColor = c.surface;
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -577,7 +577,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final imgH = (screenW / ar).clamp(120.0, 380.0);
     final caption = widget.item['content'] as String? ?? '';
     final hasCaption = caption.isNotEmpty;
-    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    final bubbleColor = c.surface;
 
     return Container(
       width: double.infinity,
@@ -637,7 +637,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final images = (md?['images'] as List?) ?? [];
     if (images.isEmpty) return _buildText(c, dark);
     final caption = widget.item['content'] as String? ?? '';
-    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    final bubbleColor = c.surface;
     const tileSize = 200.0;
     final urls = images.map((img) => img['url'] as String? ?? '').where((u) => u.isNotEmpty).toList();
 
@@ -723,7 +723,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final isMultiple = !isQuiz && settings['multiple'] == true;
     final correctOption = isQuiz ? (settings['correct_option'] as num?)?.toInt() : null;
     final isClosed = poll['is_closed'] == true;
-    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    final bubbleColor = c.surface;
 
     final displayResults = hasVoted || isClosed;
     final canSelect = !_voting && widget.canVote && !hasVoted && !isClosed;
@@ -906,7 +906,7 @@ class _BubbleState extends State<_Bubble> with SingleTickerProviderStateMixin {
     final dur = (md?['duration'] as num?)?.toInt() ?? 0;
     final m = dur ~/ 60;
     final s = (dur % 60).toString().padLeft(2, '0');
-    final bubbleColor = dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF);
+    final bubbleColor = c.surface;
 
     return Container(
       width: double.infinity,
@@ -1720,7 +1720,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
               optionCtrls.length >= 2 &&
               optionCtrls.every((oc) => oc.text.trim().isNotEmpty) &&
               (!isQuiz || correctOption >= 0);
-          final fieldBg = dark ? const Color(0xFF1C2B3A) : const Color(0xFFF0F2F5);
+          final fieldBg = dark ? c.cardBackground : const Color(0xFFF0F2F5);
 
           return Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
@@ -2063,10 +2063,16 @@ class _ChannelScreenState extends State<ChannelScreen> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final dark = context.isDark;
-    final bgColor = dark ? const Color(0xFF0E1621) : const Color(0xFFE4EDF5);
 
-    return Scaffold(
-      backgroundColor: bgColor,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+        systemNavigationBarColor: c.background,
+        systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      ),
+      child: Scaffold(
+      backgroundColor: c.background,
       body: SafeArea(child: Column(children: [
         _buildHeader(c, dark),
         if (_isChannelAdminBanned)
@@ -2100,6 +2106,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
             if (_isAdmin && !_isChannelAdminBanned) _buildInputArea(c, dark),
           ])),
       ])),
+      ),
     );
   }
 
@@ -2111,7 +2118,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     return Container(
       padding: const EdgeInsets.fromLTRB(4, 6, 12, 6),
       decoration: BoxDecoration(
-        color: dark ? const Color(0xFF17212B) : const Color(0xFFFFFFFF),
+        color: c.background,
         border: Border(bottom: BorderSide(color: c.border, width: 0.5)),
       ),
       child: Row(children: [
@@ -2249,15 +2256,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
           child: Container(
             width: 40, height: 40,
             decoration: BoxDecoration(
-              color: dark ? const Color(0xFF1C2B3A) : const Color(0xFFFFFFFF),
+              color: dark ? const Color(0xFF2C2C2E) : const Color(0xFFFFFFFF),
               shape: BoxShape.circle,
               border: Border.all(color: c.border.withValues(alpha: 0.5), width: 0.5),
               boxShadow: [BoxShadow(
-                color: const Color(0xFF000000).withValues(alpha: dark ? 0.35 : 0.15),
+                color: const Color(0xFF000000).withValues(alpha: dark ? 0.4 : 0.2),
                 blurRadius: 6, offset: const Offset(0, 2))],
             ),
             child: Icon(Icons.keyboard_arrow_down_rounded, size: 24,
-              color: dark ? const Color(0xFFCCCCCC) : const Color(0xFF333333))),
+              color: dark ? const Color(0xFFFFFFFF) : const Color(0xFF000000))),
         )),
     ]);
   }
@@ -2289,8 +2296,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   Widget _buildInputArea(ThemeColors c, bool dark) {
     final hasContent = _textCtrl.text.trim().isNotEmpty || _xFiles.isNotEmpty;
-    final inputBg = dark ? const Color(0xFF17212B) : const Color(0xFFFFFFFF);
-    final fieldBg = dark ? const Color(0xFF0E1621) : const Color(0xFFF0F2F5);
+    final inputBg = c.background;
+    final fieldBg = dark ? c.cardBackground : const Color(0xFFFFFFFF);
 
     return Column(mainAxisSize: MainAxisSize.min, children: [
       if (_replyingTo != null)
@@ -2461,15 +2468,15 @@ class _ChannelScreenState extends State<ChannelScreen> {
               duration: const Duration(milliseconds: 180),
               width: 44, height: 44,
               decoration: BoxDecoration(
-                color: hasContent ? c.primary : c.primary.withValues(alpha: 0.4),
+                color: c.text,
                 shape: BoxShape.circle,
               ),
               child: _sending
-                ? const Center(child: SizedBox(width: 18, height: 18,
-                    child: CircularProgressIndicator(color: Color(0xFFFFFFFF), strokeWidth: 2)))
+                ? Center(child: SizedBox(width: 18, height: 18,
+                    child: CircularProgressIndicator(color: c.background, strokeWidth: 2)))
                 : Icon(
                     hasContent ? Icons.send_rounded : Icons.mic_none_rounded,
-                    size: 20, color: const Color(0xFFFFFFFF)),
+                    size: 20, color: c.background),
             ),
           ),
         ]),
