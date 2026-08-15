@@ -20,6 +20,10 @@
 		A582B75C640F93E459003A0A /* Pods_RunnerTests.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 87C919ED55E0F7B5AC71B45E /* Pods_RunnerTests.framework */; };
 		AA001122334455667788AA01 /* VpnDetectorPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA001122334455667788AA02 /* VpnDetectorPlugin.swift */; };
 		AA001122334455667788AA03 /* InstallReferrerPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA001122334455667788AA04 /* InstallReferrerPlugin.swift */; };
+		BB001122334455667788BB01 /* AudioRoomServicePlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB001122334455667788BB02 /* AudioRoomServicePlugin.swift */; };
+		BB001122334455667788BB03 /* ScreenshotPreventPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB001122334455667788BB04 /* ScreenshotPreventPlugin.swift */; };
+		BB001122334455667788BB05 /* AppIntegrityPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB001122334455667788BB06 /* AppIntegrityPlugin.swift */; };
+		BB001122334455667788BB07 /* DeviceIdentifiersPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB001122334455667788BB08 /* DeviceIdentifiersPlugin.swift */; };
 		AA1B2C3D4E5F67890A1B2C3D /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = AA1B2C3D4E5F67890A1B2C3E /* GoogleService-Info.plist */; };
 /* End PBXBuildFile section */
 
@@ -72,6 +76,10 @@
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA001122334455667788AA02 /* VpnDetectorPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VpnDetectorPlugin.swift; sourceTree = "<group>"; };
 		AA001122334455667788AA04 /* InstallReferrerPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallReferrerPlugin.swift; sourceTree = "<group>"; };
+		BB001122334455667788BB02 /* AudioRoomServicePlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRoomServicePlugin.swift; sourceTree = "<group>"; };
+		BB001122334455667788BB04 /* ScreenshotPreventPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotPreventPlugin.swift; sourceTree = "<group>"; };
+		BB001122334455667788BB06 /* AppIntegrityPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIntegrityPlugin.swift; sourceTree = "<group>"; };
+		BB001122334455667788BB08 /* DeviceIdentifiersPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentifiersPlugin.swift; sourceTree = "<group>"; };
 		AA1B2C3D4E5F67890A1B2C3E /* GoogleService-Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		B9B7C4D425C509B3A92BCD97 /* Pods-Runner.profile.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Runner.profile.xcconfig"; path = "Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"; sourceTree = "<group>"; };
 		DE31933D11313AE8ECC6A7FE /* Pods_Runner.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_Runner.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -175,6 +183,10 @@
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				AA001122334455667788AA02 /* VpnDetectorPlugin.swift */,
 				AA001122334455667788AA04 /* InstallReferrerPlugin.swift */,
+				BB001122334455667788BB02 /* AudioRoomServicePlugin.swift */,
+				BB001122334455667788BB04 /* ScreenshotPreventPlugin.swift */,
+				BB001122334455667788BB06 /* AppIntegrityPlugin.swift */,
+				BB001122334455667788BB08 /* DeviceIdentifiersPlugin.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
@@ -404,6 +416,10 @@
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
 				AA001122334455667788AA01 /* VpnDetectorPlugin.swift in Sources */,
 				AA001122334455667788AA03 /* InstallReferrerPlugin.swift in Sources */,
+				BB001122334455667788BB01 /* AudioRoomServicePlugin.swift in Sources */,
+				BB001122334455667788BB03 /* ScreenshotPreventPlugin.swift in Sources */,
+				BB001122334455667788BB05 /* AppIntegrityPlugin.swift in Sources */,
+				BB001122334455667788BB07 /* DeviceIdentifiersPlugin.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

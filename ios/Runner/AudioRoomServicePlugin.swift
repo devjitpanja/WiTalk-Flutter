@@ -24,7 +24,7 @@ import UserNotifications
      – Tap end button   → emits "leaveRoom" to Flutter
   4. UNUserNotificationCenter request for notification permission at start
  */
-@objc class AudioRoomServicePlugin: NSObject {
+@objc class AudioRoomServicePlugin: NSObject, FlutterPlugin {
 
     static let methodChannelName = "com.witalk/audio_room_service"
     static let eventChannelName  = "com.witalk/audio_room_events"
@@ -40,7 +40,7 @@ import UserNotifications
 
     // MARK: – Registration
 
-    @objc static func register(with registrar: FlutterPluginRegistrar) {
+    @objc(registerWithRegistrar:) static func register(with registrar: FlutterPluginRegistrar) {
         let plugin = AudioRoomServicePlugin()
 
         let methodChannel = FlutterMethodChannel(
@@ -59,8 +59,7 @@ import UserNotifications
     // MARK: – CallKit setup
 
     private func setupCallKit() {
-        let config = CXProviderConfiguration()
-        config.localizedName = "WiTalk Adda"
+        let config = CXProviderConfiguration(localizedName: "WiTalk Adda")
         config.supportsVideo = false
         config.maximumCallsPerCallGroup = 1
         config.maximumCallGroups = 1
@@ -152,9 +151,9 @@ import UserNotifications
     }
 }
 
-// MARK: – FlutterMethodCallDelegate
+// MARK: – FlutterPlugin method handler
 
-extension AudioRoomServicePlugin: FlutterMethodCallDelegate {
+extension AudioRoomServicePlugin {
     func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let args = call.arguments as? [String: Any]
         switch call.method {
