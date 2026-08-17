@@ -121,12 +121,13 @@ class AppStorage {
       final accessExpiry = now + expiresIn * 1000;
       final refreshExpiry = now + refreshExpiresIn * 1000;
 
-      await Future.wait([
-        _secureStorage.write(key: 'accessToken', value: accessToken),
-        _secureStorage.write(key: 'refreshToken', value: refreshToken),
-        _secureStorage.write(key: 'tokenExpiry', value: accessExpiry.toString()),
-        _secureStorage.write(key: 'refreshTokenExpiry', value: refreshExpiry.toString()),
-      ]);
+      // Sequential writes avoid the iOS keychain -25299 (errSecDuplicateItem) race
+      // that occurs when concurrent SecItemAdd calls collide before any detects
+      // an existing entry and falls back to SecItemUpdate.
+      await _secureStorage.write(key: 'accessToken', value: accessToken);
+      await _secureStorage.write(key: 'refreshToken', value: refreshToken);
+      await _secureStorage.write(key: 'tokenExpiry', value: accessExpiry.toString());
+      await _secureStorage.write(key: 'refreshTokenExpiry', value: refreshExpiry.toString());
       AppLogger.log('Auth tokens stored');
       return true;
     } catch (e) {
@@ -217,10 +218,8 @@ class AppStorage {
   static Future<bool> updateAccessToken(String accessToken, {int expiresIn = 900}) async {
     try {
       final expiry = DateTime.now().millisecondsSinceEpoch + expiresIn * 1000;
-      await Future.wait([
-        _secureStorage.write(key: 'accessToken', value: accessToken),
-        _secureStorage.write(key: 'tokenExpiry', value: expiry.toString()),
-      ]);
+      await _secureStorage.write(key: 'accessToken', value: accessToken);
+      await _secureStorage.write(key: 'tokenExpiry', value: expiry.toString());
       AppLogger.log('Access token updated');
       return true;
     } catch (e) {
