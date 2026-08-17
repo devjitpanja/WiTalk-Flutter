@@ -22,7 +22,23 @@
 				<string>witalk</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>fb4041189189505432</string>
+			</array>
+		</dict>
 	</array>
+	<key>FacebookAppID</key>
+	<string>4041189189505432</string>
+	<key>FacebookClientToken</key>
+	<string>17df14107c7d301ea18ee3f611c64c6c</string>
+	<key>FacebookDisplayName</key>
+	<string>WiTalk</string>
+	<key>NSUserTrackingUsageDescription</key>
+	<string>WiTalk uses this to personalise content and measure ad performance.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -77,7 +93,6 @@
 		<string>audio</string>
 		<string>voip</string>
 		<string>fetch</string>
-		<string>remote-notification</string>
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>WiTalk needs access to your photo library to select media for posts.</string>

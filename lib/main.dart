@@ -54,11 +54,10 @@ void main() async {
   // Fire visibility updates quickly so video play/pause reacts without noticeable lag
   VisibilityDetectorController.instance.updateInterval = const Duration(milliseconds: 100);
 
-  // notificationService.initialize() must complete before runApp so that
-  // getInitialMessage() (cold-start tap) is captured before setNavigationHandler fires.
-  // globalVideoSettings.init() can run in parallel with it safely.
+  // notificationService.initialize() is Android-only (no Apple developer account).
+  // globalVideoSettings.init() runs on both platforms.
   await Future.wait([
-    notificationService.initialize(),
+    if (Platform.isAndroid) notificationService.initialize(),
     globalVideoSettings.init(),
   ]);
 
@@ -115,14 +114,18 @@ class _WiTalkAppState extends ConsumerState<WiTalkApp> with WidgetsBindingObserv
   }
 
   void _initScreenshotListener() {
-    if (Platform.isIOS) {
-      startScreenshotListener((event) {
-        final ctx = rootNavigatorKey.currentContext;
-        if (ctx != null && mounted) {
-          ScreenshotPrivacySheet.show(ctx);
-        }
-      });
-    }
+    // iOS screenshot listener disabled: ScreenshotPreventPlugin's secure CALayer
+    // is not auto-applied at startup (it caused a black screen). Re-enable once
+    // the secure layer is triggered from Dart after the first frame renders.
+    //
+    // if (Platform.isIOS) {
+    //   startScreenshotListener((event) {
+    //     final ctx = rootNavigatorKey.currentContext;
+    //     if (ctx != null && mounted) {
+    //       ScreenshotPrivacySheet.show(ctx);
+    //     }
+    //   });
+    // }
     // Android: FLAG_SECURE is applied by ScreenshotPreventPlugin automatically on attach.
     // No listener needed — the OS blocks the capture outright.
   }

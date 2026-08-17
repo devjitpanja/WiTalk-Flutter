@@ -64,10 +64,12 @@ class ScreenshotPreventPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         )
         event.setStreamHandler(instance)
 
-        // Apply secure layer automatically on startup
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            instance.applySecureLayer(enable: true)
-        }
+        // Disabled: auto-applying the secure layer at startup reparents the Flutter
+        // view into the UITextField's protected CALayer while the engine is rendering
+        // its first frame → causes black screen after the native splash on iOS.
+        // DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+        //     instance.applySecureLayer(enable: true)
+        // }
     }
 
     func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
