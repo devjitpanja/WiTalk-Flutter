@@ -347,7 +347,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     Widget bodySliver;
 
     if (state.isLoading && state.posts.isEmpty) {
-      bodySliver = SliverToBoxAdapter(child: _buildSkeleton(c));
+      final isDark = Theme.of(context).brightness == Brightness.dark;
+      bodySliver = SliverToBoxAdapter(child: _buildSkeleton(c, isDark));
     } else if (state.error != null && state.posts.isEmpty) {
       bodySliver = SliverFillRemaining(child: _buildError(state.error!, c));
     } else if (state.posts.isEmpty) {
@@ -431,20 +432,85 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _buildSkeleton(ThemeColors c) => Column(
-        children: List.generate(
-          4,
-          (_) => Shimmer.fromColors(
-            baseColor: c.surface,
-            highlightColor: c.border,
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              height: 300,
-              decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
-            ),
+  Widget _buildSkeleton(ThemeColors c, bool isDark) {
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
+    final screenW = MediaQuery.of(context).size.width;
+
+    // The card background must be OUTSIDE Shimmer so only the white boxes animate.
+    Widget skBox({double? w, double? h, double r = 6, bool circle = false}) => Container(
+          width: w,
+          height: h,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: circle ? null : BorderRadius.circular(r),
+            shape: circle ? BoxShape.circle : BoxShape.rectangle,
           ),
-        ),
-      );
+        );
+
+    Widget postSkeleton() => Container(
+          color: c.surface,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Shimmer.fromColors(
+              baseColor: baseColor,
+              highlightColor: highlightColor,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                  skBox(w: 40, h: 40, circle: true),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      skBox(w: screenW * 0.38, h: 14),
+                      const SizedBox(height: 6),
+                      skBox(w: screenW * 0.24, h: 12),
+                    ]),
+                  ),
+                  skBox(w: 60, h: 28, r: 8),
+                  const SizedBox(width: 8),
+                  skBox(w: 20, h: 20, r: 4),
+                ]),
+              ),
+            ),
+            Shimmer.fromColors(
+              baseColor: baseColor,
+              highlightColor: highlightColor,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  skBox(w: screenW - 32, h: 12),
+                  const SizedBox(height: 6),
+                  skBox(w: (screenW - 32) * 0.88, h: 12),
+                  const SizedBox(height: 6),
+                  skBox(w: (screenW - 32) * 0.58, h: 12),
+                ]),
+              ),
+            ),
+            Shimmer.fromColors(
+              baseColor: baseColor,
+              highlightColor: highlightColor,
+              child: skBox(w: screenW, h: screenW, r: 0),
+            ),
+            Shimmer.fromColors(
+              baseColor: baseColor,
+              highlightColor: highlightColor,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+                child: Row(children: [
+                  skBox(w: 70, h: 35, r: 100),
+                  const SizedBox(width: 10),
+                  skBox(w: 70, h: 35, r: 100),
+                  const SizedBox(width: 10),
+                  skBox(w: 70, h: 35, r: 100),
+                ]),
+              ),
+            ),
+            Divider(height: 1, thickness: 0.5, color: c.border),
+          ]),
+        );
+
+    return Column(children: List.generate(3, (_) => postSkeleton()));
+  }
 
   Widget _buildError(String errorMsg, ThemeColors c) => Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [

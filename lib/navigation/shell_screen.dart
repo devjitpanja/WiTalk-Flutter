@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../providers/adda_provider.dart' show addaNotifierProvider;
@@ -18,8 +19,6 @@ class ShellScreen extends ConsumerStatefulWidget {
 }
 
 // Static const IconData to satisfy tree-shake-icons in release builds
-const _kIconHomeBold   = IconData(0xe2c2, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
-const _kIconHomeFill   = IconData(0xe2c2, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
 const _kIconMapBold    = IconData(0xe1c8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
 const _kIconMapFill    = IconData(0xe1c8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
 const _kIconAddaBold   = IconData(0xe326, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
@@ -135,9 +134,9 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
           unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 12, fontWeight: FontWeight.w400),
           elevation: 0,
           items: [
-            const BottomNavigationBarItem(
-              icon: Icon(_kIconHomeBold, size: 26),
-              activeIcon: Icon(_kIconHomeFill, size: 26),
+            BottomNavigationBarItem(
+              icon: _buildHomeIcon(focused: false),
+              activeIcon: _buildHomeIcon(focused: true),
               label: 'Home',
             ),
             BottomNavigationBarItem(
@@ -164,6 +163,18 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
         ),
         ),
       ),
+    );
+  }
+
+  Widget _buildHomeIcon({required bool focused}) {
+    final color = focused
+        ? Theme.of(context).bottomNavigationBarTheme.selectedItemColor
+        : Theme.of(context).bottomNavigationBarTheme.unselectedItemColor;
+    return SvgPicture.asset(
+      focused ? 'assets/icons/home.svg' : 'assets/icons/home_stroke.svg',
+      width: 26,
+      height: 26,
+      colorFilter: ColorFilter.mode(color ?? Colors.white, BlendMode.srcIn),
     );
   }
 
