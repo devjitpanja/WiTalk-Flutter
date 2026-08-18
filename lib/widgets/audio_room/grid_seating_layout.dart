@@ -279,7 +279,7 @@ class GridSeatingLayout extends StatelessWidget {
 
   Widget _buildEmptySeat(int index, double seatWidth, double avatarSize, double seatHeight, bool isCompact) {
     final String seatText = seatsInitialized
-        ? (isHost ? 'Hold to lock' : 'Join')
+        ? (isHost ? 'Hold to lock' : 'Seat ${index + 1}')
         : 'Syncing...';
 
     return SizedBox(
@@ -324,8 +324,8 @@ class GridSeatingLayout extends StatelessWidget {
                           ),
                         )
                       : Icon(
-                          Icons.add_rounded,
-                          size: avatarSize * 0.40,
+                          Icons.event_seat,
+                          size: avatarSize * 0.50,
                           color: const Color(0x4DFFFFFF),
                         ),
                 ),

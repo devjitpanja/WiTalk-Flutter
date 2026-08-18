@@ -14,6 +14,7 @@ import 'package:dio/dio.dart';
 import '../../api/dio_client.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/theme_colors.dart';
+import '../../utils/mic_permission_utils.dart';
 
 class CommunityInfoScreen extends ConsumerStatefulWidget {
   final String communityId;
@@ -1300,7 +1301,7 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
   Widget _buildAddaCard(
       Map<String, dynamic> item, bool isDark, ThemeColors colors) {
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         if (!_truthy(_group?['is_member'])) {
           setState(() => _alert = const _AlertConfig(
                 title: 'Join Community First',
@@ -1311,7 +1312,9 @@ class _CommunityInfoScreenState extends ConsumerState<CommunityInfoScreen>
           return;
         }
         final roomId = item['room_id'] as String? ?? '';
-        context.push('/live-audio/$roomId');
+        if (roomId.isEmpty) return;
+        if (!await checkMicPermission(context)) return;
+        if (context.mounted) context.push('/live-audio/$roomId');
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),

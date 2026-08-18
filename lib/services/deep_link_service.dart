@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import '../utils/mic_permission_utils.dart';
 import '../api/app_endpoints.dart';
 import '../api/dio_client.dart';
 import '../utils/storage.dart';
@@ -522,6 +523,8 @@ Future<void> handleNotificationNavigation(
       final roomId = (notif['room_id'] ?? referenceId) as String?;
       if (roomId != null) {
         await Future.delayed(const Duration(milliseconds: 100));
+        if (!context.mounted) return;
+        if (!await checkMicPermission(context)) return;
         if (context.mounted) context.push('/live-audio/$roomId', extra: {'is_host': false});
       }
 

@@ -29,6 +29,7 @@ import '../../widgets/audio_room/recording_info_bottom_sheet.dart';
 import '../../cache/witalk_image_cache.dart';
 import '../../analytics/analytics_service.dart';
 import '../../services/adda_session_tracking_service.dart';
+import '../../utils/mic_permission_utils.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const Color _kBg = Color(0xFF0D1017);
@@ -96,7 +97,15 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       await ref.read(audioRoomProvider.notifier).leaveRoom();
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!widget.restore) {
+        final granted = await checkMicPermission(context);
+        if (!granted) {
+          if (context.mounted) context.pop();
+          return;
+        }
+      }
+      if (!mounted) return;
       final notifier = ref.read(audioRoomProvider.notifier);
       if (widget.restore) {
         notifier.restoreRoom();
@@ -956,6 +965,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       compact: compactGrid,
                       onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
                       onEmptySeatTap: _handleEmptySeatPress,
+                      onLockedSeatTap: _handleEmptySeatPress,
                       onEmptySeatLongPress: (idx) {
                         if (roomState.isHost) {
                           ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
@@ -1011,11 +1021,12 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       },
                     ),
 
-                    Positioned(
-                      right: 6,
-                      bottom: 6,
-                      child: _buildEmojiStrip(),
-                    ),
+                    if (roomState.isInSeat || roomState.isHost)
+                      Positioned(
+                        right: 6,
+                        bottom: 6,
+                        child: _buildEmojiStrip(),
+                      ),
                   ],
                 ),
               ),
@@ -1471,6 +1482,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 hideAudience: true,
                 onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
                 onEmptySeatTap: _handleEmptySeatPress,
+                onLockedSeatTap: _handleEmptySeatPress,
                 onEmptySeatLongPress: (idx) {
                   if (s.isHost) {
                     ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);

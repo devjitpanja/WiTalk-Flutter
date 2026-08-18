@@ -9,6 +9,7 @@ import '../../theme/theme_colors.dart';
 import '../../services/audio_room_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/connect/personal_adda_card.dart';
+import '../../utils/mic_permission_utils.dart';
 
 class CommunityAddaListScreen extends ConsumerStatefulWidget {
   final String groupId;
@@ -66,7 +67,7 @@ class _CommunityAddaListScreenState extends ConsumerState<CommunityAddaListScree
     }
   }
 
-  void _handleJoin(Map<String, dynamic> adda) {
+  Future<void> _handleJoin(Map<String, dynamic> adda) async {
     if (!widget.isMember) {
       final inviteCode = widget.groupInviteCode ?? adda['group_invite_code']?.toString();
       final isMonetized = widget.groupIsMonetized || (adda['group_is_monetized'] == true || adda['group_is_monetized'] == 1);
@@ -75,9 +76,11 @@ class _CommunityAddaListScreenState extends ConsumerState<CommunityAddaListScree
         return;
       }
     }
-    
+
     final roomId = adda['room_id']?.toString() ?? adda['id']?.toString() ?? '';
     if (roomId.isNotEmpty) {
+      if (!await checkMicPermission(context)) return;
+      if (!context.mounted) return;
       context.pushReplacement('/live-audio/$roomId', extra: {
         'room_name': adda['room_name']?.toString() ?? 'Community Adda',
         'is_host': adda['host_uid']?.toString() == ref.read(authProvider).uid,

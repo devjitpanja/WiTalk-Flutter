@@ -9,6 +9,7 @@ import '../../theme/theme_colors.dart';
 import '../../api/dio_client.dart';
 import '../../providers/notification_provider.dart';
 import '../../cache/witalk_image_cache.dart';
+import '../../utils/mic_permission_utils.dart';
 
 // Groups notifications into time-bucketed sections identical to the RN app.
 List<Map<String, dynamic>> _groupByTime(List<NotificationItem> notifications) {
@@ -320,7 +321,10 @@ class _NotificationScreenState extends ConsumerState<NotificationScreen> {
       case 'adda':
         {
           final roomId = data?['room_id']?.toString() ?? referenceId;
-          if (roomId != null) context.push('/live-audio/$roomId');
+          if (roomId != null) {
+            if (!await checkMicPermission(context)) break;
+            if (context.mounted) context.push('/live-audio/$roomId');
+          }
         }
         break;
 

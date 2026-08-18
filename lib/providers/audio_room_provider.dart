@@ -1370,7 +1370,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     socketService.onAudioRoom('reaction_received', (data) {
       if (data is Map<String, dynamic>) {
         final emoji = data['emoji']?.toString() ?? '';
-        final uid = data['uid']?.toString() ?? '';
+        final uid = (data['userId'] ?? data['uid'])?.toString() ?? '';
         final reaction = {
           'emoji': emoji,
           'uid': uid,
@@ -1840,11 +1840,20 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       newSeats[i] = seats[i]?.toString();
     }
 
-    // Locked seats
+    // Locked seats — union server payload with current local state so manually
+    // locked seats are never lost when the server omits them after a seat_change.
+    // Seats are only explicitly cleared by toggleSeatLock / toggleStageRequest.
     final lockedRaw = payload['lockedSeats'] ?? payload['locked_seats'];
-    final Set<int> newLockedSeats = lockedRaw is List
-        ? Set<int>.from(lockedRaw.map((e) => e as int? ?? 0))
-        : {};
+    final Set<int> newLockedSeats;
+    if (lockedRaw is List) {
+      final serverLocked = lockedRaw
+          .map<int>((e) => e is int ? e : int.tryParse(e?.toString() ?? '') ?? -1)
+          .where((e) => e >= 0)
+          .toSet();
+      newLockedSeats = {...state.lockedSeats, ...serverLocked};
+    } else {
+      newLockedSeats = state.lockedSeats;
+    }
 
     // Participants in payload
     final participants = payload['participants'] as List?;
@@ -1948,7 +1957,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
         return <String, dynamic>{
           'seatIndex': idx,
           'isEmpty': true,
-          'isLocked': _seatManager.isSeatLocked(idx),
+          'isLocked': _seatManager.isSeatLocked(idx) || _seatManager.stageRequestEnabled,
         };
       }
       final profile = _participantManager.getProfile(uid) ?? {};
@@ -2686,8 +2695,20 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   }
 
   Future<void> toggleStageRequest(bool enabled) async {
-    state = state.copyWith(stageRequestEnabled: enabled);
+    final previousLockedSeats = state.lockedSeats;
+
+    // Optimistically update locked seats immediately so the UI responds before
+    // the server confirms. Enabling locks every seat; disabling clears all locks.
+    final newLockedSeats = enabled
+        ? List.generate(state.maxSeats, (i) => i).toSet()
+        : <int>{};
     _seatManager.stageRequestEnabled = enabled;
+    _seatManager.lockedSeats = Set<int>.from(newLockedSeats);
+    state = state.copyWith(
+      stageRequestEnabled: enabled,
+      lockedSeats: newLockedSeats,
+      speakers: _buildSpeakersFromSeatManager(state.hostUid, _myUid),
+    );
     try {
       if (enabled) {
         socketService.emitAudioRoom('seat_lock_all'); // no args
@@ -2697,7 +2718,14 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
       await audioRoomService.updateStageRequestEnabled(
           state.roomId!, enabled);
     } catch (_) {
-      state = state.copyWith(stageRequestEnabled: !enabled); // revert
+      // Revert to state before the toggle
+      _seatManager.stageRequestEnabled = !enabled;
+      _seatManager.lockedSeats = Set<int>.from(previousLockedSeats);
+      state = state.copyWith(
+        stageRequestEnabled: !enabled,
+        lockedSeats: previousLockedSeats,
+        speakers: _buildSpeakersFromSeatManager(state.hostUid, _myUid),
+      );
     }
   }
 
@@ -2779,7 +2807,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
   void sendReaction(String emoji) {
     if (_reactionOnCooldown) return;
     socketService.emitAudioRoom(
-        'send_reaction', {'roomId': state.roomId, 'emoji': emoji});
+        'send_reaction', {'roomId': state.roomId, 'emoji': emoji, 'userId': _myUid});
     // 10-second cooldown per RN behaviour
     _reactionOnCooldown = true;
     _reactionCooldownTimer?.cancel();
