@@ -58,6 +58,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   final List<_ReactionData> _reactionOverlays = [];
   late AnimationController _pulseCtrl;
   bool _isRoomEnded = false;
+  bool _reactionCooldown = false;
 
   final _sessionTracking = AddaSessionTrackingService();
   bool _sessionStarted = false;
@@ -649,11 +650,12 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     return -1;
   }
 
-  Offset? _computeSeatPosition(int seatIndex, {bool compact = false}) {
+  Offset? _computeSeatPosition(int seatIndex, {bool compact = false, int maxSeats = 8}) {
     if (seatIndex < 0) return null;
     final screenWidth = MediaQuery.of(context).size.width;
-    const seatsPerRow = 4;
     const edgePadding = 8.0;
+    // Match GridSeatingLayout: compact+12 seats → 6 columns, otherwise 4
+    final int seatsPerRow = (compact && maxSeats == 12) ? 6 : 4;
     final seatWidth = (screenWidth - edgePadding * 2) / seatsPerRow;
     final double avatarSize;
     final double seatHeight;
@@ -665,17 +667,23 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       final nameFontSize = (avatarSize * 0.20).clamp(9.0, 11.0);
       seatHeight = avatarSize * 1.5 + 1 + nameFontSize + 6;
     }
-    const runSpacing = 2.0;
-    const gridVertPad = 2.0;
+    // runSpacing matches GridSeatingLayout: 0 in compact, 2 otherwise
+    final double runSpacing = compact ? 0.0 : 2.0;
+    // Non-compact has a "BAITHAK" header row above the Wrap (~29px: 8 top + 17 badge + 4 bottom)
+    const double headerHeight = 29.0;
+    const double wrapTopPad = 2.0;
+    final double gridVertPad = compact ? wrapTopPad : wrapTopPad + headerHeight;
+
     final col = seatIndex % seatsPerRow;
     final row = seatIndex ~/ seatsPerRow;
     final cx = edgePadding + col * seatWidth + seatWidth / 2;
-    final cy = gridVertPad + row * (seatHeight + runSpacing) + avatarSize / 2;
+    // Avatar is Center-ed within seatHeight → avatar center ≈ seatHeight / 2 from seat top
+    final cy = gridVertPad + row * (seatHeight + runSpacing) + seatHeight / 2;
     return Offset(cx, cy);
   }
 
-  void _addReactionForSeat(String emoji, int seatIndex, {bool compact = false}) {
-    final pos = _computeSeatPosition(seatIndex, compact: compact);
+  void _addReactionForSeat(String emoji, int seatIndex, {bool compact = false, int maxSeats = 8}) {
+    final pos = _computeSeatPosition(seatIndex, compact: compact, maxSeats: maxSeats);
     if (pos == null) return;
     final id = DateTime.now().microsecondsSinceEpoch.toString();
     if (mounted) {
@@ -1034,8 +1042,9 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             final seatIdx = _getSeatIndexForUser(uid, next);
             if (seatIdx >= 0) {
               final isCompact = next.youtubeVideoId != null || false;
+              final seats = next.maxSeats;
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _addReactionForSeat(r['emoji']?.toString() ?? '❤️', seatIdx, compact: isCompact);
+                if (mounted) _addReactionForSeat(r['emoji']?.toString() ?? '❤️', seatIdx, compact: isCompact, maxSeats: seats);
               });
             }
           }
@@ -1214,15 +1223,19 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       onAudienceMemberTap: (m) => _showParticipantSheet(m),
                     ),
                     // ── Reaction overlays pinned to avatars ──────
-                    ..._reactionOverlays.map((r) => IgnorePointer(
-                      child: _ReactionOverlay(
-                        key: ValueKey(r.id),
-                        emoji: r.emoji,
-                        cx: r.cx,
-                        cy: r.cy,
-                        onDone: () {
-                          if (mounted) setState(() => _reactionOverlays.removeWhere((x) => x.id == r.id));
-                        },
+                    ..._reactionOverlays.map((r) => Positioned(
+                      left: r.cx - 18,
+                      top: r.cy - 18,
+                      width: 36,
+                      height: 36,
+                      child: IgnorePointer(
+                        child: _ReactionOverlay(
+                          key: ValueKey(r.id),
+                          emoji: r.emoji,
+                          onDone: () {
+                            if (mounted) setState(() => _reactionOverlays.removeWhere((x) => x.id == r.id));
+                          },
+                        ),
                       ),
                     )),
                   ],
@@ -2022,12 +2035,20 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           children: emojis.map((emoji) {
             return GestureDetector(
               onTap: () {
+                if (_reactionCooldown) {
+                  _showSnack('Wait 10 seconds before sending another reaction.');
+                  return;
+                }
                 final s = ref.read(audioRoomProvider);
                 final myUid = ref.read(authProvider).uid ?? '';
                 final seatIdx = _getSeatIndexForUser(myUid, s);
                 final isCompact = s.youtubeVideoId != null || false;
-                _addReactionForSeat(emoji, seatIdx, compact: isCompact);
+                _addReactionForSeat(emoji, seatIdx, compact: isCompact, maxSeats: s.maxSeats);
                 ref.read(audioRoomProvider.notifier).sendReaction(emoji);
+                setState(() => _reactionCooldown = true);
+                Future.delayed(const Duration(seconds: 10), () {
+                  if (mounted) setState(() => _reactionCooldown = false);
+                });
               },
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3.5),
@@ -2723,9 +2744,8 @@ class _ReactionData {
 
 class _ReactionOverlay extends StatefulWidget {
   final String emoji;
-  final double cx, cy;
   final VoidCallback onDone;
-  const _ReactionOverlay({super.key, required this.emoji, required this.cx, required this.cy, required this.onDone});
+  const _ReactionOverlay({super.key, required this.emoji, required this.onDone});
 
   @override
   State<_ReactionOverlay> createState() => _ReactionOverlayState();
@@ -2776,28 +2796,20 @@ class _ReactionOverlayState extends State<_ReactionOverlay> with SingleTickerPro
 
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      left: widget.cx - 18,
-      top: widget.cy - 18,
-      child: AnimatedBuilder(
-        animation: _ctrl,
-        builder: (_, child) => Opacity(
-          opacity: _opacity.value,
-          child: Transform.translate(
-            offset: Offset(_shake.value, 0),
-            child: Transform.scale(
-              scale: _scale.value,
-              child: child,
-            ),
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, child) => Opacity(
+        opacity: _opacity.value,
+        child: Transform.translate(
+          offset: Offset(_shake.value, 0),
+          child: Transform.scale(
+            scale: _scale.value,
+            child: child,
           ),
         ),
-        child: SizedBox(
-          width: 36,
-          height: 36,
-          child: Center(
-            child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
-          ),
-        ),
+      ),
+      child: Center(
+        child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
       ),
     );
   }

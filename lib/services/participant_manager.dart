@@ -40,6 +40,9 @@ class ParticipantManager {
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
   void initialize(String roomId) {
+    _pollTimer?.cancel();
+    _joinDebounce?.cancel();
+    _profiles.clear();
     _roomId = roomId;
     _fetchRoomParticipants();
     _startPolling();
