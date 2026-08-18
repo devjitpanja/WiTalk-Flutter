@@ -67,6 +67,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   String? _currentUserId;
   int _prevMessageCount = 0;
   String? _highlightedMessageId;
+  final Map<String, GlobalKey> _messageKeys = {};
   List<Map<String, dynamic>> _pinnedMessages = [];
   int _pinnedIndex = 0;
   bool _isRecordingVoice = false;
@@ -163,10 +164,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
     if (mounted) {
       setState(() => _loading = false);
-      // Wait two frames: first for setState rebuild, second for layout
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom(animated: false));
-      });
+      WidgetsBinding.instance.addPostFrameCallback((_) =>
+          _scrollToBottom(animated: false, defer: true));
     }
     debugPrint('[GroupChat] _init complete, _loading=false');
   }
@@ -368,9 +367,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     _listItems = items;
   }
 
-  void _scrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollCtrl.hasClients) return;
+  void _scrollToBottom({bool animated = true, bool defer = false}) {
+    void doScroll() {
+      if (!mounted || !_scrollCtrl.hasClients) return;
       if (animated) {
         _scrollCtrl.animateTo(
           _scrollCtrl.position.maxScrollExtent,
@@ -380,29 +379,54 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       } else {
         _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
       }
-    });
+    }
+
+    if (defer || !_scrollCtrl.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => doScroll());
+    } else {
+      doScroll();
+    }
   }
 
-  void _scrollToMessage(String messageId) {
-    final idx = _listItems.indexWhere(
-        (item) => !item.isDivider && item.message?.id == messageId);
-    if (idx == -1) return;
-
-    // Estimate position (approx 72px per item)
-    final approxOffset = idx * 72.0;
-    final maxExtent = _scrollCtrl.hasClients
-        ? _scrollCtrl.position.maxScrollExtent
-        : 0.0;
-    final target = approxOffset.clamp(0.0, maxExtent);
-
-    _scrollCtrl.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeOut,
-    );
-
-    // Highlight for 1.5s
+  void _scrollToMessage(String messageId) async {
+    // Highlight immediately so the bubble animates in when it comes into view
     setState(() => _highlightedMessageId = messageId);
+
+    final key = _messageKeys[messageId];
+    final ctx = key?.currentContext;
+
+    if (ctx != null) {
+      await Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.5,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else {
+      // Fallback for off-screen items: scroll by index estimate, then re-check
+      final idx = _listItems.indexWhere(
+          (item) => !item.isDivider && item.message?.id == messageId);
+      if (idx != -1 && _scrollCtrl.hasClients) {
+        final approxOffset = idx * 72.0;
+        await _scrollCtrl.animateTo(
+          approxOffset.clamp(0.0, _scrollCtrl.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+        // After scroll, try again now that the item should be rendered
+        if (!mounted) return;
+        final ctx2 = _messageKeys[messageId]?.currentContext;
+        if (ctx2 != null && ctx2.mounted) {
+          await Scrollable.ensureVisible(
+            ctx2,
+            alignment: 0.5,
+            duration: const Duration(milliseconds: 150),
+            curve: Curves.easeOut,
+          );
+        }
+      }
+    }
+
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) setState(() => _highlightedMessageId = null);
     });
@@ -852,7 +876,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     // Auto-scroll only when user is already near the bottom (mirrors WhatsApp behaviour)
     if (messages.length > _prevMessageCount && _prevMessageCount > 0) {
       if (_isAtBottom) {
-        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+        WidgetsBinding.instance.addPostFrameCallback((_) =>
+            _scrollToBottom(defer: false));
       }
     }
     _prevMessageCount = messages.length;
@@ -1056,8 +1081,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                           // Reply message (for onReplyTap)
                           final replyToId = msg.replyTo?['id']?.toString() ??
                               msg.replyToId;
+                          final msgKey = _messageKeys.putIfAbsent(
+                              msg.id, () => GlobalKey());
                           return MessageBubble(
-                            key: ValueKey(msg.id),
+                            key: msgKey,
                             message: msg,
                             isMyMessage: msg.senderId == uid,
                             showAvatar: msg.senderId != uid,
@@ -1106,7 +1133,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 right: 16,
                 bottom: 12,
                 child: GestureDetector(
-                  onTap: _scrollToBottom,
+                  onTap: () => _scrollToBottom(),
                   child: Container(
                     width: 36,
                     height: 36,

@@ -22,7 +22,7 @@ final _activitiesProvider =
     List raw = [];
     if (payload is List) raw = payload;
     if (payload is Map) raw = (payload['groups'] as List?) ?? [];
-    return raw.where((g) => g is Map && g['is_verified'] == 1).toList();
+    return raw;
   }
   return [];
 });
@@ -69,56 +69,71 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
         child: Text('Failed to load communities',
             style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit')),
       ),
-      data: (groups) => CustomScrollView(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        slivers: [
-          CupertinoSliverRefreshControl(
-            onRefresh: () => ref.refresh(_activitiesProvider(_cityFilter).future),
-          ),
-          if (groups.isEmpty)
-            SliverFillRemaining(
-              hasScrollBody: false,
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SizedBox(height: MediaQuery.of(context).size.height * 0.25),
-                  Icon(Icons.explore, size: 64, color: c.textTertiary),
-                  const SizedBox(height: 16),
-                  Text('No Public Community Yet',
-                      style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
-                  const SizedBox(height: 8),
-                  Text(
-                    _cityFilter.isNotEmpty
-                        ? 'No public community found in $_cityFilter.'
-                        : 'Be the first to create a Community!',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary),
+      data: (allGroups) {
+        final groups = allGroups
+            .where((g) => g is Map && (g as Map)['is_verified'] == 1)
+            .cast<Map<String, dynamic>>()
+            .toList();
+        final hasUnverified = allGroups
+            .any((g) => g is Map && (g as Map)['is_verified'] != 1);
+
+        return CustomScrollView(
+          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+          slivers: [
+            CupertinoSliverRefreshControl(
+              onRefresh: () => ref.refresh(_activitiesProvider(_cityFilter).future),
+            ),
+            if (groups.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                    Icon(Icons.explore, size: 64, color: c.textTertiary),
+                    const SizedBox(height: 16),
+                    Text('No Public Community Yet',
+                        style: TextStyle(fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, color: c.text)),
+                    const SizedBox(height: 8),
+                    Text(
+                      _cityFilter.isNotEmpty
+                          ? 'No public community found in $_cityFilter.'
+                          : 'Be the first to create a Community!',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 14, fontFamily: 'Outfit', color: c.textTertiary),
+                    ),
+                    if (hasUnverified) ...[
+                      const SizedBox(height: 24),
+                      _ExploreBanner(onTap: () => context.push('/communities')),
+                    ],
+                  ],
+                ),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.only(bottom: 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, i) {
+                      if (i == groups.length) {
+                        return _ExploreBanner(onTap: () => context.push('/communities'));
+                      }
+                      final g = groups[i];
+                      return _CommunityCard(
+                        group: g,
+                        fmtCount: _fmtCount,
+                        parseTags: _parseTags,
+                        onTap: () => _openGroup(context, g),
+                        onJoin: () => _openGroup(context, g),
+                      );
+                    },
+                    childCount: groups.length + (hasUnverified ? 1 : 0),
                   ),
-                ],
-              ),
-            )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.only(bottom: 20),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    if (i == groups.length) return _ExploreBanner(onTap: () => context.push('/communities'));
-                    final g = groups[i] as Map<String, dynamic>;
-                    return _CommunityCard(
-                      group: g,
-                      fmtCount: _fmtCount,
-                      parseTags: _parseTags,
-                      onTap: () => _openGroup(context, g),
-                      onJoin: () => _openGroup(context, g),
-                    );
-                  },
-                  childCount: groups.length + 1,
                 ),
               ),
-            ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
@@ -280,7 +295,11 @@ class _CommunityCard extends StatelessWidget {
                               ),
                               if (isVerified) ...[
                                 const SizedBox(width: 4),
-                                const VerificationBadge(size: 16),
+                                VerificationBadge(
+                                  isVerified: true,
+                                  badge: group['verification_badge'] as Map<String, dynamic>?,
+                                  size: 16,
+                                ),
                               ],
                             ],
                           ),
