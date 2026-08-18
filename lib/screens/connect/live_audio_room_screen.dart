@@ -27,11 +27,11 @@ import '../../analytics/analytics_service.dart';
 import '../../services/adda_session_tracking_service.dart';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-const Color _kBg = Color(0xFF080C17);
-const Color _kSurface = Color(0xFF0D1220);
-const Color _kCard = Color(0xFF121930);
-const Color _kPrimary = Color(0xFF2563EB);
-const Color _kPrimaryGlow = Color(0x332563EB);
+const Color _kBg = Color(0xFF0D1017);
+const Color _kSurface = Color(0xFF0D1017);
+const Color _kCard = Color(0xFF111828);
+const Color _kPrimary = Color(0xFF0751DF);
+const Color _kPrimaryGlow = Color(0x330751DF);
 
 class LiveAudioRoomScreen extends ConsumerStatefulWidget {
   final String roomId;
@@ -1202,7 +1202,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
           children: [
-            const Icon(Icons.screen_share, color: Color(0xFF2563EB), size: 20),
+            const Icon(Icons.screen_share, color: Color(0xFF0751DF), size: 20),
             const SizedBox(width: 10),
             const Expanded(
               child: Text(
@@ -1259,7 +1259,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.screen_share, color: Color(0xFF2563EB), size: 32),
+                    const Icon(Icons.screen_share, color: Color(0xFF0751DF), size: 32),
                     const SizedBox(height: 6),
                     Text('$userName is sharing their screen',
                         style: const TextStyle(color: Colors.white70, fontFamily: 'Outfit', fontSize: 12)),
@@ -1440,24 +1440,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFF0E1525), _kSurface],
-        ),
+        color: const Color(0xFF0D1118),
         border: Border(
           bottom: BorderSide(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.15),
+            color: const Color(0xFF0751DF).withValues(alpha: 0.12),
             width: 1,
           ),
         ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.30),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
       ),
       child: Row(
         children: [
@@ -1511,7 +1500,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           const SizedBox(width: 12),
           _HeaderIconBtn(
             onTap: _handleShareRoom,
-            icon: Icons.ios_share_rounded,
+            icon: Icons.share_rounded,
             size: 38,
           ),
         ],
@@ -1532,7 +1521,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 gradient: LinearGradient(
                   colors: [
                     Colors.transparent,
-                    const Color(0xFF3B82F6).withValues(alpha: 0.25),
+                    const Color(0xFF0751DF).withValues(alpha: 0.25),
                   ],
                 ),
               ),
@@ -1542,10 +1531,10 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF3B82F6).withValues(alpha: 0.10),
+              color: const Color(0xFF0751DF).withValues(alpha: 0.10),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFF3B82F6).withValues(alpha: 0.18),
+                color: const Color(0xFF0751DF).withValues(alpha: 0.18),
                 width: 1,
               ),
             ),
@@ -1574,7 +1563,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    const Color(0xFF3B82F6).withValues(alpha: 0.25),
+                    const Color(0xFF0751DF).withValues(alpha: 0.25),
                     Colors.transparent,
                   ],
                 ),
@@ -1696,7 +1685,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: _kPrimaryGlow,
-                border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.35)),
+                border: Border.all(color: const Color(0xFF0751DF).withValues(alpha: 0.35)),
               ),
               alignment: Alignment.center,
               child: const Icon(Icons.campaign_rounded, size: 12, color: Colors.white),
@@ -1706,9 +1695,9 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0x0C2563EB),
+                  color: const Color(0x0C0751DF),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF2563EB).withValues(alpha: 0.15)),
+                  border: Border.all(color: const Color(0xFF0751DF).withValues(alpha: 0.15)),
                 ),
                 child: Text(
                   text,
@@ -1811,7 +1800,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                     decoration: BoxDecoration(
-                      color: isMe ? const Color(0x182563EB) : const Color(0x0EFFFFFF),
+                      color: isMe ? const Color(0x180751DF) : const Color(0x0EFFFFFF),
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(2),
                         topRight: Radius.circular(12),
@@ -1820,7 +1809,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       ),
                       border: Border.all(
                         color: isMe
-                            ? const Color(0xFF2563EB).withValues(alpha: 0.22)
+                            ? const Color(0xFF0751DF).withValues(alpha: 0.22)
                             : Colors.white.withValues(alpha: 0.07),
                         width: 1,
                       ),
@@ -2176,14 +2165,11 @@ class _HeaderIconBtn extends StatelessWidget {
         height: size,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.white.withValues(alpha: 0.10),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withValues(alpha: 0.20), blurRadius: 6, offset: const Offset(0, 2)),
-          ],
+          color: const Color(0xFF0751DF).withValues(alpha: 0.08),
+          border: Border.all(color: const Color(0xFF0751DF).withValues(alpha: 0.20), width: 1),
         ),
         alignment: Alignment.center,
-        child: Icon(icon, color: const Color(0xCCEBEBF5), size: size * 0.52),
+        child: Icon(icon, color: const Color(0xFF0751DF), size: size * 0.52),
       ),
     );
   }
@@ -2430,7 +2416,7 @@ class _SeatRequestsSheet extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: CircleAvatar(
                       radius: 18,
-                      backgroundColor: const Color(0x142563EB),
+                      backgroundColor: const Color(0x140751DF),
                       child: Text(name.isNotEmpty ? name[0].toUpperCase() : 'U',
                           style: const TextStyle(color: Colors.white, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
                     ),
@@ -2548,9 +2534,9 @@ class _AudioOutputSheet extends StatelessWidget {
   Widget _audioOption(BuildContext context, String mode, IconData icon, String label) {
     final isSelected = currentMode == mode;
     return ListTile(
-      leading: Icon(icon, color: isSelected ? const Color(0xFF2563EB) : Colors.white60),
-      title: Text(label, style: TextStyle(color: isSelected ? const Color(0xFF2563EB) : Colors.white, fontFamily: 'Outfit')),
-      trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFF2563EB)) : null,
+      leading: Icon(icon, color: isSelected ? const Color(0xFF0751DF) : Colors.white60),
+      title: Text(label, style: TextStyle(color: isSelected ? const Color(0xFF0751DF) : Colors.white, fontFamily: 'Outfit')),
+      trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFF0751DF)) : null,
       onTap: () { Navigator.pop(context); onSelect(mode); },
       contentPadding: EdgeInsets.zero,
     );

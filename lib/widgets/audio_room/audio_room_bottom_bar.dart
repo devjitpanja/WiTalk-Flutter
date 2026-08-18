@@ -46,7 +46,7 @@ class AudioRoomBottomBar extends StatelessWidget {
     this.chatFocusNode,
   });
 
-  static const _kSurface = Color(0xFF0F1521);
+  static const _kSurface = Color(0xFF0D1017);
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +58,7 @@ class AudioRoomBottomBar extends StatelessWidget {
         color: _kSurface,
         border: Border(
           top: BorderSide(
-            color: const Color(0xFF2563EB).withValues(alpha: 0.15),
+            color: const Color(0xFF0751DF).withValues(alpha: 0.15),
             width: 1,
           ),
         ),
@@ -91,21 +91,17 @@ class AudioRoomBottomBar extends StatelessWidget {
                 : audioOutputMode == 'speaker'
                     ? Icons.volume_up_rounded
                     : Icons.hearing_rounded,
-            iconColor: audioOutputMode == 'earpiece'
-                ? const Color(0xFFFF9800)
-                : audioOutputMode == 'bluetooth'
-                    ? const Color(0xFF34C759)
-                    : Colors.white70,
+            iconColor: Colors.white,
             bgColor: audioOutputMode == 'earpiece'
-                ? const Color(0x22FF9800)
+                ? const Color(0x2EFF9800)
                 : audioOutputMode == 'bluetooth'
-                    ? const Color(0x2234C759)
-                    : const Color(0x16FFFFFF),
+                    ? const Color(0x2E34C759)
+                    : const Color(0x260751DF),
             borderColor: audioOutputMode == 'earpiece'
-                ? const Color(0x55FF9800)
+                ? const Color(0x66FF9800)
                 : audioOutputMode == 'bluetooth'
-                    ? const Color(0x5534C759)
-                    : const Color(0x22FFFFFF),
+                    ? const Color(0x6634C759)
+                    : const Color(0x4D0751DF),
           ),
           const SizedBox(width: 8),
 
@@ -129,20 +125,20 @@ class AudioRoomBottomBar extends StatelessWidget {
           // ── More options ──────────────────────────────────
           _IconBtn(
             onTap: onMorePress,
-            icon: Icons.dashboard_rounded,
-            iconColor: hasActiveShare ? const Color(0xFFFF6B6B) : Colors.white70,
-            bgColor: hasActiveShare ? const Color(0x22FF3B30) : const Color(0x16FFFFFF),
-            borderColor: hasActiveShare ? const Color(0x55FF3B30) : const Color(0x22FFFFFF),
+            icon: Icons.grid_view_rounded,
+            iconColor: Colors.white,
+            bgColor: hasActiveShare ? const Color(0x2EFF3B30) : const Color(0x260751DF),
+            borderColor: hasActiveShare ? const Color(0x66FF3B30) : const Color(0x4D0751DF),
           ),
           const SizedBox(width: 8),
 
           // ── Leave / End room ──────────────────────────────
           _IconBtn(
             onTap: onLeave,
-            icon: isHost ? Icons.power_settings_new_rounded : Icons.logout_rounded,
+            icon: Icons.exit_to_app_rounded,
             iconColor: const Color(0xFFFF6B6B),
-            bgColor: const Color(0x22FF6B6B),
-            borderColor: const Color(0x55FF6B6B),
+            bgColor: const Color(0x26FF6B6B),
+            borderColor: const Color(0x59FF6B6B),
           ),
         ],
       ),
@@ -164,7 +160,7 @@ class _MicButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final activeColor = isMicOn ? const Color(0xFF2563EB) : const Color(0xFFEF4444);
+    final activeColor = isMicOn ? const Color(0xFF0751DF) : const Color(0xFFEF4444);
 
     return GestureDetector(
       onTap: () {
@@ -177,17 +173,11 @@ class _MicButton extends StatelessWidget {
         height: 40,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: activeColor.withValues(alpha: 0.18),
+          color: activeColor.withValues(alpha: 0.15),
           border: Border.all(
-            color: activeColor.withValues(alpha: 0.55),
+            color: activeColor.withValues(alpha: 0.30),
             width: 1.5,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: activeColor.withValues(alpha: 0.20),
-              blurRadius: 8,
-            ),
-          ],
         ),
         alignment: Alignment.center,
         child: isLoading
@@ -221,13 +211,13 @@ class _HandRaiseButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = hasPendingRequest ? const Color(0xFFFF9800) : Colors.white70;
+    final color = Colors.white;
     final bg = hasPendingRequest
-        ? const Color(0x22FF9800)
-        : const Color(0x16FFFFFF);
+        ? const Color(0x2EFF9800)
+        : const Color(0x260751DF);
     final border = hasPendingRequest
-        ? const Color(0x55FF9800)
-        : const Color(0x22FFFFFF);
+        ? const Color(0x66FF9800)
+        : const Color(0x4D0751DF);
 
     return GestureDetector(
       onTap: () {
@@ -309,9 +299,9 @@ class _ChatInput extends StatelessWidget {
     return Container(
       height: 40,
       decoration: BoxDecoration(
-        color: const Color(0x14FFFFFF),
+        color: const Color(0x140751DF),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0x22FFFFFF)),
+        border: Border.all(color: const Color(0x330751DF)),
       ),
       child: Row(
         children: [
@@ -325,7 +315,7 @@ class _ChatInput extends StatelessWidget {
                 fontFamily: 'Outfit',
               ),
               decoration: const InputDecoration(
-                hintText: 'Say something...',
+                hintText: 'Type...',
                 hintStyle: TextStyle(
                   color: Color(0x4DFFFFFF),
                   fontSize: 13,
@@ -356,7 +346,7 @@ class _ChatInput extends StatelessWidget {
                   height: 32,
                   margin: const EdgeInsets.only(right: 4),
                   decoration: const BoxDecoration(
-                    color: Color(0xFF2563EB),
+                    color: Color(0xFF0751DF),
                     shape: BoxShape.circle,
                   ),
                   alignment: Alignment.center,
