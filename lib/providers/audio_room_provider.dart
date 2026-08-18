@@ -457,7 +457,7 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     bool isHost = false,
     String role = 'audience',
   }) async {
-    state = state.copyWith(isLoading: true, roomId: roomId, isHost: isHost);
+    state = AudioRoomState(isLoading: true, roomId: roomId, isHost: isHost);
 
     try {
       final authState = ref.read(authProvider);
