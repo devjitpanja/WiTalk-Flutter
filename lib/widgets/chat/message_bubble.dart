@@ -80,7 +80,7 @@ class MessageBubble extends StatelessWidget {
     Widget bubble = AnimatedContainer(
       duration: const Duration(milliseconds: 300),
       color: isHighlighted ? c.primary.withValues(alpha: 0.15) : Colors.transparent,
-      padding: const EdgeInsets.only(bottom: 2),
+      padding: const EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment:
             isMyMessage ? CrossAxisAlignment.end : CrossAxisAlignment.start,
