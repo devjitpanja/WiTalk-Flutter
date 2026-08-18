@@ -16,7 +16,7 @@ Future<bool> checkMicPermission(BuildContext context) async {
     if (context.mounted) {
       await showCupertinoDialog<void>(
         context: context,
-        builder: (_) => CupertinoAlertDialog(
+        builder: (dialogContext) => CupertinoAlertDialog(
           title: const Text('Microphone Access Required'),
           content: const Text(
             'Please enable microphone access in your device settings to join an audio room.',
@@ -24,12 +24,12 @@ Future<bool> checkMicPermission(BuildContext context) async {
           actions: [
             CupertinoDialogAction(
               isDestructiveAction: true,
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text('Cancel'),
             ),
             CupertinoDialogAction(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
                 openAppSettings();
               },
               child: const Text('Open Settings'),
