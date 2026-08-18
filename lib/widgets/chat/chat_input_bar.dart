@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:image_picker/image_picker.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/chat_provider.dart';
@@ -354,16 +355,11 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       onTap: widget.onOpenGiphyPicker,
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: Image.asset(
-                          'assets/icons/sticker.png',
+                        child: SvgPicture.asset(
+                          'assets/icons/sticker.svg',
                           width: 22,
                           height: 22,
-                          color: c.textSecondary,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.emoji_emotions_outlined,
-                            size: 22,
-                            color: c.textSecondary,
-                          ),
+                          colorFilter: ColorFilter.mode(c.textSecondary, BlendMode.srcIn),
                         ),
                       ),
                     ),

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:giphy_get/giphy_get.dart';
 import 'package:go_router/go_router.dart';
@@ -2427,12 +2428,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
             onTap: _showGiphyPicker,
             child: Padding(
               padding: const EdgeInsets.only(right: 8, bottom: 6),
-              child: Image.asset(
-                'assets/icons/sticker.png',
+              child: SvgPicture.asset(
+                'assets/icons/sticker.svg',
                 width: 26, height: 26,
-                color: c.textSecondary,
-                errorBuilder: (_, __, ___) =>
-                    Icon(Icons.emoji_emotions_outlined, size: 26, color: c.textSecondary),
+                colorFilter: ColorFilter.mode(c.textSecondary, BlendMode.srcIn),
               ),
             ),
           ),

@@ -19,12 +19,6 @@ class ShellScreen extends ConsumerStatefulWidget {
 }
 
 // Static const IconData to satisfy tree-shake-icons in release builds
-const _kIconMapBold    = IconData(0xe1c8, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
-const _kIconMapFill    = IconData(0xe1c8, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
-const _kIconAddaBold   = IconData(0xe326, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
-const _kIconAddaFill   = IconData(0xe326, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
-const _kIconChatBold   = IconData(0xe16c, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
-const _kIconChatFill   = IconData(0xe16c, fontFamily: 'PhosphorFill', fontPackage: 'phosphor_flutter');
 const _kIconMenuBold   = IconData(0xe2f0, fontFamily: 'PhosphorBold', fontPackage: 'phosphor_flutter');
 
 class _ShellScreenState extends ConsumerState<ShellScreen>
@@ -179,12 +173,17 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
   }
 
   Widget _buildExploreIcon({required bool focused, required bool hasOnlineNearby}) {
+    final color = focused
+        ? Theme.of(context).bottomNavigationBarTheme.selectedItemColor
+        : Theme.of(context).bottomNavigationBarTheme.unselectedItemColor;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(
-          focused ? _kIconMapFill : _kIconMapBold,
-          size: 26,
+        SvgPicture.asset(
+          focused ? 'assets/icons/explore.svg' : 'assets/icons/explore_stroke.svg',
+          width: 26,
+          height: 26,
+          colorFilter: ColorFilter.mode(color ?? Colors.white, BlendMode.srcIn),
         ),
         if (hasOnlineNearby && !focused)
           Positioned(
@@ -204,12 +203,17 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
   }
 
   Widget _buildAddaIcon({required bool focused, required bool hasActiveRooms, required bool shouldBlink}) {
+    final color = focused
+        ? Theme.of(context).bottomNavigationBarTheme.selectedItemColor
+        : Theme.of(context).bottomNavigationBarTheme.unselectedItemColor;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(
-          focused ? _kIconAddaFill : _kIconAddaBold,
-          size: 26,
+        SvgPicture.asset(
+          focused ? 'assets/icons/mic.svg' : 'assets/icons/mic_stroke.svg',
+          width: 26,
+          height: 26,
+          colorFilter: ColorFilter.mode(color ?? Colors.white, BlendMode.srcIn),
         ),
         if (hasActiveRooms && !focused)
           Positioned(
@@ -230,12 +234,17 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
   }
 
   Widget _buildChatIcon({required bool focused, required int unreadCount}) {
+    final color = focused
+        ? Theme.of(context).bottomNavigationBarTheme.selectedItemColor
+        : Theme.of(context).bottomNavigationBarTheme.unselectedItemColor;
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(
-          focused ? _kIconChatFill : _kIconChatBold,
-          size: 26,
+        SvgPicture.asset(
+          focused ? 'assets/icons/chat.svg' : 'assets/icons/chat_stroke.svg',
+          width: 26,
+          height: 26,
+          colorFilter: ColorFilter.mode(color ?? Colors.white, BlendMode.srcIn),
         ),
         if (unreadCount > 0)
           Positioned(
