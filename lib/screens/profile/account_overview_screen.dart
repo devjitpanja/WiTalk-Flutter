@@ -1490,8 +1490,8 @@ class _AccountOverviewScreenState extends ConsumerState<AccountOverviewScreen> {
   // ─── Skeleton ──────────────────────────────────────────────────────────────
 
   Widget _buildSkeleton(_T t) {
-    final skBase = t.dark ? const Color(0xFF0F1011) : const Color(0xFFE8E8EC);
-    final skHi = t.dark ? const Color(0xFF18191A) : const Color(0xFFF5F5F8);
+    final skBase = t.dark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final skHi = t.dark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return Scaffold(
       backgroundColor: t.bg,
       body: SafeArea(

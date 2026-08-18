@@ -410,7 +410,7 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     final combined = _buildCombinedList(conversations, groups, channels, uid);
 
     if (_initialLoading && combined.isEmpty) {
-      return _buildSkeleton(c);
+      return _buildSkeleton(context, c);
     }
 
     final isEmpty = combined.isEmpty && pendingRequests.isEmpty;
@@ -498,46 +498,51 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     );
   }
 
-  Widget _buildSkeleton(ThemeColors c) => ListView.builder(
-        itemCount: 9,
-        itemBuilder: (context, i) => Shimmer.fromColors(
-          baseColor: c.surface,
-          highlightColor: c.border,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            child: Row(children: [
-              CircleAvatar(radius: 28, backgroundColor: c.surface),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                          height: 14,
-                          width: 140,
-                          decoration: BoxDecoration(
-                              color: c.surface,
-                              borderRadius: BorderRadius.circular(6))),
-                      const SizedBox(height: 8),
-                      Container(
-                          height: 12,
-                          width: 200,
-                          decoration: BoxDecoration(
-                              color: c.surface,
-                              borderRadius: BorderRadius.circular(6))),
-                    ]),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                  height: 11,
-                  width: 34,
-                  decoration: BoxDecoration(
-                      color: c.surface,
-                      borderRadius: BorderRadius.circular(4))),
-            ]),
-          ),
+  Widget _buildSkeleton(BuildContext context, ThemeColors c) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
+    return ListView.builder(
+      itemCount: 9,
+      itemBuilder: (_, i) => Shimmer.fromColors(
+        baseColor: baseColor,
+        highlightColor: highlightColor,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          child: Row(children: [
+            CircleAvatar(radius: 28, backgroundColor: baseColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                        height: 14,
+                        width: 140,
+                        decoration: BoxDecoration(
+                            color: baseColor,
+                            borderRadius: BorderRadius.circular(6))),
+                    const SizedBox(height: 8),
+                    Container(
+                        height: 12,
+                        width: 200,
+                        decoration: BoxDecoration(
+                            color: baseColor,
+                            borderRadius: BorderRadius.circular(6))),
+                  ]),
+            ),
+            const SizedBox(width: 12),
+            Container(
+                height: 11,
+                width: 34,
+                decoration: BoxDecoration(
+                    color: baseColor,
+                    borderRadius: BorderRadius.circular(4))),
+          ]),
         ),
-      );
+      ),
+    );
+  }
 }
 
 class _CombinedItem {

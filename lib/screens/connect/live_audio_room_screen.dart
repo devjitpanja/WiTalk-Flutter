@@ -77,6 +77,13 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   bool _roomLoaded = false;
   bool _hasPlayedRecAnnouncement = false;
 
+  // ── Leave / close state ─────────────────────────────────────────────────────
+  bool _showBackPressDialog = false;
+  bool _showLeaveDialog = false;
+  bool _showCloseAddaSheet = false;
+  bool _closeAddaLoading = false;
+  Map<String, dynamic> _leaveDialogConfig = {};
+
   // ── YouTube player ──────────────────────────────────────────────────────────
   YoutubePlayerController? _ytController;
   bool _youtubeControlsVisible = true;
@@ -352,30 +359,252 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   }
 
   void _handleLeave() {
-    final isHost = ref.read(audioRoomProvider).isHost;
-    showModalBottomSheet(
-      useRootNavigator: true,
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _ConfirmSheet(
-        title: isHost ? 'End Room?' : 'Leave Room?',
-        message: isHost
-            ? 'Ending the room will disconnect all participants.'
-            : 'Are you sure you want to leave?',
-        confirmText: isHost ? 'End Room' : 'Leave',
-        confirmColor: const Color(0xFFEF4444),
-        onConfirm: () async {
-          // Fire session leave analytics before disconnecting
-          await _sessionTracking.onLeave();
-          if (isHost) {
-            ref.read(audioRoomProvider.notifier).endRoom();
-          } else {
-            await ref.read(audioRoomProvider.notifier).leaveRoom();
-          }
-          if (mounted) context.pop();
-        },
-      ),
-    );
+    final s = ref.read(audioRoomProvider);
+    final notifier = ref.read(audioRoomProvider.notifier);
+
+    // Frozen room — host cannot close
+    if (s.isHost && s.closeFrozen) {
+      setState(() {
+        _leaveDialogConfig = {
+          'title': 'Adda Pinned Open',
+          'message': 'This Adda has been pinned open by the Platform Moderator — you cannot close it right now.',
+          'confirmText': 'OK',
+          'cancelText': null,
+          'onConfirm': () => setState(() => _showLeaveDialog = false),
+        };
+        _showLeaveDialog = true;
+      });
+      return;
+    }
+
+    if (s.isHost) {
+      // Host: show CloseAdda bottom sheet
+      setState(() => _showCloseAddaSheet = true);
+    } else if (s.isAdmin) {
+      _handleAdminLeave(s, notifier);
+    } else if (s.isInSeat) {
+      _handleInSeatLeave(s, notifier);
+    } else {
+      _handleAudienceLeave(s, notifier);
+    }
+  }
+
+  void _handleAdminLeave(AudioRoomState s, dynamic notifier) {
+    final myUid = ref.read(authProvider).uid ?? '';
+    final hostPresent = s.speakers.any((sp) => sp['isHost'] == true && sp['isEmpty'] != true);
+
+    Future<void> doAdminLeave(VoidCallback afterLeave) async {
+      await _sessionTracking.onLeave();
+      try {
+        if (s.isInSeat) {
+          notifier.leaveSeat();
+          await Future.delayed(const Duration(milliseconds: 150));
+        }
+        await notifier.leaveRoom();
+        if (mounted) setState(() => _showLeaveDialog = false);
+        afterLeave();
+      } catch (_) {
+        if (mounted) setState(() => _showLeaveDialog = false);
+        afterLeave();
+      }
+    }
+
+    if (hostPresent) {
+      setState(() {
+        _leaveDialogConfig = {
+          'title': 'Leave Adda',
+          'message': 'Are you sure you want to leave this Adda?',
+          'confirmText': 'Leave',
+          'cancelText': 'Cancel',
+          'onConfirm': () => doAdminLeave(() { if (mounted) context.pop(); }),
+          'onCancel': () => setState(() => _showLeaveDialog = false),
+        };
+        _showLeaveDialog = true;
+      });
+    } else {
+      final anotherAdminPresent = s.admins.any((uid) => uid != myUid);
+      if (anotherAdminPresent) {
+        setState(() {
+          _leaveDialogConfig = {
+            'title': 'Leave Adda',
+            'message': 'The host is not present. You can leave — another admin will keep the room running.',
+            'confirmText': 'Leave',
+            'cancelText': 'Close Adda',
+            'onConfirm': () => doAdminLeave(() { if (mounted) context.pop(); }),
+            'onCancel': () async {
+              setState(() => _leaveDialogConfig = {..._leaveDialogConfig, 'loading': true});
+              await _executeCloseRoom(isAdminClose: true);
+              if (mounted) {
+                setState(() => _showLeaveDialog = false);
+                context.pop();
+              }
+            },
+          };
+          _showLeaveDialog = true;
+        });
+      } else {
+        setState(() {
+          _leaveDialogConfig = {
+            'title': 'Close Adda',
+            'message': 'You are the only admin and the host is not present. You must close the Adda for everyone before leaving.',
+            'confirmText': 'Close Adda',
+            'cancelText': 'Cancel',
+            'onConfirm': () async {
+              setState(() => _leaveDialogConfig = {..._leaveDialogConfig, 'loading': true});
+              await _executeCloseRoom(isAdminClose: true);
+              if (mounted) {
+                setState(() => _showLeaveDialog = false);
+                context.pop();
+              }
+            },
+            'onCancel': () => setState(() => _showLeaveDialog = false),
+          };
+          _showLeaveDialog = true;
+        });
+      }
+    }
+  }
+
+  void _handleInSeatLeave(AudioRoomState s, dynamic notifier) {
+    Future<void> doLeave(VoidCallback afterLeave) async {
+      await _sessionTracking.onLeave();
+      try {
+        if (s.isInSeat) {
+          notifier.leaveSeat();
+          await Future.delayed(const Duration(milliseconds: 150));
+        }
+        await notifier.leaveRoom();
+        if (mounted) setState(() => _showLeaveDialog = false);
+        afterLeave();
+      } catch (_) {
+        if (mounted) setState(() => _showLeaveDialog = false);
+        afterLeave();
+      }
+    }
+
+    setState(() {
+      _leaveDialogConfig = {
+        'title': 'Leave Adda',
+        'message': 'Are you sure you want to leave this Adda?',
+        'confirmText': 'Leave',
+        'cancelText': 'Cancel',
+        'onConfirm': () => doLeave(() { if (mounted) context.pop(); }),
+        'onCancel': () => setState(() => _showLeaveDialog = false),
+      };
+      _showLeaveDialog = true;
+    });
+  }
+
+  void _handleAudienceLeave(AudioRoomState s, dynamic notifier) {
+    Future<void> doLeave(VoidCallback afterLeave) async {
+      await _sessionTracking.onLeave();
+      try {
+        await notifier.leaveRoom();
+        if (mounted) setState(() => _showLeaveDialog = false);
+        afterLeave();
+      } catch (_) {
+        if (mounted) setState(() => _showLeaveDialog = false);
+        afterLeave();
+      }
+    }
+
+    setState(() {
+      _leaveDialogConfig = {
+        'title': 'Leave Adda',
+        'message': 'Are you sure you want to leave this Adda?',
+        'confirmText': 'Leave',
+        'cancelText': 'Cancel',
+        'onConfirm': () => doLeave(() { if (mounted) context.pop(); }),
+        'onCancel': () => setState(() => _showLeaveDialog = false),
+      };
+      _showLeaveDialog = true;
+    });
+  }
+
+  Future<void> _executeCloseRoom({bool isAdminClose = false}) async {
+    final notifier = ref.read(audioRoomProvider.notifier);
+    try {
+      await _sessionTracking.onLeave();
+      await notifier.endRoom();
+    } catch (_) {
+      await notifier.leaveRoom();
+    }
+  }
+
+  Future<void> _handleDoCloseAdda() async {
+    setState(() => _closeAddaLoading = true);
+    try {
+      await _executeCloseRoom(isAdminClose: false);
+      if (mounted) {
+        setState(() {
+          _showCloseAddaSheet = false;
+          _closeAddaLoading = false;
+        });
+        context.pop();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _showCloseAddaSheet = false;
+          _closeAddaLoading = false;
+        });
+        context.pop();
+      }
+    }
+  }
+
+  Future<void> _handleHandoverToAdmin() async {
+    setState(() => _closeAddaLoading = true);
+    final notifier = ref.read(audioRoomProvider.notifier);
+    final s = ref.read(audioRoomProvider);
+    try {
+      if (s.isInSeat) {
+        notifier.leaveSeat();
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
+      await notifier.leaveRoom();
+      if (mounted) {
+        setState(() {
+          _showCloseAddaSheet = false;
+          _closeAddaLoading = false;
+        });
+        context.pop();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _closeAddaLoading = false);
+        _showSnack('Failed to hand over. Please try again.');
+      }
+    }
+  }
+
+  void _handleLeaveNoAdmin() {
+    setState(() {
+      _leaveDialogConfig = {
+        'title': 'No Admin Available',
+        'message': 'You need to assign at least one participant as an admin before you can leave the Adda. Go to a participant\'s profile and tap "Make Admin".',
+        'confirmText': 'OK',
+        'cancelText': null,
+        'onConfirm': () => setState(() => _showLeaveDialog = false),
+      };
+      _showLeaveDialog = true;
+    });
+  }
+
+  List<Map<String, dynamic>> _getEligibleHandoverAdmins(AudioRoomState s) {
+    if (!s.isHost) return [];
+    return s.admins.where((uid) {
+      return s.speakers.any((sp) =>
+        sp['uid']?.toString() == uid && sp['isEmpty'] != true,
+      );
+    }).map((uid) {
+      final prof = s.participantProfiles[uid];
+      return {
+        'uid': uid,
+        'name': prof?['name'] ?? prof?['username'] ?? uid,
+        'profile_pic': prof?['profile_pic'] ?? prof?['profilePic'],
+      };
+    }).toList();
   }
 
   void _handleSendChat() {
@@ -920,7 +1149,17 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     // compact grid when any sharing is active (but no camera panel — camera replaces grid)
     final compactGrid = isYoutubeActive || isScreenShareActive;
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    final eligibleAdmins = _getEligibleHandoverAdmins(roomState);
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        if (roomState.isLoading || _isRoomEnded || roomState.error != null) return;
+        if (_showLeaveDialog || _showBackPressDialog) return;
+        setState(() => _showBackPressDialog = true);
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
         statusBarIconBrightness: Brightness.light,
@@ -1112,8 +1351,63 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
               ),
             ),
           ),
+
+        // ── Back press dialog (Minimize or Leave) ─────────────────────
+        if (_showBackPressDialog)
+          _LeaveAlertDialog(
+            title: 'Adda is Active',
+            message: 'Would you like to minimize this Adda or leave?',
+            confirmText: roomState.isHost ? 'Close Adda' : 'Leave Adda',
+            confirmColor: const Color(0xFFEF4444),
+            cancelText: 'Cancel',
+            thirdActionText: 'Minimize',
+            thirdActionColor: const Color(0xFF3B82F6),
+            onConfirm: () {
+              setState(() => _showBackPressDialog = false);
+              _handleLeave();
+            },
+            onThirdAction: () {
+              setState(() => _showBackPressDialog = false);
+              ref.read(audioRoomProvider.notifier).minimizeRoom();
+              context.pop();
+            },
+            onCancel: () => setState(() => _showBackPressDialog = false),
+          ),
+
+        // ── Leave dialog (admin / audience scenarios) ─────────────────
+        if (_showLeaveDialog)
+          _LeaveAlertDialog(
+            title: (_leaveDialogConfig['title'] as String?) ?? 'Leave Adda',
+            message: (_leaveDialogConfig['message'] as String?) ?? '',
+            confirmText: (_leaveDialogConfig['confirmText'] as String?) ?? 'Leave',
+            confirmColor: roomState.isHost ? const Color(0xFFEF4444) : const Color(0xFFF59E0B),
+            cancelText: (_leaveDialogConfig['cancelText'] as String?) ?? 'Cancel',
+            showCancel: true,
+            loading: (_leaveDialogConfig['loading'] as bool?) ?? false,
+            onConfirm: () => (_leaveDialogConfig['onConfirm'] as VoidCallback?)?.call(),
+            onCancel: () {
+              final onCancel = _leaveDialogConfig['onCancel'] as VoidCallback?;
+              if (onCancel != null) {
+                onCancel();
+              } else {
+                setState(() => _showLeaveDialog = false);
+              }
+            },
+          ),
+
+        // ── Close Adda sheet (host only) ──────────────────────────────
+        if (roomState.isHost)
+          _CloseAddaBottomSheet(
+            visible: _showCloseAddaSheet,
+            loading: _closeAddaLoading,
+            hasEligibleAdmins: eligibleAdmins.isNotEmpty,
+            onClose: () { if (!_closeAddaLoading) setState(() => _showCloseAddaSheet = false); },
+            onLeaveAdda: eligibleAdmins.isNotEmpty ? _handleHandoverToAdmin : _handleLeaveNoAdmin,
+            onCloseAdda: _handleDoCloseAdda,
+          ),
       ],
         ),
+      ),
       ),
     );
   }
@@ -2741,6 +3035,285 @@ class _SheetHandle extends StatelessWidget {
       width: 40,
       height: 4,
       decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.22), borderRadius: BorderRadius.circular(100)),
+    );
+  }
+}
+
+// ── Leave Alert Dialog ─────────────────────────────────────────────────────
+class _LeaveAlertDialog extends StatelessWidget {
+  final String title;
+  final String message;
+  final String confirmText;
+  final Color confirmColor;
+  final String cancelText;
+  final bool showCancel;
+  final bool loading;
+  final String? thirdActionText;
+  final Color? thirdActionColor;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+  final VoidCallback? onThirdAction;
+
+  const _LeaveAlertDialog({
+    required this.title,
+    required this.message,
+    required this.confirmText,
+    required this.confirmColor,
+    this.cancelText = 'Cancel',
+    this.showCancel = true,
+    this.loading = false,
+    this.thirdActionText,
+    this.thirdActionColor,
+    required this.onConfirm,
+    required this.onCancel,
+    this.onThirdAction,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: GestureDetector(
+        onTap: !loading ? onCancel : null,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.6),
+          alignment: Alignment.center,
+          child: GestureDetector(
+            onTap: () {}, // absorb taps
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20),
+              decoration: BoxDecoration(
+                color: const Color(0xCC1C1C1E),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 20, offset: Offset(0, 8))],
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: const TextStyle(color: Color(0xFFEBEBF5), fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  Text(message, style: const TextStyle(color: Color(0xAAEBEBF5), fontSize: 14, fontFamily: 'Outfit', height: 1.5)),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      // Cancel — far left
+                      if (showCancel)
+                        TextButton(
+                          onPressed: !loading ? onCancel : null,
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                          child: Text(cancelText, style: TextStyle(color: const Color(0xFF3B82F6).withValues(alpha: loading ? 0.5 : 1.0), fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 13)),
+                        ),
+                      const Spacer(),
+                      // Third action (optional)
+                      if (thirdActionText != null && onThirdAction != null)
+                        TextButton(
+                          onPressed: !loading ? onThirdAction : null,
+                          style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                          child: Text(thirdActionText!, style: TextStyle(color: thirdActionColor ?? const Color(0xFF7B61FF), fontFamily: 'Outfit', fontWeight: FontWeight.w600, fontSize: 13)),
+                        ),
+                      // Confirm — far right
+                      TextButton(
+                        onPressed: !loading ? onConfirm : null,
+                        style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
+                        child: loading
+                            ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: confirmColor, strokeWidth: 2))
+                            : Text(confirmText, style: TextStyle(color: confirmColor, fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 13)),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Close Adda Bottom Sheet (host only) ────────────────────────────────────
+class _CloseAddaBottomSheet extends StatelessWidget {
+  final bool visible;
+  final bool loading;
+  final bool hasEligibleAdmins;
+  final VoidCallback onClose;
+  final VoidCallback onLeaveAdda;
+  final VoidCallback onCloseAdda;
+
+  const _CloseAddaBottomSheet({
+    required this.visible,
+    required this.loading,
+    required this.hasEligibleAdmins,
+    required this.onClose,
+    required this.onLeaveAdda,
+    required this.onCloseAdda,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!visible) return const SizedBox.shrink();
+
+    final bottomPad = MediaQuery.of(context).padding.bottom;
+
+    return Material(
+      type: MaterialType.transparency,
+      child: GestureDetector(
+        onTap: !loading ? onClose : null,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          color: Colors.black.withValues(alpha: 0.55),
+          alignment: Alignment.bottomCenter,
+          child: GestureDetector(
+            onTap: () {}, // absorb taps
+            child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1a1d2e),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                border: Border(
+                  top: BorderSide(color: const Color(0xFF0751DF).withValues(alpha: 0.25)),
+                  left: BorderSide(color: const Color(0xFF0751DF).withValues(alpha: 0.25)),
+                  right: BorderSide(color: const Color(0xFF0751DF).withValues(alpha: 0.25)),
+                ),
+              ),
+              padding: EdgeInsets.fromLTRB(20, 12, 20, math.max(bottomPad, 20.0)),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(100)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Header
+                  const Text('Leave Adda', style: TextStyle(color: Color(0xFFEBEBF5), fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600, letterSpacing: 0.3)),
+                  const SizedBox(height: 4),
+                  Text('Choose what happens when you leave', style: TextStyle(color: const Color(0xFFC8D2FF).withValues(alpha: 0.6), fontSize: 13, fontFamily: 'Outfit')),
+                  const SizedBox(height: 18),
+                  Divider(color: const Color(0xFF0751DF).withValues(alpha: 0.15), height: 1),
+                  const SizedBox(height: 16),
+
+                  if (loading) ...[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const CircularProgressIndicator(color: Color(0xFF0751DF), strokeWidth: 2),
+                          const SizedBox(width: 12),
+                          Text('Please wait…', style: TextStyle(color: const Color(0xFFC8D2FF).withValues(alpha: 0.7), fontSize: 14, fontFamily: 'Outfit')),
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    // Leave Adda button
+                    _CloseSheetOption(
+                      icon: Icons.logout_rounded,
+                      iconColor: const Color(0xFF0751DF),
+                      iconBgColor: const Color(0xFF0751DF).withValues(alpha: 0.12),
+                      iconBorderColor: const Color(0xFF0751DF).withValues(alpha: 0.25),
+                      bgColor: const Color(0xFF0751DF).withValues(alpha: 0.07),
+                      borderColor: const Color(0xFF0751DF).withValues(alpha: 0.2),
+                      title: 'Leave Adda',
+                      titleColor: const Color(0xFF7aa3f5),
+                      subtitle: hasEligibleAdmins ? 'Admins will keep the room running' : 'Make someone an admin first',
+                      subtitleColor: const Color(0xFF7aa3f5).withValues(alpha: 0.6),
+                      chevronColor: const Color(0xFF0751DF).withValues(alpha: 0.5),
+                      onTap: onLeaveAdda,
+                    ),
+                    Divider(color: const Color(0xFF0751DF).withValues(alpha: 0.15), height: 28),
+                    // End Adda for Everyone button
+                    _CloseSheetOption(
+                      icon: Icons.cancel_rounded,
+                      iconColor: const Color(0xFFff4444),
+                      iconBgColor: const Color(0xFFff4444).withValues(alpha: 0.12),
+                      iconBorderColor: const Color(0xFFff4444).withValues(alpha: 0.25),
+                      bgColor: const Color(0xFFff4444).withValues(alpha: 0.07),
+                      borderColor: const Color(0xFFff4444).withValues(alpha: 0.2),
+                      title: 'End Adda for Everyone',
+                      titleColor: const Color(0xFFff6b6b),
+                      subtitle: 'All participants will be removed',
+                      subtitleColor: const Color(0xFFff6b6b).withValues(alpha: 0.6),
+                      chevronColor: const Color(0xFFff4444).withValues(alpha: 0.5),
+                      onTap: onCloseAdda,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CloseSheetOption extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final Color iconBgColor;
+  final Color iconBorderColor;
+  final Color bgColor;
+  final Color borderColor;
+  final String title;
+  final Color titleColor;
+  final String subtitle;
+  final Color subtitleColor;
+  final Color chevronColor;
+  final VoidCallback onTap;
+
+  const _CloseSheetOption({
+    required this.icon,
+    required this.iconColor,
+    required this.iconBgColor,
+    required this.iconBorderColor,
+    required this.bgColor,
+    required this.borderColor,
+    required this.title,
+    required this.titleColor,
+    required this.subtitle,
+    required this.subtitleColor,
+    required this.chevronColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(color: iconBgColor, shape: BoxShape.circle, border: Border.all(color: iconBorderColor)),
+              child: Icon(icon, color: iconColor, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title, style: TextStyle(color: titleColor, fontSize: 14, fontFamily: 'Outfit', fontWeight: FontWeight.w500)),
+                  const SizedBox(height: 2),
+                  Text(subtitle, style: TextStyle(color: subtitleColor, fontSize: 12, fontFamily: 'Outfit')),
+                ],
+              ),
+            ),
+            Icon(Icons.chevron_right_rounded, color: chevronColor, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }

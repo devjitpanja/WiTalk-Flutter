@@ -671,11 +671,14 @@ class _MiniScreenState extends ConsumerState<MiniScreen> with TickerProviderStat
 class _MiniSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return Shimmer.fromColors(
-      baseColor: const Color(0xFF1a1f2e),
-      highlightColor: const Color(0xFF242938),
+      baseColor: baseColor,
+      highlightColor: highlightColor,
       child: Container(
-        color: const Color(0xFF1a1f2e),
+        color: baseColor,
         child: Stack(children: [
           // User info bottom-left
           Positioned(
