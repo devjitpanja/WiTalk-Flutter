@@ -64,7 +64,7 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
     final async = ref.watch(_activitiesProvider(_cityFilter));
 
     return async.when(
-      loading: () => _buildSkeleton(c),
+      loading: () => _buildSkeleton(context, c),
       error: (_, __) => Center(
         child: Text('Failed to load communities',
             style: TextStyle(color: c.textTertiary, fontFamily: 'Outfit')),
@@ -137,13 +137,16 @@ class _ActivitiesScreenState extends ConsumerState<ActivitiesScreen> {
     );
   }
 
-  Widget _buildSkeleton(ThemeColors c) {
+  Widget _buildSkeleton(BuildContext context, ThemeColors c) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return ListView.builder(
       physics: const NeverScrollableScrollPhysics(),
       itemCount: 5,
       itemBuilder: (_, __) => Shimmer.fromColors(
-        baseColor: c.cardBackground,
-        highlightColor: c.border,
+        baseColor: baseColor,
+        highlightColor: highlightColor,
         child: Container(
           margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           padding: const EdgeInsets.all(16),

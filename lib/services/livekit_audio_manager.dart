@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart' as rtc;
@@ -458,7 +459,7 @@ class LiveKitAudioManager {
   Future<void> setSpeakerEnabled(bool enabled) async {
     audioOutputMode = enabled ? 'speaker' : 'earpiece';
     try {
-      await Hardware.instance.setSpeakerphoneOn(enabled);
+      await _applyAudioRoute(speakerOn: enabled);
     } catch (e) {
       if (kDebugMode) {
         print('[LiveKitAudioManager] setSpeakerEnabled failed: $e');
@@ -468,6 +469,46 @@ class LiveKitAudioManager {
       'enabled': enabled,
       'mode': audioOutputMode,
     });
+  }
+
+  // ── _applyAudioRoute ───────────────────────────────────────────────────────
+  Future<void> _applyAudioRoute({required bool speakerOn}) async {
+    print('[AUDIO_ROUTE] ▶ _applyAudioRoute speakerOn=$speakerOn');
+    print('[AUDIO_ROUTE]   Platform: isIOS=${Platform.isIOS} isAndroid=${Platform.isAndroid}');
+    print('[AUDIO_ROUTE]   Hardware.canSwitchSpeakerphone=${Hardware.instance.canSwitchSpeakerphone}');
+    print('[AUDIO_ROUTE]   Hardware.speakerOn=${Hardware.instance.speakerOn}');
+    print('[AUDIO_ROUTE]   Hardware.preferSpeakerOutput=${Hardware.instance.preferSpeakerOutput}');
+    print('[AUDIO_ROUTE]   isConnected=$isConnected isPublishing=$isPublishing');
+
+    // Log available audio output devices (from AudioSwitch on Android)
+    try {
+      final devices = await Hardware.instance.enumerateDevices();
+      final outputs = devices.where((d) => d.kind == 'audiooutput').toList();
+      print('[AUDIO_ROUTE]   Available audiooutput devices (${outputs.length}): ${outputs.map((d) => "${d.label}[${d.deviceId}]").join(", ")}');
+      if (outputs.isEmpty) {
+        print('[AUDIO_ROUTE]   ⚠ No audio output devices listed — AudioSwitch may not be started yet');
+      }
+    } catch (e) {
+      print('[AUDIO_ROUTE]   enumerateDevices error: $e');
+    }
+
+    if (Platform.isIOS) {
+      print('[AUDIO_ROUTE]   iOS: calling setPreferSpeakerOutput($speakerOn)...');
+      await Hardware.instance.setPreferSpeakerOutput(speakerOn);
+      print('[AUDIO_ROUTE]   iOS: setPreferSpeakerOutput done, preferSpeakerOutput=${Hardware.instance.preferSpeakerOutput}');
+    }
+
+    print('[AUDIO_ROUTE]   calling rtc.Helper.setSpeakerphoneOn($speakerOn)...');
+    try {
+      await rtc.Helper.setSpeakerphoneOn(speakerOn);
+      print('[AUDIO_ROUTE]   rtc.Helper.setSpeakerphoneOn SUCCESS');
+    } catch (e, st) {
+      print('[AUDIO_ROUTE]   rtc.Helper.setSpeakerphoneOn ERROR: $e\n$st');
+      rethrow;
+    }
+
+    print('[AUDIO_ROUTE]   after: Hardware.speakerOn=${Hardware.instance.speakerOn}');
+    print('[AUDIO_ROUTE] ✓ _applyAudioRoute complete');
   }
 
   // ── leaveRoom ─────────────────────────────────────────────────────────────
@@ -736,20 +777,14 @@ class LiveKitAudioManager {
     try {
       switch (mode) {
         case 'speaker':
-          // Both APIs for reliability: Hardware wraps rtc.Helper internally,
-          // but calling both ensures the native layer picks it up.
-          await Hardware.instance.setSpeakerphoneOn(true);
-          await rtc.Helper.setSpeakerphoneOn(true);
+          await _applyAudioRoute(speakerOn: true);
           break;
         case 'earpiece':
-          await Hardware.instance.setSpeakerphoneOn(false);
-          await rtc.Helper.setSpeakerphoneOn(false);
+          await _applyAudioRoute(speakerOn: false);
           break;
         case 'bluetooth':
-          // Bluetooth routing is handled by the OS — set speaker off
-          // and let the BT device take over.
-          await Hardware.instance.setSpeakerphoneOn(false);
-          await rtc.Helper.setSpeakerphoneOn(false);
+          // Turning speaker off lets the OS route to the active BT device.
+          await _applyAudioRoute(speakerOn: false);
           break;
       }
     } catch (e) {

@@ -21,6 +21,7 @@ import '../../widgets/chat/voice_recorder.dart';
 import '../../widgets/chat/full_screen_image_viewer.dart';
 import '../../widgets/common/live_group_avatar.dart';
 import '../../analytics/analytics_service.dart';
+import '../../utils/sound_effect_service.dart';
 
 // Module-level group details cache — avoids "Updating..." flash on re-open
 final _groupDetailsCache = <String, Map<String, dynamic>>{};
@@ -473,6 +474,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               : null,
         );
 
+    unawaited(soundEffectService.playMessageSentSound());
     AnalyticsService.logCommunityMessageSent(
       communityId: widget.groupId,
       messageType: 'text',
@@ -516,6 +518,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           mediaUrl: gifUrl,
           mediaData: mediaData,
         );
+    unawaited(soundEffectService.playMessageSentSound());
     _scrollToBottom();
   }
 
@@ -570,6 +573,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             mediaUrl: url,
             mediaData: {'duration': duration},
           );
+      unawaited(soundEffectService.playMessageSentSound());
       AnalyticsService.logCommunityMessageSent(
         communityId: widget.groupId,
         messageType: 'voice',
@@ -630,6 +634,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               'height': decodedImage.height,
             },
           );
+      unawaited(soundEffectService.playMessageSentSound());
       AnalyticsService.logCommunityMessageSent(
         communityId: widget.groupId,
         messageType: 'image',

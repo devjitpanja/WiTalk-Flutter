@@ -750,23 +750,26 @@ class _NearbySkeletonList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 24),
       children: [
         Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
+          baseColor: baseColor,
+          highlightColor: highlightColor,
           child: _skeletonSection(context, 3),
         ),
         Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
+          baseColor: baseColor,
+          highlightColor: highlightColor,
           child: _skeletonSection(context, 3),
         ),
         Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
+          baseColor: baseColor,
+          highlightColor: highlightColor,
           child: _skeletonSection(context, 2),
         ),
       ],

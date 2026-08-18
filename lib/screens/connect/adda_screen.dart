@@ -535,7 +535,7 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
 
   Widget _buildLiveTab(AddaState state, ThemeColors c, bool canCreateAdda, bool isDark) {
     if (state.isLoadingLive && state.groupedItems.isEmpty) {
-      return _buildSkeleton(c);
+      return _buildSkeleton(c, isDark);
     }
 
     return CustomScrollView(
@@ -587,7 +587,7 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
 
   Widget _buildUpcomingTab(AddaState state, ThemeColors c, bool isDark) {
     if (state.isLoadingUpcoming && state.upcomingRooms.isEmpty) {
-      return _buildSkeleton(c);
+      return _buildSkeleton(c, isDark);
     }
 
     final currentUid = ref.read(authProvider).uid ?? '';
@@ -634,19 +634,23 @@ class _AddaScreenState extends ConsumerState<AddaScreen> with TickerProviderStat
     );
   }
 
-  Widget _buildSkeleton(ThemeColors c) => ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        itemCount: 4,
-        itemBuilder: (ctx, idx) => Shimmer.fromColors(
-          baseColor: c.surface,
-          highlightColor: c.border,
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 20),
-            height: 140,
-            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(16)),
-          ),
+  Widget _buildSkeleton(ThemeColors c, bool isDark) {
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      itemCount: 4,
+      itemBuilder: (ctx, idx) => Shimmer.fromColors(
+        baseColor: baseColor,
+        highlightColor: highlightColor,
+        child: Container(
+          margin: const EdgeInsets.only(bottom: 20),
+          height: 140,
+          decoration: BoxDecoration(color: baseColor, borderRadius: BorderRadius.circular(16)),
         ),
-      );
+      ),
+    );
+  }
 
   Widget _buildEmptyLive(ThemeColors c, bool canCreateAdda, bool isDark) {
     return Center(

@@ -13,15 +13,15 @@ class SoundEffectService {
   void setEnabled(bool enabled) => _isEnabled = enabled;
 
   Future<bool> playMessageSentSound() async {
-    return _play('sounds/message_sent.mp3');
+    return _play('audio/message_sent_tone.mp3');
   }
 
   Future<bool> playMessageReceivedSound() async {
-    return _play('sounds/message_received.mp3');
+    return _play('audio/message_sent_tone.mp3');
   }
 
   Future<bool> playSound(String soundName) async {
-    return _play('sounds/$soundName.mp3');
+    return _play('audio/$soundName.mp3');
   }
 
   Future<bool> _play(String assetPath) async {

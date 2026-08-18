@@ -660,6 +660,9 @@ class _TopCommunitiesSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return SizedBox(
       height: 128,
       child: ListView.separated(
@@ -669,8 +672,8 @@ class _TopCommunitiesSkeleton extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemCount: 5,
         itemBuilder: (_, __) => Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
+          baseColor: baseColor,
+          highlightColor: highlightColor,
           child: SizedBox(
             width: 82,
             child: Column(
@@ -709,6 +712,9 @@ class _WideCardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return SizedBox(
       height: 106,
       child: ListView.separated(
@@ -718,8 +724,8 @@ class _WideCardSkeleton extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemCount: count,
         itemBuilder: (_, __) => Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
+          baseColor: baseColor,
+          highlightColor: highlightColor,
           child: Container(
             width: itemWidth,
             padding: const EdgeInsets.all(10),
@@ -777,6 +783,9 @@ class _PeopleSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
     return SizedBox(
       height: 96,
       child: ListView.separated(
@@ -786,8 +795,8 @@ class _PeopleSkeleton extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemCount: 5,
         itemBuilder: (_, __) => Shimmer.fromColors(
-          baseColor: c.cardBackground,
-          highlightColor: c.border,
+          baseColor: baseColor,
+          highlightColor: highlightColor,
           child: SizedBox(
             width: 72,
             child: Column(

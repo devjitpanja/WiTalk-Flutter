@@ -24,6 +24,7 @@ import '../../widgets/chat/voice_recorder.dart';
 import '../../widgets/chat/quick_emoji_picker.dart';
 import '../../widgets/common/verification_badge.dart';
 import '../../widgets/chat/full_screen_image_viewer.dart';
+import '../../utils/sound_effect_service.dart';
 
 // ── Module-level cache — persists across mounts like RN conversationSyncTimestamps
 final _conversationSyncTimestamps = <String, int>{};
@@ -953,6 +954,7 @@ class _ChatConversationScreenState
           mediaUrl: gifUrl,
           mediaData: mediaData,
         );
+    unawaited(soundEffectService.playMessageSentSound());
     _scrollToBottom();
   }
 
@@ -1079,6 +1081,7 @@ class _ChatConversationScreenState
               : null,
         );
 
+    unawaited(soundEffectService.playMessageSentSound());
     _scrollToBottom();
     // No need to manually increment _sentMessageCount — liveSentCount in build()
     // recomputes automatically from the provider whenever a message is added.
@@ -1145,6 +1148,7 @@ class _ChatConversationScreenState
               'height': decodedImage.height,
             },
           );
+      unawaited(soundEffectService.playMessageSentSound());
       _scrollToBottom();
     } catch (_) {
       if (mounted) {
@@ -1217,6 +1221,7 @@ class _ChatConversationScreenState
             mediaUrl: url,
             mediaData: {'duration': duration},
           );
+      unawaited(soundEffectService.playMessageSentSound());
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
