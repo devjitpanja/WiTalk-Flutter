@@ -2435,18 +2435,16 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     _updateBgService();
   }
 
-  void toggleHandRaise() {
+  void toggleHandRaise({int seatIndex = -1}) {
     if (state.isInSeat) return; // Already on stage
     final nextState = !state.isHandRaised;
     state = state.copyWith(isHandRaised: nextState);
     if (nextState) {
       _seatManager.setPendingOwnRequest();
-      // Server determines seat assignment; pass seatIndex=-1 to let it pick
-      socketService.emitAudioRoom('seat_request', {'seatIndex': -1});
+      socketService.emitAudioRoom('seat_request', {'seatIndex': seatIndex});
     } else {
       _seatManager.clearPendingOwnRequest();
-      // No server cancel event — server infers cancellation from disconnect/re-join
-      // Just clear local state; the host will see the request disappear on next seat_state
+      socketService.emitAudioRoom('seat_request_cancel', {});
     }
   }
 
@@ -3026,11 +3024,14 @@ class AudioRoomNotifier extends StateNotifier<AudioRoomState> {
     final effectiveMode = (mode == 'bluetooth' && !liveKitAudioManager.isBluetoothAvailable)
         ? 'speaker'
         : mode;
+    final previousMode = state.audioOutputMode;
     state = state.copyWith(audioOutputMode: effectiveMode);
     try {
       await liveKitAudioManager.setAudioOutputMode(effectiveMode);
     } catch (e) {
       if (kDebugMode) print('[AudioRoomProvider] setAudioOutputMode error: $e');
+      // Revert state if routing failed
+      if (mounted) state = state.copyWith(audioOutputMode: previousMode);
     }
   }
 

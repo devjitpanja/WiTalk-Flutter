@@ -736,19 +736,25 @@ class LiveKitAudioManager {
     try {
       switch (mode) {
         case 'speaker':
+          // Both APIs for reliability: Hardware wraps rtc.Helper internally,
+          // but calling both ensures the native layer picks it up.
           await Hardware.instance.setSpeakerphoneOn(true);
+          await rtc.Helper.setSpeakerphoneOn(true);
           break;
         case 'earpiece':
           await Hardware.instance.setSpeakerphoneOn(false);
+          await rtc.Helper.setSpeakerphoneOn(false);
           break;
         case 'bluetooth':
-          // Bluetooth routing is handled by the OS — we just set speaker off
+          // Bluetooth routing is handled by the OS — set speaker off
           // and let the BT device take over.
           await Hardware.instance.setSpeakerphoneOn(false);
+          await rtc.Helper.setSpeakerphoneOn(false);
           break;
       }
     } catch (e) {
       if (kDebugMode) print('[LiveKitAudioManager] setAudioOutputMode error: $e');
+      rethrow;
     }
     _emit(LiveKitAudioEvents.speakerStateChanged, {
       'enabled': mode == 'speaker',

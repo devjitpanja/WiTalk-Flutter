@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
+import 'package:audioplayers/audioplayers.dart' hide PlayerState;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +25,7 @@ import '../../widgets/audio_room/youtube_picker_bottom_sheet.dart';
 import '../../widgets/audio_room/chat_gpt_bottom_sheet.dart';
 import '../../widgets/audio_room/google_ai_bottom_sheet.dart';
 import '../../widgets/audio_room/ask_ai_bottom_sheet.dart';
+import '../../widgets/audio_room/recording_info_bottom_sheet.dart';
 import '../../cache/witalk_image_cache.dart';
 import '../../analytics/analytics_service.dart';
 import '../../services/adda_session_tracking_service.dart';
@@ -50,7 +54,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   final _chatFocus = FocusNode();
   final _scrollCtrl = ScrollController();
 
-  final List<_FloatingReaction> _reactions = [];
+  final List<_ReactionData> _reactionOverlays = [];
   late AnimationController _pulseCtrl;
   bool _isRoomEnded = false;
 
@@ -67,6 +71,10 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
   // Admin feature flags (loaded from settings in RN; default true in Flutter)
   bool _chatgptFeatureEnabled = true;
   bool _googleAiFeatureEnabled = true;
+
+  // Recording announcement guards
+  bool _roomLoaded = false;
+  bool _hasPlayedRecAnnouncement = false;
 
   // ── YouTube player ──────────────────────────────────────────────────────────
   YoutubePlayerController? _ytController;
@@ -231,6 +239,36 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     }
   }
 
+  // ── Recording announcement ──────────────────────────────────────────────────
+
+  Future<void> _maybePlayRecAnnouncement(AudioRoomState s) async {
+    if (!_roomLoaded || !s.cloudRecordingActive || _hasPlayedRecAnnouncement) return;
+    if (!mounted) return;
+    _hasPlayedRecAnnouncement = true;
+
+    const key = 'rec_announcement_last_played';
+    const fiveHoursMs = 5 * 3600 * 1000;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final last = prefs.getInt(key) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - last < fiveHoursMs) return;
+      await prefs.setInt(key, now);
+    } catch (_) {
+      // Storage failure — proceed with announcement anyway
+    }
+
+    if (!mounted) return;
+    if (s.isHost) _showSnack('This adda is being recorded');
+    if (Platform.isAndroid) {
+      try {
+        final player = AudioPlayer();
+        await player.play(AssetSource('audio/adda.mp3'));
+        player.onPlayerComplete.first.then((_) => player.dispose());
+      } catch (_) {}
+    }
+  }
+
   // ── Business logic ──────────────────────────────────────────────────────────
 
   void _handleEmptySeatPress(int seatIndex) {
@@ -255,7 +293,7 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
       if (s.isHandRaised) {
         _showSnack('You already have a pending seat request');
       } else {
-        notifier.toggleHandRaise();
+        notifier.toggleHandRaise(seatIndex: seatIndex);
         _showSnack('Seat request sent to the host');
       }
       return;
@@ -363,20 +401,50 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
     );
   }
 
-  void _triggerReaction(String emoji) {
-    final rnd = math.Random();
-    final id = DateTime.now().millisecondsSinceEpoch.toString();
-    setState(() {
-      _reactions.add(_FloatingReaction(
-        id: id,
-        emoji: emoji,
-        x: 40 + rnd.nextDouble() * 220,
-        y: 240 + rnd.nextDouble() * 140,
-      ));
-    });
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _reactions.removeWhere((r) => r.id == id));
-    });
+  int _getSeatIndexForUser(String uid, AudioRoomState state) {
+    for (final sp in state.speakers) {
+      if (sp['uid']?.toString() == uid && sp['isEmpty'] != true) {
+        final si = sp['seatIndex'];
+        return si is int ? si : int.tryParse(si?.toString() ?? '') ?? -1;
+      }
+    }
+    return -1;
+  }
+
+  Offset? _computeSeatPosition(int seatIndex, {bool compact = false}) {
+    if (seatIndex < 0) return null;
+    final screenWidth = MediaQuery.of(context).size.width;
+    const seatsPerRow = 4;
+    const edgePadding = 8.0;
+    final seatWidth = (screenWidth - edgePadding * 2) / seatsPerRow;
+    final double avatarSize;
+    final double seatHeight;
+    if (compact) {
+      avatarSize = (seatWidth * 0.42).clamp(28.0, 44.0);
+      seatHeight = avatarSize * 1.3;
+    } else {
+      avatarSize = (seatWidth * 0.60).clamp(40.0, 62.0);
+      final nameFontSize = (avatarSize * 0.20).clamp(9.0, 11.0);
+      seatHeight = avatarSize * 1.5 + 1 + nameFontSize + 6;
+    }
+    const runSpacing = 2.0;
+    const gridVertPad = 2.0;
+    final col = seatIndex % seatsPerRow;
+    final row = seatIndex ~/ seatsPerRow;
+    final cx = edgePadding + col * seatWidth + seatWidth / 2;
+    final cy = gridVertPad + row * (seatHeight + runSpacing) + avatarSize / 2;
+    return Offset(cx, cy);
+  }
+
+  void _addReactionForSeat(String emoji, int seatIndex, {bool compact = false}) {
+    final pos = _computeSeatPosition(seatIndex, compact: compact);
+    if (pos == null) return;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    if (mounted) {
+      setState(() {
+        _reactionOverlays.add(_ReactionData(id: id, emoji: emoji, cx: pos.dx, cy: pos.dy));
+      });
+    }
   }
 
   void _showSnack(String msg) {
@@ -708,6 +776,34 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
         }
       }
 
+      // ── Recording announcement ─────────────────────────────────────────────
+      // Mark room as loaded when seats are first initialized (room fully joined)
+      if (!_roomLoaded && next.seatsInitialized) {
+        _roomLoaded = true;
+        _maybePlayRecAnnouncement(next);
+      }
+      // Play announcement when recording starts after room is already loaded
+      if (next.cloudRecordingActive && !(prev?.cloudRecordingActive ?? false)) {
+        _maybePlayRecAnnouncement(next);
+      }
+
+      // ── Remote reactions pinned to avatars ────────────────────────────────
+      if (next.activeReactions.length > (prev?.activeReactions.length ?? 0)) {
+        final prevIds = prev?.activeReactions.map((r) => r['id']).toSet() ?? {};
+        for (final r in next.activeReactions) {
+          if (!prevIds.contains(r['id'])) {
+            final uid = r['uid']?.toString() ?? '';
+            final seatIdx = _getSeatIndexForUser(uid, next);
+            if (seatIdx >= 0) {
+              final isCompact = next.youtubeVideoId != null || false;
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _addReactionForSeat(r['emoji']?.toString() ?? '❤️', seatIdx, compact: isCompact);
+              });
+            }
+          }
+        }
+      }
+
       // ── Analytics session tracking ─────────────────────────────────────────
       // Start session when room first becomes connected
       if (next.isConnected && !(prev?.isConnected ?? false) && !_sessionStarted) {
@@ -844,26 +940,43 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                 _buildCameraShareSection(roomState, seatsList, myUid)
               else ...[
                 // ── Stage + rules (normal grid) ──────────────
-                GridSeatingLayout(
-                  seats: seatsList,
-                  maxSeats: roomState.maxSeats,
-                  hostUid: roomState.hostUid,
-                  myUid: myUid,
-                  activeSpeakerUid: roomState.activeSpeakerUid,
-                  stageRequestEnabled: roomState.stageRequestEnabled,
-                  isHost: roomState.isHost,
-                  seatsInitialized: roomState.seatsInitialized,
-                  audience: roomState.audience,
-                  compact: compactGrid,
-                  onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
-                  onEmptySeatTap: _handleEmptySeatPress,
-                  onEmptySeatLongPress: (idx) {
-                    if (roomState.isHost) {
-                      ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
-                    }
-                  },
-                  onShowAudienceList: _showAudienceList,
-                  onAudienceMemberTap: (m) => _showParticipantSheet(m),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    GridSeatingLayout(
+                      seats: seatsList,
+                      maxSeats: roomState.maxSeats,
+                      hostUid: roomState.hostUid,
+                      myUid: myUid,
+                      activeSpeakerUid: roomState.activeSpeakerUid,
+                      stageRequestEnabled: roomState.stageRequestEnabled,
+                      isHost: roomState.isHost,
+                      seatsInitialized: roomState.seatsInitialized,
+                      audience: roomState.audience,
+                      compact: compactGrid,
+                      onSpeakerTap: (speaker) => _showParticipantSheet(speaker),
+                      onEmptySeatTap: _handleEmptySeatPress,
+                      onEmptySeatLongPress: (idx) {
+                        if (roomState.isHost) {
+                          ref.read(audioRoomProvider.notifier).toggleSeatLock(idx);
+                        }
+                      },
+                      onShowAudienceList: _showAudienceList,
+                      onAudienceMemberTap: (m) => _showParticipantSheet(m),
+                    ),
+                    // ── Reaction overlays pinned to avatars ──────
+                    ..._reactionOverlays.map((r) => IgnorePointer(
+                      child: _ReactionOverlay(
+                        key: ValueKey(r.id),
+                        emoji: r.emoji,
+                        cx: r.cx,
+                        cy: r.cy,
+                        onDone: () {
+                          if (mounted) setState(() => _reactionOverlays.removeWhere((x) => x.id == r.id));
+                        },
+                      ),
+                    )),
+                  ],
                 ),
               ],
 
@@ -903,8 +1016,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       bottom: 6,
                       child: _buildEmojiStrip(),
                     ),
-
-                    ..._reactions.map((r) => _buildFloatingReaction(r)),
                   ],
                 ),
               ),
@@ -1489,7 +1600,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
                       bgColor: const Color(0x22DC3C1E),
                       borderColor: const Color(0x55DC501E),
                     ),
-                    if (s.cloudRecordingActive) _RecBadge(),
+                    if (s.cloudRecordingActive)
+                      GestureDetector(
+                        onTap: () => RecordingInfoBottomSheet.show(context),
+                        child: _RecBadge(),
+                      ),
                     if (s.averageRating != null && s.averageRating! > 0)
                       _RatingBadge(rating: s.averageRating!),
                   ],
@@ -1601,7 +1716,11 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
           children: emojis.map((emoji) {
             return GestureDetector(
               onTap: () {
-                _triggerReaction(emoji);
+                final s = ref.read(audioRoomProvider);
+                final myUid = ref.read(authProvider).uid ?? '';
+                final seatIdx = _getSeatIndexForUser(myUid, s);
+                final isCompact = s.youtubeVideoId != null || false;
+                _addReactionForSeat(emoji, seatIdx, compact: isCompact);
                 ref.read(audioRoomProvider.notifier).sendReaction(emoji);
               },
               child: Padding(
@@ -1824,29 +1943,6 @@ class _LiveAudioRoomScreenState extends ConsumerState<LiveAudioRoomScreen>
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  // ── Floating reaction ──────────────────────────────────────────────────────
-  Widget _buildFloatingReaction(_FloatingReaction r) {
-    return Positioned(
-      left: r.x,
-      top: r.y,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 0, end: 1),
-        duration: const Duration(seconds: 3),
-        builder: (_, t, child) => Opacity(
-          opacity: (1 - t).clamp(0.0, 1.0),
-          child: Transform.translate(
-            offset: Offset(0, -80 * t),
-            child: Transform.scale(
-              scale: 0.8 + 0.4 * (1 - t),
-              child: child,
-            ),
-          ),
-        ),
-        child: Text(r.emoji, style: const TextStyle(fontSize: 26)),
       ),
     );
   }
@@ -2311,11 +2407,94 @@ class _BlinkingRecDotState extends State<_BlinkingRecDot> with SingleTickerProvi
   }
 }
 
-// ── Floating reaction ──────────────────────────────────────────────────────────
-class _FloatingReaction {
+// ── Reaction data + overlay ────────────────────────────────────────────────────
+
+class _ReactionData {
   final String id, emoji;
-  final double x, y;
-  const _FloatingReaction({required this.id, required this.emoji, required this.x, required this.y});
+  final double cx, cy;
+  const _ReactionData({required this.id, required this.emoji, required this.cx, required this.cy});
+}
+
+class _ReactionOverlay extends StatefulWidget {
+  final String emoji;
+  final double cx, cy;
+  final VoidCallback onDone;
+  const _ReactionOverlay({super.key, required this.emoji, required this.cx, required this.cy, required this.onDone});
+
+  @override
+  State<_ReactionOverlay> createState() => _ReactionOverlayState();
+}
+
+class _ReactionOverlayState extends State<_ReactionOverlay> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _opacity;
+  late final Animation<double> _shake;
+
+  @override
+  void initState() {
+    super.initState();
+    // Total: 300ms appear + 2200ms hold + 500ms fade = 3000ms
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 3000));
+
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.3, end: 1.4).chain(CurveTween(curve: Curves.easeOut)), weight: 10),
+      TweenSequenceItem(tween: Tween(begin: 1.4, end: 1.0).chain(CurveTween(curve: Curves.easeIn)), weight: 5),
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 68),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.8).chain(CurveTween(curve: Curves.easeIn)), weight: 17),
+    ]).animate(_ctrl);
+
+    _opacity = TweenSequence<double>([
+      TweenSequenceItem(tween: ConstantTween(1.0), weight: 83),
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.0).chain(CurveTween(curve: Curves.easeIn)), weight: 17),
+    ]).animate(_ctrl);
+
+    // Shake: 5 × 80ms = 400ms / 3000ms ≈ 13.3% of duration
+    _shake = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 0.0, end: 6.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 6.0, end: -6.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -6.0, end: 6.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: 6.0, end: -6.0), weight: 2),
+      TweenSequenceItem(tween: Tween(begin: -6.0, end: 0.0), weight: 5),
+      TweenSequenceItem(tween: ConstantTween(0.0), weight: 87),
+    ]).animate(_ctrl);
+
+    _ctrl.forward().whenComplete(widget.onDone);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: widget.cx - 18,
+      top: widget.cy - 18,
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (_, child) => Opacity(
+          opacity: _opacity.value,
+          child: Transform.translate(
+            offset: Offset(_shake.value, 0),
+            child: Transform.scale(
+              scale: _scale.value,
+              child: child,
+            ),
+          ),
+        ),
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: Center(
+            child: Text(widget.emoji, style: const TextStyle(fontSize: 28)),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2537,7 +2716,7 @@ class _AudioOutputSheet extends StatelessWidget {
       leading: Icon(icon, color: isSelected ? const Color(0xFF0751DF) : Colors.white60),
       title: Text(label, style: TextStyle(color: isSelected ? const Color(0xFF0751DF) : Colors.white, fontFamily: 'Outfit')),
       trailing: isSelected ? const Icon(Icons.check_rounded, color: Color(0xFF0751DF)) : null,
-      onTap: () { Navigator.pop(context); onSelect(mode); },
+      onTap: () { onSelect(mode); Navigator.pop(context); },
       contentPadding: EdgeInsets.zero,
     );
   }
