@@ -71,6 +71,9 @@ class _CameraScreenState extends State<CameraScreen>
   // ── Selection ───────────────────────────────────────────────────────────────
   final List<Map<String, dynamic>> _selected = [];
 
+  // ── Photo preview overlay ────────────────────────────────────────────────────
+  int _previewIndex = -1;
+
   // ── Alert ────────────────────────────────────────────────────────────────────
   bool _alertVisible = false;
   String _alertTitle = '';
@@ -235,6 +238,7 @@ class _CameraScreenState extends State<CameraScreen>
       return;
     }
     try {
+      SystemSound.play(SystemSoundType.click);
       final file = await _controller!.takePicture();
       setState(() => _selected.add({'uri': file.path, 'type': 'image', 'fromCamera': true}));
     } catch (_) {
@@ -553,6 +557,51 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // Photo preview overlay
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  Widget _buildPhotoPreview() {
+    if (_previewIndex < 0 || _previewIndex >= _selected.length) {
+      return const SizedBox.shrink();
+    }
+    return Positioned.fill(
+      child: _PhotoPreviewOverlay(
+        items: List<Map<String, dynamic>>.from(_selected),
+        initialIndex: _previewIndex,
+        onClose: () => setState(() => _previewIndex = -1),
+        onDelete: (i) => setState(() {
+          _selected.removeAt(i);
+          _previewIndex = -1;
+        }),
+        onSave: (path) async {
+          try {
+            await PhotoManager.editor.saveImageWithPath(path, title: 'WiTalk');
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Saved to gallery', style: TextStyle(fontFamily: 'Outfit')),
+                backgroundColor: Color(0xFF1A1A1A),
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          } catch (_) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to save', style: TextStyle(fontFamily: 'Outfit')),
+                backgroundColor: Colors.red,
+                behavior: SnackBarBehavior.floating,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // Build
   // ─────────────────────────────────────────────────────────────────────────────
 
@@ -606,6 +655,9 @@ class _CameraScreenState extends State<CameraScreen>
               child: _buildSelectedStrip(),
             ),
 
+          // ── Photo preview overlay ─────────────────────────────────────────────
+          if (_previewIndex >= 0) _buildPhotoPreview(),
+
           // ── Alert ─────────────────────────────────────────────────────────────
           CustomAlertDialog(
             visible: _alertVisible,
@@ -623,8 +675,10 @@ class _CameraScreenState extends State<CameraScreen>
   // Top bars
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // Camera-view top bar: X  [dual] [gallery]  flash  flip
+  // Camera-view top bar: X  flash(back only)  flip
   Widget _buildCameraTopBar() {
+    final isFront = _cameras.isNotEmpty &&
+        _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
@@ -633,25 +687,7 @@ class _CameraScreenState extends State<CameraScreen>
           children: [
             _TopBtn(icon: Icons.close, onTap: () => context.pop()),
             const Spacer(),
-            if (_selectedMode == 'Post') ...[
-              _TopBtn(
-                icon: _isDualMode ? Icons.filter_center_focus : Icons.camera_alt_outlined,
-                color: _isDualMode ? AppColors.primaryButton : Colors.white,
-                onTap: () => setState(() {
-                  _isDualMode = !_isDualMode;
-                  _dualStep = 'idle';
-                  _firstDualPath = null;
-                }),
-              ),
-              _TopBtn(
-                icon: Icons.photo_library_rounded,
-                onTap: () {
-                  setState(() => _showGallery = true);
-                  if (_galleryAssets.isEmpty) _loadGallery();
-                },
-              ),
-            ],
-            _TopBtn(icon: _flashIcon, onTap: _toggleFlash),
+            if (!isFront) _TopBtn(icon: _flashIcon, onTap: _toggleFlash),
             _TopBtn(icon: Icons.flip_camera_ios, onTap: _switchCamera),
           ],
         ),
@@ -939,7 +975,7 @@ class _CameraScreenState extends State<CameraScreen>
         itemBuilder: (c, i) {
           final item = _selected[i];
           return GestureDetector(
-            onTap: () => setState(() => _selected.removeAt(i)),
+            onTap: () => setState(() => _previewIndex = i),
             child: Stack(
               children: [
                 ClipRRect(
@@ -953,7 +989,7 @@ class _CameraScreenState extends State<CameraScreen>
                     width: 16, height: 16,
                     decoration: const BoxDecoration(
                         color: Colors.black54, shape: BoxShape.circle),
-                    child: const Icon(Icons.close, size: 11, color: Colors.white),
+                    child: const Icon(Icons.remove_red_eye, size: 9, color: Colors.white),
                   ),
                 ),
               ],
@@ -1155,11 +1191,18 @@ class _TopBtn extends StatelessWidget {
   const _TopBtn({required this.icon, required this.onTap, this.color = Colors.white});
 
   @override
-  Widget build(BuildContext context) => IconButton(
-        icon: Icon(icon, color: color, size: 24),
-        onPressed: onTap,
-        padding: const EdgeInsets.all(8),
-        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 44,
+          height: 44,
+          margin: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.black.withValues(alpha: 0.3),
+          ),
+          child: Icon(icon, color: color, size: 24),
+        ),
       );
 }
 
@@ -1300,4 +1343,185 @@ class _AssetThumbProvider extends ImageProvider<_AssetThumbProvider> {
 
   @override
   int get hashCode => asset.id.hashCode;
+}
+
+// ── Photo preview carousel overlay ───────────────────────────────────────────
+
+class _PhotoPreviewOverlay extends StatefulWidget {
+  final List<Map<String, dynamic>> items;
+  final int initialIndex;
+  final VoidCallback onClose;
+  final void Function(int index) onDelete;
+  final Future<void> Function(String path) onSave;
+
+  const _PhotoPreviewOverlay({
+    required this.items,
+    required this.initialIndex,
+    required this.onClose,
+    required this.onDelete,
+    required this.onSave,
+  });
+
+  @override
+  State<_PhotoPreviewOverlay> createState() => _PhotoPreviewOverlayState();
+}
+
+class _PhotoPreviewOverlayState extends State<_PhotoPreviewOverlay> {
+  late final PageController _pageCtrl;
+  late int _current;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.initialIndex;
+    _pageCtrl = PageController(initialPage: _current);
+  }
+
+  @override
+  void dispose() {
+    _pageCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.black,
+      child: SafeArea(
+        child: Column(
+          children: [
+            // ── Top bar ──────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                children: [
+                  _TopBtn(icon: Icons.arrow_back, onTap: widget.onClose),
+                  const Spacer(),
+                  Text(
+                    '${_current + 1} / ${widget.items.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w500,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const Spacer(),
+                  const SizedBox(width: 44),
+                ],
+              ),
+            ),
+
+            // ── Swipeable images ─────────────────────────────────────────────
+            Expanded(
+              child: PageView.builder(
+                controller: _pageCtrl,
+                itemCount: widget.items.length,
+                onPageChanged: (i) => setState(() => _current = i),
+                itemBuilder: (_, i) => InteractiveViewer(
+                  minScale: 1.0,
+                  maxScale: 4.0,
+                  child: Center(
+                    child: Image.file(
+                      File(widget.items[i]['uri'] as String),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── Dot indicators ───────────────────────────────────────────────
+            if (widget.items.length > 1)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(widget.items.length, (i) {
+                    final active = i == _current;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: active ? 16 : 6,
+                      height: 6,
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      decoration: BoxDecoration(
+                        color: active ? Colors.white : Colors.white38,
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+
+            // ── Action buttons ───────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => widget.onDelete(_current),
+                      child: Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.delete_outline, color: Colors.redAccent, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Delete',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => widget.onSave(widget.items[_current]['uri'] as String),
+                      child: Container(
+                        height: 50,
+                        decoration: BoxDecoration(
+                          color: AppColors.primaryButton,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.save_alt, color: Colors.white, size: 20),
+                            SizedBox(width: 8),
+                            Text(
+                              'Save to Gallery',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontFamily: 'Outfit',
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
