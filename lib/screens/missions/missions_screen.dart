@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/cupertino.dart';
@@ -10,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../api/dio_client.dart';
 import '../../providers/theme_provider.dart';
+import '../../utils/sound_effect_service.dart';
 
 class _T {
   final bool dark;
@@ -128,6 +130,7 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
 
   void _onCollectTap(BuildContext buttonContext, Map<String, dynamic> mission) {
     HapticFeedback.mediumImpact();
+    unawaited(soundEffectService.playMissionCollect());
     final box = buttonContext.findRenderObject() as RenderBox?;
     if (box != null) {
       final center = box.localToGlobal(box.size.center(Offset.zero));

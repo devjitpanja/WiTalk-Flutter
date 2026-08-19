@@ -12,6 +12,10 @@ class SoundEffectService {
   bool get isEnabled => _isEnabled;
   void setEnabled(bool enabled) => _isEnabled = enabled;
 
+  Future<bool> playMissionCollect() async {
+    return _play('audio/mission.mp3');
+  }
+
   Future<bool> playMessageSentSound() async {
     return _play('audio/message_sent_tone.mp3');
   }
