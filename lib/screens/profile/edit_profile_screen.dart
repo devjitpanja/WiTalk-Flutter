@@ -390,6 +390,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         'is_verified': userData['is_verified'] ?? false,
       };
 
+      _nameCtrl.removeListener(_onFormChanged);
+      _usernameCtrl.removeListener(_onUsernameChanged);
+      _bioCtrl.removeListener(_onFormChanged);
+
       setState(() {
         _originalData = profileData;
         _nameCtrl.text     = profileData['name'] as String;
@@ -405,8 +409,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         _purpose           = List<String>.from(profileData['purpose'] as List);
         _preferredLanguage = profileData['preferred_language'] as String;
         _isVerified        = profileData['is_verified'] as bool;
-        // profile_completion_percentage is unused locally; backend returns it for reference
+        _hasChanges        = false;
       });
+
+      _nameCtrl.addListener(_onFormChanged);
+      _usernameCtrl.addListener(_onUsernameChanged);
+      _bioCtrl.addListener(_onFormChanged);
 
       // Fetch change eligibility (non-critical)
       try {
@@ -990,14 +998,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         ),
         Expanded(child: Text('Edit Profile', textAlign: TextAlign.center,
           style: TextStyle(color: colors.text, fontSize: 18, fontFamily: 'Outfit', fontWeight: FontWeight.w600))),
-        TextButton(
-          onPressed: (_saving || !canSave) ? null : _handleSave,
-          child: _saving
-              ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary))
-              : Text('Save', style: TextStyle(
-                  color: canSave ? colors.primary : colors.textTertiary,
-                  fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
-        ),
+        if (_saving)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary)),
+          )
+        else if (_hasChanges)
+          TextButton(
+            onPressed: canSave ? _handleSave : null,
+            child: Text('Save', style: TextStyle(
+                color: canSave ? colors.primary : colors.textTertiary,
+                fontSize: 16, fontFamily: 'Outfit', fontWeight: FontWeight.w600)),
+          )
+        else
+          const SizedBox(width: 70),
       ]),
     );
   }

@@ -63,8 +63,9 @@ class _TutorialScreenState extends State<TutorialScreen> {
       for (var v in vidsList) {
         final id = (v['id'] ?? v['_id'])?.toString();
         if (id != null && v['played_at'] != null) {
+          final completed = v['completed'];
           prog[id] = {
-            'completed': v['completed'] == true,
+            'completed': completed == true || completed == 1,
             'played_at': v['played_at'].toString(),
           };
         }
