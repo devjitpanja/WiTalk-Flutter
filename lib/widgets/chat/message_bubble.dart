@@ -37,6 +37,7 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onTapAvatar;
   final VoidCallback? onTapImage;
   final VoidCallback? onReplyTap; // tap reply preview → scroll to original
+  final bool isPinned;
 
   const MessageBubble({
     super.key,
@@ -56,6 +57,7 @@ class MessageBubble extends StatelessWidget {
     this.onTapAvatar,
     this.onTapImage,
     this.onReplyTap,
+    this.isPinned = false,
   });
 
   @override
@@ -122,18 +124,21 @@ class MessageBubble extends StatelessWidget {
               Flexible(
                 child: GestureDetector(
                   onLongPress: onLongPress,
-                  child: _BubbleContent(
-                    message: message,
-                    isMyMessage: isMyMessage,
-                    senderName: showAvatar ? senderName : null,
-                    senderRole: senderRole,
-                    senderAdminTitle: senderAdminTitle,
-                    replyToMessage: replyToMessage,
-                    onTapImage: onTapImage,
-                    onReplyTap: onReplyTap,
-                    c: c,
-                    currentUserId: currentUserId,
-                    otherUserName: otherUserName,
+                  child: _PinScope(
+                    isPinned: isPinned,
+                    child: _BubbleContent(
+                      message: message,
+                      isMyMessage: isMyMessage,
+                      senderName: showAvatar ? senderName : null,
+                      senderRole: senderRole,
+                      senderAdminTitle: senderAdminTitle,
+                      replyToMessage: replyToMessage,
+                      onTapImage: onTapImage,
+                      onReplyTap: onReplyTap,
+                      c: c,
+                      currentUserId: currentUserId,
+                      otherUserName: otherUserName,
+                    ),
                   ),
                 ),
               ),
@@ -770,6 +775,16 @@ class _LinkPreviewCard extends StatelessWidget {
   }
 }
 
+// ── Pin scope — threads isPinned down without touching every bubble type ──────
+class _PinScope extends InheritedWidget {
+  final bool isPinned;
+  const _PinScope({required this.isPinned, required super.child});
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_PinScope>()?.isPinned ?? false;
+  @override
+  bool updateShouldNotify(_PinScope old) => old.isPinned != isPinned;
+}
+
 // ── Time + Status row ──────────────────────────────────────────────────────────
 class _TimeStatus extends StatelessWidget {
   final ChatMessage message;
@@ -787,6 +802,7 @@ class _TimeStatus extends StatelessWidget {
     final color = isMyMessage
         ? Colors.white.withValues(alpha: 0.65)
         : c.textTertiary;
+    final isPinned = _PinScope.of(context);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -800,6 +816,11 @@ class _TimeStatus extends StatelessWidget {
                     fontFamily: 'Outfit',
                     fontStyle: FontStyle.italic,
                     color: color)),
+          ),
+        if (isPinned)
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Icon(Icons.push_pin, size: 10, color: color),
           ),
         Text(timeStr,
             style: TextStyle(

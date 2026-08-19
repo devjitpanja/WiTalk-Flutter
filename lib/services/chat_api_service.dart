@@ -351,9 +351,9 @@ class ChatApiService {
   }
 
   Future<List<Map<String, dynamic>>> getGroupPinnedMessages(
-      String groupId) async {
-    final res =
-        await dioClient.get(AppEndpoints.groupPinnedMessages(groupId));
+      String groupId, String userId) async {
+    final res = await dioClient.get(AppEndpoints.groupPinnedMessages(groupId),
+        queryParameters: {'user_id': userId});
     final data = res.data['data'];
     if (data is List) return List<Map<String, dynamic>>.from(data);
     return [];

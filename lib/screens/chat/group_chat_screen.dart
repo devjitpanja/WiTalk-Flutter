@@ -215,8 +215,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
       List<Map<String, dynamic>> pinned = [];
       try {
-        pinned = await chatApiService.getGroupPinnedMessages(widget.groupId);
-      } catch (_) {}
+        pinned = await chatApiService.getGroupPinnedMessages(widget.groupId, uid);
+      } catch (e) {
+        debugPrint('[GroupChat] getGroupPinnedMessages error: $e');
+      }
 
       if (mounted) {
         ref.read(chatProvider.notifier).setGroupPinnedMessages(widget.groupId, pinned);
@@ -901,6 +903,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     final isGroupConnected = ref.watch(chatProvider).isGroupConnected;
     final pinnedMessages = ref.watch(
         chatProvider.select((s) => s.pinnedMessages[widget.groupId] ?? const []));
+    final pinnedMessageIds = pinnedMessages
+        .map((p) => p['message_id']?.toString() ?? p['id']?.toString())
+        .whereType<String>()
+        .toSet();
 
     final typingNames = typingUsers
         .where((id) => id != uid)
@@ -1103,6 +1109,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                             senderAdminTitle: senderAdminTitle,
                             currentUserId: uid,
                             isHighlighted: _highlightedMessageId == msg.id,
+                            isPinned: pinnedMessageIds.contains(msg.id),
                             onTapAvatar: msg.senderId.isNotEmpty
                                 ? () => context.push('/profile/${msg.senderId}')
                                 : null,

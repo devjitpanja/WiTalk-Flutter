@@ -98,7 +98,11 @@ class _PinnedMessagesScreenState
         // Group pinned messages endpoint has pagination via query params
         final res = await dioClient.get(
           AppEndpoints.groupPinnedMessages(widget.conversationId),
-          queryParameters: {'page': _page, 'limit': _pageSize},
+          queryParameters: {
+            'page': _page,
+            'limit': _pageSize,
+            'user_id': _currentUserId ?? '',
+          },
         );
         final data = res.data['data'];
         if (data is List) {
