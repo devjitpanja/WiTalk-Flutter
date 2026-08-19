@@ -160,11 +160,11 @@ final routerProvider = Provider<GoRouter>((ref) {
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
         routes: [
-          GoRoute(path: '/home', builder: (_, __) => const HomeScreen()),
-          GoRoute(path: '/explore', builder: (_, __) => const ExploreScreen()),
-          GoRoute(path: '/adda', builder: (_, __) => const AddaScreen()),
-          GoRoute(path: '/chat', builder: (_, __) => const ChatScreen()),
-          GoRoute(path: '/account', builder: (_, __) => const AccountOverviewScreen()),
+          GoRoute(path: '/home', pageBuilder: (_, __) => const NoTransitionPage(child: HomeScreen())),
+          GoRoute(path: '/explore', pageBuilder: (_, __) => const NoTransitionPage(child: ExploreScreen())),
+          GoRoute(path: '/adda', pageBuilder: (_, __) => const NoTransitionPage(child: AddaScreen())),
+          GoRoute(path: '/chat', pageBuilder: (_, __) => const NoTransitionPage(child: ChatScreen())),
+          GoRoute(path: '/account', pageBuilder: (_, __) => const NoTransitionPage(child: AccountOverviewScreen())),
         ],
       ),
 
