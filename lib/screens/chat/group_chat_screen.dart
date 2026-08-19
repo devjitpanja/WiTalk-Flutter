@@ -69,7 +69,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   int _prevMessageCount = 0;
   String? _highlightedMessageId;
   final Map<String, GlobalKey> _messageKeys = {};
-  List<Map<String, dynamic>> _pinnedMessages = [];
   int _pinnedIndex = 0;
   bool _isRecordingVoice = false;
 
@@ -220,11 +219,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       } catch (_) {}
 
       if (mounted) {
+        ref.read(chatProvider.notifier).setGroupPinnedMessages(widget.groupId, pinned);
         setState(() {
           _groupInfo = data;
           _permissions = perms;
           _topicsEnabled = data['topics_enabled'] == true;
-          _pinnedMessages = pinned;
           _pinnedIndex = 0;
         });
       }
@@ -789,15 +788,17 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   }
 
   void _pinMessage(ChatMessage message, bool pin) async {
+    final userId = _currentUserId;
+    if (userId == null) return;
     try {
       if (pin) {
-        await chatApiService.pinGroupMessage(
-            widget.groupId, message.id);
+        await chatApiService.pinGroupMessage(widget.groupId, message.id, userId);
       } else {
-        await chatApiService.unpinGroupMessage(
-            widget.groupId, message.id);
+        await chatApiService.unpinGroupMessage(widget.groupId, message.id, userId);
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[GroupChat] _pinMessage error: $e');
+    }
   }
 
   void _muteUser(String userId, bool mute) async {
@@ -898,6 +899,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         _groupInfo?['member_count'] ?? _members.length;
     final isLive = _groupInfo?['is_live'] == true || _groupInfo?['active_adda_room_id'] != null;
     final isGroupConnected = ref.watch(chatProvider).isGroupConnected;
+    final pinnedMessages = ref.watch(
+        chatProvider.select((s) => s.pinnedMessages[widget.groupId] ?? const []));
 
     final typingNames = typingUsers
         .where((id) => id != uid)
@@ -1030,18 +1033,18 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         padding: EdgeInsets.only(bottom: keyboardHeight),
         child: Column(children: [
         // Pinned message banner (Telegram-style, cycles through all pins)
-        if (_pinnedMessages.isNotEmpty)
+        if (pinnedMessages.isNotEmpty)
           _PinnedBanner(
-            pinnedMessages: _pinnedMessages,
-            currentIndex: _pinnedIndex,
+            pinnedMessages: pinnedMessages,
+            currentIndex: _pinnedIndex % pinnedMessages.length,
             c: c,
             onTap: () {
-              final pinned = _pinnedMessages[_pinnedIndex];
+              final idx = _pinnedIndex % pinnedMessages.length;
+              final pinned = pinnedMessages[idx];
               final msgId = pinned['message_id']?.toString() ?? pinned['id']?.toString();
               if (msgId != null) _scrollToMessage(msgId);
-              // Cycle to next pin
               setState(() {
-                _pinnedIndex = (_pinnedIndex + 1) % _pinnedMessages.length;
+                _pinnedIndex = (idx + 1) % pinnedMessages.length;
               });
             },
           ),

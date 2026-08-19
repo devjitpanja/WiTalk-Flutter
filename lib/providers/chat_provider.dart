@@ -430,6 +430,7 @@ class ChatState {
   final Map<String, String> mutedGroups; // groupId -> mute type
   final bool isSyncing;
   final int pendingActionCount;
+  final Map<String, List<Map<String, dynamic>>> pinnedMessages; // groupId → pinned list
 
   const ChatState({
     this.conversations = const [],
@@ -445,6 +446,7 @@ class ChatState {
     this.mutedGroups = const {},
     this.isSyncing = false,
     this.pendingActionCount = 0,
+    this.pinnedMessages = const {},
   });
 
   ChatState copyWith({
@@ -462,6 +464,7 @@ class ChatState {
     Map<String, String>? mutedGroups,
     bool? isSyncing,
     int? pendingActionCount,
+    Map<String, List<Map<String, dynamic>>>? pinnedMessages,
   }) =>
       ChatState(
         conversations: conversations ?? this.conversations,
@@ -479,6 +482,7 @@ class ChatState {
         mutedGroups: mutedGroups ?? this.mutedGroups,
         isSyncing: isSyncing ?? this.isSyncing,
         pendingActionCount: pendingActionCount ?? this.pendingActionCount,
+        pinnedMessages: pinnedMessages ?? this.pinnedMessages,
       );
 }
 
@@ -750,6 +754,39 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (groupId != null && userId != null) {
         _handleTyping({'conversation_id': groupId, 'user_id': userId}, false);
       }
+    });
+
+    gs.on('message_pinned', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final groupId = d['group_id']?.toString();
+      final pinnedMessage = d['pinned_message'] is Map
+          ? Map<String, dynamic>.from(d['pinned_message'] as Map)
+          : null;
+      final messageId = pinnedMessage?['message_id']?.toString();
+      if (groupId == null || messageId == null || pinnedMessage == null) return;
+      _patchMessage(groupId, messageId, (m) => m.copyWith(isPinned: true));
+      final current = Map<String, List<Map<String, dynamic>>>.from(state.pinnedMessages);
+      final list = List<Map<String, dynamic>>.from(current[groupId] ?? []);
+      if (!list.any((p) => p['message_id']?.toString() == messageId)) {
+        list.insert(0, pinnedMessage);
+      }
+      current[groupId] = list;
+      state = state.copyWith(pinnedMessages: current);
+    });
+
+    gs.on('message_unpinned', (data) {
+      if (data == null) return;
+      final d = Map<String, dynamic>.from(data as Map);
+      final groupId = d['group_id']?.toString();
+      final messageId = d['message_id']?.toString();
+      if (groupId == null || messageId == null) return;
+      _patchMessage(groupId, messageId, (m) => m.copyWith(isPinned: false));
+      final current = Map<String, List<Map<String, dynamic>>>.from(state.pinnedMessages);
+      final list = List<Map<String, dynamic>>.from(current[groupId] ?? []);
+      list.removeWhere((p) => p['message_id']?.toString() == messageId);
+      current[groupId] = list;
+      state = state.copyWith(pinnedMessages: current);
     });
 
     gs.on('online_users', (data) => _handleOnlineUsersList(data));
@@ -2065,6 +2102,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   void leaveGroup(String groupId) {
     _groupSocket?.emit('leave_group', groupId);
+  }
+
+  void setGroupPinnedMessages(String groupId, List<Map<String, dynamic>> list) {
+    final current = Map<String, List<Map<String, dynamic>>>.from(state.pinnedMessages);
+    current[groupId] = list;
+    state = state.copyWith(pinnedMessages: current);
   }
 
   bool isUserOnline(String userId) => state.onlineUsers.contains(userId);

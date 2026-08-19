@@ -164,7 +164,7 @@ class _PinnedMessagesScreenState
     try {
       if (widget.isGroup) {
         await chatApiService.unpinGroupMessage(
-            widget.conversationId, msgId);
+            widget.conversationId, msgId, _currentUserId ?? '');
       } else {
         await chatApiService.unpinMessage(widget.conversationId, msgId);
       }

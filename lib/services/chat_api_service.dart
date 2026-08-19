@@ -360,13 +360,15 @@ class ChatApiService {
   }
 
   Future<void> pinGroupMessage(
-      String groupId, String messageId) async {
-    await dioClient.post(AppEndpoints.pinGroupMessage(groupId, messageId));
+      String groupId, String messageId, String userId) async {
+    await dioClient.post(AppEndpoints.pinGroupMessage(groupId, messageId),
+        data: {'user_id': userId});
   }
 
   Future<void> unpinGroupMessage(
-      String groupId, String messageId) async {
-    await dioClient.delete(AppEndpoints.pinGroupMessage(groupId, messageId));
+      String groupId, String messageId, String userId) async {
+    await dioClient.delete(AppEndpoints.pinGroupMessage(groupId, messageId),
+        data: {'user_id': userId});
   }
 
   Future<List<Map<String, dynamic>>> getGroupActionLog(
