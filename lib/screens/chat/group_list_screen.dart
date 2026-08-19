@@ -225,7 +225,12 @@ class _GroupTile extends StatelessWidget {
                 size: 56,
                 primaryColor: c.primary,
                 onPress: () => context.push(
-                    '/community-adda-list?groupId=${group.id}&groupName=${Uri.encodeComponent(group.name)}&groupPicture=${Uri.encodeComponent(group.profilePic ?? '')}'),
+                  '/community-adda-list/${group.id}',
+                  extra: {
+                    'groupName': group.name,
+                    'groupPicture': group.profilePic,
+                  },
+                ),
               )
             else
               CircleAvatar(

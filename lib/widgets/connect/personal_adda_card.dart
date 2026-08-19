@@ -29,12 +29,14 @@ class PersonalAddaCard extends StatelessWidget {
   final Map<String, dynamic> room;
   final int paletteIndex;
   final Function(Map<String, dynamic> room) onJoinRoom;
+  final Function(Map<String, dynamic> room)? onTerminate;
 
   const PersonalAddaCard({
     super.key,
     required this.room,
     required this.paletteIndex,
     required this.onJoinRoom,
+    this.onTerminate,
   });
 
   static const List<Map<String, dynamic>> cardPalettes = [
@@ -781,6 +783,40 @@ class PersonalAddaCard extends StatelessWidget {
               ),
             ),
           ),
+
+          // ── Terminate / End Button (top-right, admin only) ──
+          if (onTerminate != null)
+            Positioned(
+              top: 10,
+              right: 10,
+              child: GestureDetector(
+                onTap: () => onTerminate!(room),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0x10EF4444),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0x40EF4444)),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.stop_circle, size: 13, color: Color(0xFFEF4444)),
+                      SizedBox(width: 3),
+                      Text(
+                        'End',
+                        style: TextStyle(
+                          color: Color(0xFFEF4444),
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          fontFamily: 'Outfit',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

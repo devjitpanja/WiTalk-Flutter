@@ -43,13 +43,31 @@ class AudioRoomService {
   }) async {
     try {
       final res = await dioClient.get(
-        '$baseUrl/group/$groupId',
+        '$baseUrl/group/$groupId/all-active',
         queryParameters: {'limit': limit, 'offset': offset},
       );
       return res.data as Map<String, dynamic>? ?? {'success': true, 'data': []};
     } catch (e) {
       if (kDebugMode) print('[AudioRoomService] Error fetching group active rooms: $e');
       return {'success': false, 'data': []};
+    }
+  }
+
+  /// Terminate an active adda room
+  Future<Map<String, dynamic>> terminateAdda(
+    String roomId,
+    String reason, {
+    String? customReason,
+  }) async {
+    try {
+      final res = await dioClient.post(
+        '$baseUrl/$roomId/terminate',
+        data: {'reason': reason, 'custom_reason': customReason},
+      );
+      return res.data as Map<String, dynamic>? ?? {'success': true};
+    } catch (e) {
+      if (kDebugMode) print('[AudioRoomService] Error terminating adda: $e');
+      rethrow;
     }
   }
 

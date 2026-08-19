@@ -379,7 +379,7 @@ class _CommunityItem extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            _buildAvatar(picture, name, isLive, id),
+            _buildAvatar(context, picture, name, isLive, id),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -467,13 +467,19 @@ class _CommunityItem extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar(String? picture, String name, bool isLive, String id) {
+  Widget _buildAvatar(BuildContext context, String? picture, String name, bool isLive, String id) {
     if (isLive) {
       return LiveGroupAvatar(
         picture: picture,
         size: 52,
         primaryColor: AppColors.primary,
-        onPress: onTap,
+        onPress: () => context.push(
+          '/community-adda-list/$id',
+          extra: {
+            'groupName': name,
+            'groupPicture': picture,
+          },
+        ),
       );
     }
     if (picture != null && picture.isNotEmpty) {

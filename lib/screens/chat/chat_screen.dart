@@ -1155,7 +1155,12 @@ class _ChatTile extends StatelessWidget {
                 size: 56,
                 primaryColor: c.primary,
                 onPress: () => context.push(
-                    '/community-adda-list?groupId=${conv.id}&groupName=${Uri.encodeComponent(conv.name)}&groupPicture=${Uri.encodeComponent(conv.profilePic ?? '')}'),
+                  '/community-adda-list/${conv.id}',
+                  extra: {
+                    'groupName': conv.name,
+                    'groupPicture': conv.profilePic,
+                  },
+                ),
               )
             else
               Stack(children: [

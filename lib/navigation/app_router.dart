@@ -388,7 +388,17 @@ final routerProvider = Provider<GoRouter>((ref) {
         );
       }),
       GoRoute(path: '/create-audio-room', builder: (_, __) => const CreateAudioRoomScreen()),
-      GoRoute(path: '/community-adda-list/:id', builder: (_, s) => CommunityAddaListScreen(groupId: s.pathParameters['id']!)),
+      GoRoute(
+        path: '/community-adda-list/:id',
+        builder: (_, s) {
+          final extra = s.extra as Map<String, dynamic>? ?? {};
+          return CommunityAddaListScreen(
+            groupId: s.pathParameters['id']!,
+            groupName: extra['groupName'] as String? ?? 'Community',
+            groupPicture: extra['groupPicture'] as String?,
+          );
+        },
+      ),
       GoRoute(path: '/adda-reviews', builder: (_, __) => const AddaReviewsScreen()),
       GoRoute(path: '/adda-feedback', builder: (_, __) => const AddaFeedbackScreen()),
       GoRoute(path: '/nearby-people', builder: (_, __) => const NearbyPeopleScreen()),

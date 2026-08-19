@@ -273,7 +273,13 @@ class _CommunityCard extends StatelessWidget {
                         picture: pic,
                         size: 52,
                         primaryColor: c.primary,
-                        onPress: onTap,
+                        onPress: () => context.push(
+                          '/community-adda-list/${group['id']}',
+                          extra: {
+                            'groupName': name,
+                            'groupPicture': pic,
+                          },
+                        ),
                       )
                     else
                       CircleAvatar(
