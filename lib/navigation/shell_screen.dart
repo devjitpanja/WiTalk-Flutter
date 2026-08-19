@@ -7,6 +7,11 @@ import '../providers/adda_provider.dart' show addaNotifierProvider;
 import '../providers/chat_provider.dart';
 import '../providers/missions_provider.dart';
 import '../providers/nearby_online_provider.dart';
+import '../screens/home/home_screen.dart';
+import '../screens/explore/explore_screen.dart';
+import '../screens/connect/adda_screen.dart';
+import '../screens/chat/chat_screen.dart';
+import '../screens/profile/account_overview_screen.dart';
 import '../widgets/audio_room/audio_room_overlay.dart';
 import '../widgets/common/global_upload_progress.dart';
 
@@ -25,6 +30,8 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _addaDotController;
   late final Animation<double> _addaDotOpacity;
+  final PageController _pageController = PageController();
+  bool _isDragging = false;
 
   @override
   void initState() {
@@ -40,6 +47,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
 
   @override
   void dispose() {
+    _pageController.dispose();
     _addaDotController.dispose();
     super.dispose();
   }
@@ -55,6 +63,9 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
   }
 
   void _onTap(BuildContext context, int index) {
+    if (_pageController.hasClients && _pageController.page?.round() != index) {
+      _pageController.jumpToPage(index);
+    }
     switch (index) {
       case 0: context.go('/home'); break;
       case 1: context.go('/explore'); break;
@@ -93,12 +104,46 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
     }
 
     return Scaffold(
-      body: Stack(
-        children: [
-          widget.child,
-          const AudioRoomOverlay(),
-          const GlobalUploadProgressOverlay(),
-        ],
+      body: Builder(
+        builder: (context) {
+          // Sync page controller with GoRouter-driven index (e.g. deep link, nav tap)
+          if (!_isDragging && _pageController.hasClients) {
+            final page = _pageController.page?.round() ?? 0;
+            if (page != currentIndex) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (_pageController.hasClients) {
+                  _pageController.jumpToPage(currentIndex);
+                }
+              });
+            }
+          }
+          return Stack(
+            children: [
+              NotificationListener<ScrollNotification>(
+                onNotification: (n) {
+                  if (n is ScrollStartNotification) _isDragging = true;
+                  if (n is ScrollEndNotification) _isDragging = false;
+                  return false;
+                },
+                child: PageView(
+                  controller: _pageController,
+                  onPageChanged: (index) {
+                    if (_isDragging) _onTap(context, index);
+                  },
+                  children: const [
+                    HomeScreen(),
+                    ExploreScreen(),
+                    AddaScreen(),
+                    ChatScreen(),
+                    AccountOverviewScreen(),
+                  ],
+                ),
+              ),
+              const AudioRoomOverlay(),
+              const GlobalUploadProgressOverlay(),
+            ],
+          );
+        },
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -222,7 +267,7 @@ class _ShellScreenState extends ConsumerState<ShellScreen>
             child: shouldBlink
                 ? AnimatedBuilder(
                     animation: _addaDotOpacity,
-                    builder: (_, __) => Opacity(
+                    builder: (context2, child2) => Opacity(
                       opacity: _addaDotOpacity.value,
                       child: _redDot(),
                     ),
