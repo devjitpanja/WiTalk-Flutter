@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -122,6 +124,31 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
       }
     }
     setState(() { apply(_daily); apply(_lifetime); });
+  }
+
+  void _onCollectTap(BuildContext buttonContext, Map<String, dynamic> mission) {
+    HapticFeedback.mediumImpact();
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    if (box != null) {
+      final center = box.localToGlobal(box.size.center(Offset.zero));
+      final xp = (_n(mission['rewardPoints']) ?? 0).toInt();
+      _showCollectEffect(center, xp);
+    }
+    _collect(mission);
+  }
+
+  void _showCollectEffect(Offset center, int xpPoints) {
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => _CollectEffectWidget(
+        center: center,
+        xpPoints: xpPoints,
+        onComplete: () {
+          if (entry.mounted) entry.remove();
+        },
+      ),
+    );
+    Overlay.of(context).insert(entry);
   }
 
   Future<void> _collect(Map<String, dynamic> mission) async {
@@ -407,20 +434,12 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
         const SizedBox(width: 10),
         // Right action
         if (canCollect)
-          GestureDetector(
-            onTap: () => _collect(m),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA500)]),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: const Row(children: [
-                Icon(Icons.card_giftcard, size: 16, color: Colors.black),
-                SizedBox(width: 4),
-                Text('Collect', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 12, color: Colors.black)),
-              ]),
-            ),
+          _AnimatedCollectButton(
+            onTap: (ctx) => _onCollectTap(ctx, m),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            borderRadius: 16,
+            iconSize: 16,
+            fontSize: 12,
           )
         else if (isCollected)
           Column(children: [
@@ -667,20 +686,12 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
                       const Icon(Icons.check_circle, size: 20, color: Color(0xFF00B894)),
                     ]
                   : [
-                      GestureDetector(
-                        onTap: () => _collect(activeMilestone),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(colors: [Color(0xFFFFD700), Color(0xFFFFA500)]),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(children: [
-                            Icon(Icons.card_giftcard, size: 13, color: Colors.black),
-                            SizedBox(width: 4),
-                            Text('Collect', style: TextStyle(fontFamily: 'Outfit', fontWeight: FontWeight.w700, fontSize: 11, color: Colors.black)),
-                          ]),
-                        ),
+                      _AnimatedCollectButton(
+                        onTap: (ctx) => _onCollectTap(ctx, activeMilestone),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        borderRadius: 12,
+                        iconSize: 13,
+                        fontSize: 11,
                       ),
                     ],
             ),
@@ -714,5 +725,266 @@ class _MissionsScreenState extends ConsumerState<MissionsScreen> {
       'play-circle-filled': Icons.play_circle_filled,
     };
     return map[key] ?? Icons.star;
+  }
+}
+
+// ─── Animated Collect Button ────────────────────────────────────────────────
+
+class _AnimatedCollectButton extends StatefulWidget {
+  final void Function(BuildContext) onTap;
+  final EdgeInsets padding;
+  final double borderRadius;
+  final double iconSize;
+  final double fontSize;
+
+  const _AnimatedCollectButton({
+    required this.onTap,
+    required this.padding,
+    required this.borderRadius,
+    required this.iconSize,
+    required this.fontSize,
+  });
+
+  @override
+  State<_AnimatedCollectButton> createState() => _AnimatedCollectButtonState();
+}
+
+class _AnimatedCollectButtonState extends State<_AnimatedCollectButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 380),
+    );
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(tween: Tween(begin: 1.0, end: 0.80), weight: 25),
+      TweenSequenceItem(tween: Tween(begin: 0.80, end: 1.20), weight: 40),
+      TweenSequenceItem(tween: Tween(begin: 1.20, end: 0.95), weight: 20),
+      TweenSequenceItem(tween: Tween(begin: 0.95, end: 1.00), weight: 15),
+    ]).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onTap() {
+    _ctrl.forward(from: 0.0);
+    widget.onTap(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _onTap,
+      child: ScaleTransition(
+        scale: _scale,
+        child: Container(
+          padding: widget.padding,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+            ),
+            borderRadius: BorderRadius.circular(widget.borderRadius),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x40FFD700),
+                blurRadius: 8,
+                spreadRadius: 0,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.card_giftcard, size: widget.iconSize, color: Colors.black),
+            const SizedBox(width: 4),
+            Text(
+              'Collect',
+              style: TextStyle(
+                fontFamily: 'Outfit',
+                fontWeight: FontWeight.w700,
+                fontSize: widget.fontSize,
+                color: Colors.black,
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Collect Effect Overlay ──────────────────────────────────────────────────
+
+class _CollectEffectWidget extends StatefulWidget {
+  final Offset center;
+  final int xpPoints;
+  final VoidCallback onComplete;
+
+  const _CollectEffectWidget({
+    required this.center,
+    required this.xpPoints,
+    required this.onComplete,
+  });
+
+  @override
+  State<_CollectEffectWidget> createState() => _CollectEffectWidgetState();
+}
+
+class _CollectEffectWidgetState extends State<_CollectEffectWidget>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  static const _particleCount = 16;
+  static const _particleColors = [
+    Color(0xFFFFD700), Color(0xFFFFA500), Color(0xFFFF6B35),
+    Color(0xFFFFE066), Color(0xFF00B894), Color(0xFF0A84FF),
+    Color(0xFFFF6B9D), Color(0xFFA29BFE),
+  ];
+
+  late final List<double> _angles;
+  late final List<double> _speeds;
+  late final List<double> _sizes;
+  late final List<bool> _isSquare;
+
+  @override
+  void initState() {
+    super.initState();
+    final rng = math.Random();
+    _angles = List.generate(
+      _particleCount,
+      (i) => i * (2 * math.pi / _particleCount) + (rng.nextDouble() - 0.5) * 0.5,
+    );
+    _speeds = List.generate(_particleCount, (_) => 60.0 + rng.nextDouble() * 70.0);
+    _sizes = List.generate(_particleCount, (_) => 5.0 + rng.nextDouble() * 5.0);
+    _isSquare = List.generate(_particleCount, (_) => rng.nextBool());
+
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 950),
+    );
+    _ctrl.forward().then((_) {
+      if (mounted) widget.onComplete();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _ctrl,
+        builder: (context, _) {
+          final t = _ctrl.value;
+          final easeOut = Curves.easeOut.transform(t);
+
+          return Stack(children: [
+            // Ring pulse
+            Positioned(
+              left: widget.center.dx - 70 * easeOut,
+              top: widget.center.dy - 70 * easeOut,
+              child: Opacity(
+                opacity: (1.0 - t).clamp(0.0, 1.0),
+                child: Container(
+                  width: 140 * easeOut,
+                  height: 140 * easeOut,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFFFFD700),
+                      width: (3.0 * (1.0 - easeOut)).clamp(0.0, 3.0),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+
+            // Particles
+            ..._angles.asMap().entries.map((e) {
+              final i = e.key;
+              final dist = easeOut * _speeds[i];
+              final x = widget.center.dx + math.cos(_angles[i]) * dist;
+              final y = widget.center.dy + math.sin(_angles[i]) * dist - t * 18;
+              final opacity = t < 0.55
+                  ? 1.0
+                  : (1.0 - (t - 0.55) / 0.45).clamp(0.0, 1.0);
+              final color = _particleColors[i % _particleColors.length];
+              final size = _sizes[i];
+              final rotation = _isSquare[i] ? t * math.pi * 3 : 0.0;
+
+              return Positioned(
+                left: x - size / 2,
+                top: y - size / 2,
+                child: Opacity(
+                  opacity: opacity,
+                  child: Transform.rotate(
+                    angle: rotation,
+                    child: Container(
+                      width: size,
+                      height: size,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: _isSquare[i] ? BoxShape.rectangle : BoxShape.circle,
+                        borderRadius: _isSquare[i] ? BorderRadius.circular(2) : null,
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withValues(alpha: 0.7),
+                            blurRadius: 6,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+
+            // Float-up +XP text
+            Positioned(
+              left: widget.center.dx - 45,
+              top: widget.center.dy - 12 - Curves.easeOut.transform(t) * 90,
+              width: 90,
+              child: Opacity(
+                opacity: t < 0.15
+                    ? t / 0.15
+                    : t > 0.65
+                        ? ((1.0 - (t - 0.65) / 0.35)).clamp(0.0, 1.0)
+                        : 1.0,
+                child: Text(
+                  '+${widget.xpPoints} XP',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontFamily: 'Outfit',
+                    fontWeight: FontWeight.w900,
+                    fontSize: 22,
+                    color: Color(0xFFFFD700),
+                    shadows: [
+                      Shadow(
+                        color: Colors.black54,
+                        offset: Offset(0, 2),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ]);
+        },
+      ),
+    );
   }
 }

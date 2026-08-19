@@ -643,7 +643,7 @@ class _CameraScreenState extends State<CameraScreen>
           if (!isGalleryMode)
             Positioned(
               bottom: controlsBottom,
-              left: 24, right: 24,
+              left: 0, right: 0,
               child: _buildShutterRow(),
             ),
 
@@ -681,7 +681,7 @@ class _CameraScreenState extends State<CameraScreen>
         _cameras[_cameraIndex].lensDirection == CameraLensDirection.front;
     return SafeArea(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -855,26 +855,39 @@ class _CameraScreenState extends State<CameraScreen>
   // ─────────────────────────────────────────────────────────────────────────────
 
   Widget _buildShutterRow() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: _buildShutterRowContent(),
+    );
+  }
+
+  Widget _buildShutterRowContent() {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         // Gallery shortcut
-        GestureDetector(
-          onTap: () {
-            if (_selectedMode == 'Post') {
-              setState(() => _showGallery = true);
-              if (_galleryAssets.isEmpty) _loadGallery();
-            }
-          },
-          child: Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.white38, width: 1.5),
+        SizedBox(
+          width: 80,
+          height: 80,
+          child: Center(
+            child: GestureDetector(
+              onTap: () {
+                if (_selectedMode == 'Post') {
+                  setState(() => _showGallery = true);
+                  if (_galleryAssets.isEmpty) _loadGallery();
+                }
+              },
+              child: Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white38, width: 1.5),
+                ),
+                child: const Icon(Icons.photo_library, color: Colors.white, size: 24),
+              ),
             ),
-            child: const Icon(Icons.photo_library, color: Colors.white, size: 24),
           ),
         ),
 
@@ -924,26 +937,31 @@ class _CameraScreenState extends State<CameraScreen>
         ),
 
         // Done button or spacer
-        if (_selected.isNotEmpty)
-          GestureDetector(
-            onTap: _finishAndNavigate,
-            child: Container(
-              width: 52,
-              height: 52,
-              decoration: const BoxDecoration(
-                  color: AppColors.primaryButton, shape: BoxShape.circle),
-              child: Center(
-                child: _selected.length > 1
-                    ? Text('${_selected.length}',
-                        style: const TextStyle(
-                            color: Colors.white, fontFamily: 'Outfit',
-                            fontWeight: FontWeight.w700, fontSize: 18))
-                    : const Icon(Icons.check, color: Colors.white, size: 28),
-              ),
-            ),
-          )
-        else
-          const SizedBox(width: 52, height: 52),
+        SizedBox(
+          width: 80,
+          height: 80,
+          child: Center(
+            child: _selected.isNotEmpty
+                ? GestureDetector(
+                    onTap: _finishAndNavigate,
+                    child: Container(
+                      width: 52,
+                      height: 52,
+                      decoration: const BoxDecoration(
+                          color: AppColors.primaryButton, shape: BoxShape.circle),
+                      child: Center(
+                        child: _selected.length > 1
+                            ? Text('${_selected.length}',
+                                style: const TextStyle(
+                                    color: Colors.white, fontFamily: 'Outfit',
+                                    fontWeight: FontWeight.w700, fontSize: 18))
+                            : const Icon(Icons.check, color: Colors.white, size: 28),
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: 52, height: 52),
+          ),
+        ),
       ],
     );
   }
