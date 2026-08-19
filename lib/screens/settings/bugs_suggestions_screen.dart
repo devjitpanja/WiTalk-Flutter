@@ -644,6 +644,11 @@ class _ReportBugSheetState extends State<_ReportBugSheet> {
         imageQuality: 80,
       );
       if (picked != null && mounted) {
+        final fileSizeMB = File(picked.path).lengthSync() / (1024 * 1024);
+        if (fileSizeMB > 100) {
+          _snack('File too large (${fileSizeMB.toStringAsFixed(1)}MB). Maximum size is 100MB.');
+          return;
+        }
         setState(() => _attachment = File(picked.path));
       }
     } catch (_) {}

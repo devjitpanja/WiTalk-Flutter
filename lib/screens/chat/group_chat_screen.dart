@@ -595,6 +595,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     final picked = await _imagePicker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,
+      maxWidth: 1080,
+      maxHeight: 1080,
     );
     if (picked == null || !mounted) return;
     setState(() => _selectedImage = picked);

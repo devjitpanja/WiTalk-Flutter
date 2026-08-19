@@ -274,6 +274,15 @@ class _GroupInfoScreenState extends ConsumerState<GroupInfoScreen> {
         : await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
 
     if (file == null || !mounted) return;
+    final fileSizeMB = File(file.path).lengthSync() / (1024 * 1024);
+    if (fileSizeMB > 2) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Image too large (${fileSizeMB.toStringAsFixed(1)}MB). Maximum size is 2MB.', style: const TextStyle(fontFamily: 'Outfit')),
+        ));
+      }
+      return;
+    }
     await _uploadPhoto(file.path);
   }
 

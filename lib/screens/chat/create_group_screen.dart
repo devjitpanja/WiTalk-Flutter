@@ -67,6 +67,15 @@ class _CreateGroupScreenState extends ConsumerState<CreateGroupScreen> {
     final picked = await ImagePicker().pickImage(
         source: ImageSource.gallery, imageQuality: 80);
     if (picked == null) return;
+    final fileSizeMB = File(picked.path).lengthSync() / (1024 * 1024);
+    if (fileSizeMB > 2) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Image too large (${fileSizeMB.toStringAsFixed(1)}MB). Maximum size is 2MB.'),
+        ));
+      }
+      return;
+    }
     setState(() {
       _groupImage = File(picked.path);
       _uploadingImage = true;

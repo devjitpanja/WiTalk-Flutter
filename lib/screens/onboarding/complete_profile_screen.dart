@@ -162,6 +162,15 @@ class _CompleteProfileScreenState extends ConsumerState<CompleteProfileScreen>
       final dir = await getTemporaryDirectory();
       final outFile = File('${dir.path}/avatar_edit_${DateTime.now().millisecondsSinceEpoch}.jpg');
       await outFile.writeAsBytes(resultBytes!);
+      final sizeBytes = outFile.lengthSync();
+      if (sizeBytes > 2 * 1024 * 1024) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Please upload an image under 2MB. Choose a different image.'),
+          ));
+        }
+        return;
+      }
       setState(() => _profileImage = outFile);
     }
   }
