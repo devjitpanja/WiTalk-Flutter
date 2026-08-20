@@ -2,9 +2,12 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- WiTalk blue background: #0751DF -->
     <item android:drawable="@color/witalk_blue" />
-    <item>
+    <item
+        android:width="120dp"
+        android:height="120dp"
+        android:gravity="center">
         <bitmap
-            android:gravity="center"
+            android:gravity="fill"
             android:src="@mipmap/launch_image" />
     </item>
 </layer-list>

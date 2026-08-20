@@ -1,4 +1,4 @@
-.PHONY: android16 android15 dev both web mac phone iphone clean build-apk build-aab build-ipa sideload-ipa
+.PHONY: android16 android15 dev both web mac phone iphone clean build-apk build-aab build-ipa sideload-ipa testios
 
 # --- Launch Emulators (run one of these first, then run 'make dev') ---
 
@@ -58,6 +58,11 @@ apk-split:
 # Legacy aliases
 build-apk: apk
 build-aab: aab
+
+# Signed IPA for Sideloadly → build/ios/ipa/
+testios:
+	flutter build ipa --release --export-method development
+	@echo "✅ IPA ready at: build/ios/ipa/"
 
 build-ipa:
 	flutter build ipa
