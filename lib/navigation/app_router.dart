@@ -151,11 +151,11 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/splash', builder: (_, __) => const SplashScreen()),
-      GoRoute(path: '/auth', builder: (_, __) => const AuthScreen()),
+      GoRoute(path: '/auth', pageBuilder: (_, __) => const NoTransitionPage(child: AuthScreen())),
       GoRoute(path: '/complete-profile', builder: (_, __) => const CompleteProfileScreen()),
       GoRoute(path: '/purpose-interests', builder: (_, __) => const PurposeInterestsScreen()),
       GoRoute(path: '/tutorial', builder: (_, __) => const TutorialScreen()),
-      GoRoute(path: '/location-permission', builder: (_, __) => const LocationPermissionScreen()),
+      GoRoute(path: '/location-permission', pageBuilder: (_, __) => const NoTransitionPage(child: LocationPermissionScreen())),
 
       ShellRoute(
         builder: (context, state, child) => ShellScreen(child: child),
