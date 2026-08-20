@@ -12,7 +12,7 @@ android15:
 
 # Run on whatever device/emulator is available (prompts if multiple)
 dev:
-	flutter run
+	flutter run --no-enable-impeller
 
 # Run on both emulators simultaneously
 both:

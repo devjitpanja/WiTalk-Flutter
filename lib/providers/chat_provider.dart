@@ -520,6 +520,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // badge doesn't flicker back while the server is still processing the read event.
   final Map<String, int> _recentlyReadIds = {};
 
+  // Fires once each time a pending message is confirmed sent by the server.
+  final _messageSentCtrl = StreamController<void>.broadcast();
+  Stream<void> get onMessageConfirmedSent => _messageSentCtrl.stream;
+
   // Heartbeat — mirrors RN userStatusService 30s interval
   Timer? _heartbeatTimer;
 
@@ -551,9 +555,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   Future<void> _loadConversationsFromDb() async {
     try {
-      final convRows = await _db.chatDao.getConversations();
-      final convs = convRows.map(_conversationFromRow).toList();
-      state = state.copyWith(conversations: convs);
+      final rows = await _db.chatDao.getConversations();
+      final convs = rows.where((r) => r.type != 'group').map(_conversationFromRow).toList();
+      final groups = rows.where((r) => r.type == 'group').map(_conversationFromRow).toList();
+      state = state.copyWith(conversations: convs, groups: groups);
     } catch (_) {}
   }
 
@@ -842,6 +847,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     } else {
       // No temp_id — just ensure the confirmed message is in the list
       _addMessage(convId, ChatMessage.fromJson({...d, 'status': 'sent'}));
+      _messageSentCtrl.add(null);
     }
   }
 
@@ -1240,6 +1246,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     _addMessage(msg.conversationId, msg);
     _updateGroupFromMessage(msg, isIncoming: !isActive && isIncoming);
+    _saveMessageToDb(msg);
 
     // Auto-mark-as-read when user is actively viewing this group — mirrors RN GroupChatScreen.jsx
     if (isActive && isIncoming && msg.id.isNotEmpty && !msg.id.startsWith('temp_')) {
@@ -1440,6 +1447,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       messages: {...state.messages, convId: updated},
       conversations: updatedConvs,
     );
+
+    _messageSentCtrl.add(null);
   }
 
   // ── Conversation helpers ──────────────────────────────────────────────────────
@@ -1656,6 +1665,31 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return g;
     }).toList();
     state = state.copyWith(groups: protected);
+    _db.chatDao.bulkUpsertConversations(protected
+        .map((g) => ConversationsCompanion.insert(
+              id: g.id,
+              type: Value(g.type),
+              name: Value(g.name),
+              profilePic: Value(g.profilePic),
+              lastMessage: Value(g.lastMessage),
+              lastMessageType: Value(g.lastMessageType),
+              lastMessageSenderId: Value(g.lastMessageSenderId),
+              lastMessageTime: Value(g.lastMessageTime),
+              lastMessageIsRead: Value(g.lastMessageIsRead),
+              lastMessageStatus: Value(g.lastMessageStatus),
+              unreadCount: Value(g.unreadCount),
+              isMuted: Value(g.isMuted),
+              status: Value(g.status),
+              otherUserId: Value(g.otherUserId),
+              initiatorId: Value(g.initiatorId),
+              iBlockedThem: Value(g.iBlockedThem),
+              theyBlockedMe: Value(g.theyBlockedMe),
+              sentMessageCount: Value(g.sentMessageCount),
+              updatedAt: Value(
+                  g.updatedAt?.millisecondsSinceEpoch ??
+                  DateTime.now().millisecondsSinceEpoch),
+            ))
+        .toList()).ignore();
   }
 
   // Set the full channels list — called from _initChatSystem in main.dart
@@ -1695,6 +1729,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       if (m.tempId != null) _messageOwnerMap[m.tempId!] = convId;
     }
     state = state.copyWith(messages: {...state.messages, convId: msgs});
+    _db.chatDao.bulkInsertMessages(
+        msgs.map(_messageToCompanion).toList()).ignore();
   }
 
   void appendOlderMessages(String convId, List<ChatMessage> older) {
@@ -1705,6 +1741,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       _messageOwnerMap[m.id] = convId;
     }
     state = state.copyWith(messages: {...state.messages, convId: merged});
+    _db.chatDao.bulkInsertMessages(
+        older.map(_messageToCompanion).toList()).ignore();
   }
 
   void setActiveConversation(String? convId) {

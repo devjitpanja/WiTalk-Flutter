@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import '../../config/app_config.dart';
 import '../../theme/theme_colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
+import '../../database/app_database.dart';
 import '../../providers/theme_provider.dart';
 import '../../api/dio_client.dart';
 import '../../api/app_endpoints.dart';
@@ -108,10 +110,15 @@ class _ChatConversationScreenState
   List<_ListItem> _listItems = [];
   int _lastMessageCount = 0;
 
+  StreamSubscription<void>? _messageSentSub;
+
   @override
   void initState() {
     super.initState();
     _chatNotifier = ref.read(chatProvider.notifier);
+    _messageSentSub = _chatNotifier.onMessageConfirmedSent.listen((_) {
+      soundEffectService.playMessageSentSound();
+    });
     WidgetsBinding.instance.addObserver(this);
     _scrollCtrl.addListener(_onScroll);
     _initTypingDotAnimations();
@@ -162,6 +169,7 @@ class _ChatConversationScreenState
 
   @override
   void dispose() {
+    _messageSentSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     _scrollCtrl.dispose();
     _dot0Ctrl.dispose();
@@ -240,12 +248,28 @@ class _ChatConversationScreenState
     ref.read(chatProvider.notifier).setActiveConversation(_activeChatId!);
 
     // Load from in-memory store first (instant)
+    bool _hasLocalData = false;
     final stored = ref.read(conversationMessagesProvider(_activeChatId!));
     debugPrint('[ChatConversation] in-memory store has ${stored.length} messages for $_activeChatId');
     if (stored.isNotEmpty) {
       _buildListItems(stored);
       _lastMessageCount = stored.length;
+      _hasLocalData = true;
       if (mounted && !_disposed) setState(() => _loading = false);
+    } else {
+      // In-memory is empty (app restart) — load from offline DB for instant display
+      try {
+        final db = ref.read(appDatabaseProvider);
+        final dbRows = await db.chatDao.getMessages(_activeChatId!, limit: _pageSize);
+        if (dbRows.isNotEmpty && mounted && !_disposed) {
+          final chatMsgs = dbRows.reversed.map(_chatMessageFromDbRow).toList();
+          ref.read(chatProvider.notifier).setMessages(_activeChatId!, chatMsgs);
+          _buildListItems(chatMsgs);
+          _lastMessageCount = chatMsgs.length;
+          _hasLocalData = true;
+          setState(() => _loading = false);
+        }
+      } catch (_) {}
     }
 
     _chatPartner = widget.otherUser;
@@ -282,7 +306,8 @@ class _ChatConversationScreenState
     final isStale = lastSync == null || now - lastSync > _syncStaleMs;
 
     if (isStale) {
-      await _loadMessages(reset: true);
+      // Silent if we already show local data — mirrors RN's invisible background sync
+      await _loadMessages(reset: true, silent: _hasLocalData);
       if (_disposed) return;
       _conversationSyncTimestamps[_activeChatId!] = now;
     } else {
@@ -615,7 +640,7 @@ class _ChatConversationScreenState
     );
   }
 
-  Future<void> _loadMessages({bool reset = false}) async {
+  Future<void> _loadMessages({bool reset = false, bool silent = false}) async {
     if (_loadingMore && !reset) return;
 
     final uid = _currentUserId;
@@ -634,9 +659,9 @@ class _ChatConversationScreenState
     if (reset) {
       _offset = 0;
       _hasMore = true;
-      if (mounted && !_loading) setState(() => _loadingMore = true);
+      if (!silent && mounted && !_loading) setState(() => _loadingMore = true);
     } else {
-      if (mounted) setState(() => _loadingMore = true);
+      if (!silent && mounted) setState(() => _loadingMore = true);
     }
 
     try {
@@ -673,7 +698,7 @@ class _ChatConversationScreenState
     } catch (e) {
       debugPrint('[ChatConversation] _loadMessages error: $e');
     } finally {
-      if (mounted) setState(() => _loadingMore = false);
+      if (!silent && mounted) setState(() => _loadingMore = false);
       // After all rebuilds (messages prepended + spinner removed), correct the
       // scroll offset so the previously-visible items stay in view (no jump).
       if (!reset) {
@@ -708,6 +733,54 @@ class _ChatConversationScreenState
       });
     }
   }
+
+  Map<String, dynamic>? _parseJsonMap(String? s) {
+    if (s == null) return null;
+    try {
+      final v = jsonDecode(s);
+      if (v is Map<String, dynamic>) return v;
+    } catch (_) {}
+    return null;
+  }
+
+  List<Map<String, dynamic>>? _parseJsonList(String? s) {
+    if (s == null) return null;
+    try {
+      final v = jsonDecode(s);
+      if (v is List) return v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } catch (_) {}
+    return null;
+  }
+
+  ChatMessage _chatMessageFromDbRow(Message row) => ChatMessage(
+        id: row.id,
+        conversationId: row.conversationId,
+        senderId: row.senderId,
+        receiverId: row.receiverId,
+        senderName: row.senderName,
+        senderPic: row.senderPic,
+        senderUsername: row.senderUsername,
+        senderIsVerified: row.senderIsVerified,
+        content: row.content,
+        messageType: row.messageType,
+        mediaUrl: row.mediaUrl,
+        mediaData: _parseJsonMap(row.mediaData),
+        metadata: _parseJsonMap(row.metadata),
+        linkPreview: _parseJsonMap(row.linkPreview),
+        reactions: _parseJsonList(row.reactions),
+        replyToId: row.replyToId,
+        replyTo: _parseJsonMap(row.replyTo),
+        isRead: row.isRead,
+        status: row.status,
+        isDeleted: row.isDeleted,
+        isEdited: row.isEdited,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(row.createdAt).toLocal(),
+        syncStatus: row.syncStatus,
+        tempId: row.tempId,
+        isSystem: row.isSystem,
+        groupId: row.groupId,
+        isPinned: row.isPinned,
+      );
 
   void _buildListItems(List<ChatMessage> msgs) {
     final items = <_ListItem>[];
@@ -954,7 +1027,6 @@ class _ChatConversationScreenState
           mediaUrl: gifUrl,
           mediaData: mediaData,
         );
-    unawaited(soundEffectService.playMessageSentSound());
     _scrollToBottom();
   }
 
@@ -1081,7 +1153,6 @@ class _ChatConversationScreenState
               : null,
         );
 
-    unawaited(soundEffectService.playMessageSentSound());
     _scrollToBottom();
     // No need to manually increment _sentMessageCount — liveSentCount in build()
     // recomputes automatically from the provider whenever a message is added.
@@ -1151,8 +1222,7 @@ class _ChatConversationScreenState
               'height': decodedImage.height,
             },
           );
-      unawaited(soundEffectService.playMessageSentSound());
-      _scrollToBottom();
+        _scrollToBottom();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1224,8 +1294,7 @@ class _ChatConversationScreenState
             mediaUrl: url,
             mediaData: {'duration': duration},
           );
-      unawaited(soundEffectService.playMessageSentSound());
-      _scrollToBottom();
+        _scrollToBottom();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1708,8 +1777,7 @@ class _ChatConversationScreenState
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         itemCount: _listItems.length +
-                            (_loadingMore ? 1 : 0) +
-                            1, // +1 for encryption notice at top
+                            1, // +1 for header slot (encryption notice or loading spinner)
                         itemBuilder: (ctx, i) {
                           // Encryption notice at top (like RN ListHeaderComponent)
                           if (i == 0) {

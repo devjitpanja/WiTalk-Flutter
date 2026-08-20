@@ -253,8 +253,8 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     if (convs.isEmpty && groups.isEmpty) {
       await _refresh(showLoading: false);
     } else {
-      // Conversations were pre-loaded from DB — still load muted chats so the
-      // bottom-tab badge is accurate from the start, without waiting for a manual refresh.
+      // Data pre-loaded from offline DB — show immediately, then silently sync
+      // fresh data from server in the background (mirrors WhatsApp/Telegram pattern).
       final uid = ref.read(authProvider).uid;
       if (uid != null) {
         final mutedChats = await _fetchMutedChats(uid);
@@ -263,9 +263,26 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
           ref.read(chatProvider.notifier).setMutedChats(mutedChats);
           ref.read(chatProvider.notifier).setMutedGroups(mutedGroups);
         }
+        // Fire-and-forget background sync — does not block UI or show any spinner
+        _silentSync(uid);
       }
       if (mounted) setState(() => _initialLoading = false);
     }
+  }
+
+  Future<void> _silentSync(String uid) async {
+    try {
+      final results = await Future.wait([
+        chatApiService.getConversations(uid).catchError((_) => <Map<String, dynamic>>[]),
+        chatApiService.getUserGroups(uid).catchError((_) => <Map<String, dynamic>>[]),
+      ]);
+      if (!mounted) return;
+      final chatNotifier = ref.read(chatProvider.notifier);
+      final convs = results[0].map((e) => ChatConversation.fromJson(e)).toList();
+      final groups = results[1].map((e) => ChatConversation.fromJson(e)).toList();
+      if (convs.isNotEmpty) chatNotifier.setConversations(convs);
+      if (groups.isNotEmpty) chatNotifier.setGroups(groups);
+    } catch (_) {}
   }
 
   Future<void> _refresh({bool showLoading = true}) async {
@@ -498,51 +515,54 @@ class _AllChatsListState extends ConsumerState<_AllChatsList> {
     );
   }
 
-  Widget _buildSkeleton(BuildContext context, ThemeColors c) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
-    final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
-    return ListView.builder(
-      itemCount: 9,
-      itemBuilder: (_, i) => Shimmer.fromColors(
-        baseColor: baseColor,
-        highlightColor: highlightColor,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-          child: Row(children: [
-            CircleAvatar(radius: 28, backgroundColor: baseColor),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                        height: 14,
-                        width: 140,
-                        decoration: BoxDecoration(
-                            color: baseColor,
-                            borderRadius: BorderRadius.circular(6))),
-                    const SizedBox(height: 8),
-                    Container(
-                        height: 12,
-                        width: 200,
-                        decoration: BoxDecoration(
-                            color: baseColor,
-                            borderRadius: BorderRadius.circular(6))),
-                  ]),
-            ),
-            const SizedBox(width: 12),
-            Container(
-                height: 11,
-                width: 34,
-                decoration: BoxDecoration(
-                    color: baseColor,
-                    borderRadius: BorderRadius.circular(4))),
-          ]),
-        ),
+  Widget _buildSkeleton(BuildContext context, ThemeColors c) =>
+      _buildChatListSkeleton(context);
+}
+
+Widget _buildChatListSkeleton(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  final baseColor = isDark ? const Color(0xFF1A1F2E) : const Color(0xFFE1E9EE);
+  final highlightColor = isDark ? const Color(0xFF242938) : const Color(0xFFF2F8FC);
+  return ListView.builder(
+    itemCount: 9,
+    itemBuilder: (_, i) => Shimmer.fromColors(
+      baseColor: baseColor,
+      highlightColor: highlightColor,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Row(children: [
+          CircleAvatar(radius: 28, backgroundColor: baseColor),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                      height: 14,
+                      width: 140,
+                      decoration: BoxDecoration(
+                          color: baseColor,
+                          borderRadius: BorderRadius.circular(6))),
+                  const SizedBox(height: 8),
+                  Container(
+                      height: 12,
+                      width: 200,
+                      decoration: BoxDecoration(
+                          color: baseColor,
+                          borderRadius: BorderRadius.circular(6))),
+                ]),
+          ),
+          const SizedBox(width: 12),
+          Container(
+              height: 11,
+              width: 34,
+              decoration: BoxDecoration(
+                  color: baseColor,
+                  borderRadius: BorderRadius.circular(4))),
+        ]),
       ),
-    );
-  }
+    ),
+  );
 }
 
 class _CombinedItem {
@@ -565,6 +585,32 @@ class _PrivateChatList extends ConsumerStatefulWidget {
 }
 
 class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
+  bool _initialLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initLoad());
+  }
+
+  Future<void> _initLoad() async {
+    final convs = ref.read(chatProvider).conversations;
+    if (convs.isNotEmpty) {
+      if (mounted) setState(() => _initialLoading = false);
+      return;
+    }
+    // Wait briefly for DB load to propagate, then fetch if still empty
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    final convs2 = ref.read(chatProvider).conversations;
+    if (convs2.isNotEmpty) {
+      setState(() => _initialLoading = false);
+    } else {
+      await _refresh();
+      if (mounted) setState(() => _initialLoading = false);
+    }
+  }
+
   Future<void> _refresh() async {
     final uid = ref.read(authProvider).uid;
     if (uid == null) return;
@@ -595,6 +641,10 @@ class _PrivateChatListState extends ConsumerState<_PrivateChatList> {
 
     final isEmpty = conversations.isEmpty;
     final listCount = active.length + (pending.isNotEmpty ? 1 : 0);
+
+    if (_initialLoading && isEmpty) {
+      return _buildChatListSkeleton(context);
+    }
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
@@ -661,6 +711,31 @@ class _GroupChatList extends ConsumerStatefulWidget {
 }
 
 class _GroupChatListState extends ConsumerState<_GroupChatList> {
+  bool _initialLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initLoad());
+  }
+
+  Future<void> _initLoad() async {
+    final groups = ref.read(chatProvider).groups;
+    if (groups.isNotEmpty) {
+      if (mounted) setState(() => _initialLoading = false);
+      return;
+    }
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    final groups2 = ref.read(chatProvider).groups;
+    if (groups2.isNotEmpty) {
+      setState(() => _initialLoading = false);
+    } else {
+      await _refresh();
+      if (mounted) setState(() => _initialLoading = false);
+    }
+  }
+
   Future<void> _refresh() async {
     final uid = ref.read(authProvider).uid;
     if (uid == null) return;
@@ -683,6 +758,10 @@ class _GroupChatListState extends ConsumerState<_GroupChatList> {
     final groups = ref.watch(chatProvider.select((s) => s.groups));
     final mutedGroups = ref.watch(chatProvider.select((s) => s.mutedGroups));
     final uid = ref.watch(authProvider).uid ?? '';
+
+    if (_initialLoading && groups.isEmpty) {
+      return _buildChatListSkeleton(context);
+    }
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
